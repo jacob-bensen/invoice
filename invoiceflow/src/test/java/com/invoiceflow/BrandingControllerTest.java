@@ -12,6 +12,10 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MockMvc;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -37,6 +41,51 @@ class BrandingControllerTest {
 
     @BeforeEach
     void setUp() throws Exception {
+        userRepository.findByEmail("branding-free@example.com").ifPresent(userRepository::delete);
+        userRepository.findByEmail("branding-pro@example.com").ifPresent(userRepository::delete);
+
+        freeToken = register("branding-free@example.com", "password123", "Free User");
+        proToken  = register("branding-pro@example.com",  "password123", "Pro User");
+
+        // upgrade pro user in DB
+        var proUser = userRepository.findByEmail("branding-pro@example.com").orElseThrow();
+        proUser.setPlan(Plan.PRO);
+        userRepository.save(proUser);
+    }
+
+    @Test
+    void getDefaultBranding() throws Exception {
+        mvc.perform(get("/api/branding")
+                        .header("Authorization", "Bearer " + proToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.brandColor").value("#2563EB"))
+                .andExpect(jsonPath("$.hasLogo").value(false));
+    }
+
+    @Test
+    void updateColorProPlan() throws Exception {
+        var req = new BrandingController.ColorRequest("#FF5733");
+        mvc.perform(put("/api/branding/color")
+                        .header("Authorization", "Bearer " + proToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.brandColor").value("#FF5733"));
+    }
+
+    @Test
+    void updateColorFreePlanForbidden() throws Exception {
+        var req = new BrandingController.ColorRequest("#FF5733");
+        mvc.perform(put("/api/branding/color")
+                        .header("Authorization", "Bearer " + freeToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(req)))
+                .andExpect(status().isPaymentRequired());
+    }
+
+    @Test
+    void updateColorInvalidHexRejected() throws Exception {
+        var req = new BrandingController.ColorRequest("not-a-color");
         freeToken = registerAndGetToken("free@example.com", "free user");
         proToken   = registerAndGetToken("pro@example.com",  "pro user");
 

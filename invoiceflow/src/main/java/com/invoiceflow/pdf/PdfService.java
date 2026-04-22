@@ -11,6 +11,8 @@ import com.itextpdf.kernel.font.PdfFontFactory;
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
+import com.itextpdf.layout.borders.Border;
+import com.itextpdf.layout.borders.SolidBorder;
 import com.itextpdf.layout.element.*;
 import com.itextpdf.layout.properties.TextAlignment;
 import com.itextpdf.layout.properties.UnitValue;
@@ -35,10 +37,14 @@ public class PdfService {
 
         try (var baos = new ByteArrayOutputStream()) {
             var writer = new PdfWriter(baos);
-            var pdf = new PdfDocument(writer);
-            var doc = new Document(pdf);
+            var pdf   = new PdfDocument(writer);
+            var doc   = new Document(pdf);
 
-            var boldFont = PdfFontFactory.createFont(
+            User user = invoice.getUser();
+            DeviceRgb brandColor = parseBrandColor(
+                    user.getPlan().customBranding ? user.getBrandColor() : null);
+
+            var boldFont    = PdfFontFactory.createFont(
                     com.itextpdf.io.font.constants.StandardFonts.HELVETICA_BOLD);
             var regularFont = PdfFontFactory.createFont(
                     com.itextpdf.io.font.constants.StandardFonts.HELVETICA);
@@ -70,11 +76,14 @@ public class PdfService {
             meta.addCell(labeledCell("Invoice #", invoice.getInvoiceNumber(), boldFont, regularFont));
             meta.addCell(labeledCell("From", invoice.getUser().getFullName(), boldFont, regularFont));
             meta.addCell(labeledCell("Issue Date", invoice.getIssueDate().toString(), boldFont, regularFont));
-            meta.addCell(labeledCell("Bill To", invoice.getClient().getName()
-                    + (invoice.getClient().getCompany() != null ? "\n" + invoice.getClient().getCompany() : "")
-                    + "\n" + invoice.getClient().getEmail(), boldFont, regularFont));
+            meta.addCell(labeledCell("Bill To",
+                    invoice.getClient().getName()
+                            + (invoice.getClient().getCompany() != null
+                                    ? "\n" + invoice.getClient().getCompany() : "")
+                            + "\n" + invoice.getClient().getEmail(),
+                    boldFont, regularFont));
             meta.addCell(labeledCell("Due Date", invoice.getDueDate().toString(), boldFont, regularFont));
-            meta.addCell(new Cell().add(new Paragraph("")));
+            meta.addCell(new Cell().setBorder(Border.NO_BORDER).add(new Paragraph("")));
             doc.add(meta);
             doc.add(new Paragraph(" "));
 
@@ -148,7 +157,7 @@ public class PdfService {
     private Cell labeledCell(String label, String value,
                               com.itextpdf.kernel.font.PdfFont bold,
                               com.itextpdf.kernel.font.PdfFont regular) {
-        return new Cell().setBorder(com.itextpdf.layout.borders.Border.NO_BORDER)
+        return new Cell().setBorder(Border.NO_BORDER)
                 .add(new Paragraph(label).setFont(bold).setFontSize(9).setFontColor(ColorConstants.GRAY))
                 .add(new Paragraph(value).setFont(regular).setFontSize(10));
     }
