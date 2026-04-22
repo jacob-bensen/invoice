@@ -2,6 +2,7 @@ package com.invoiceflow.pdf;
 
 import com.invoiceflow.invoice.Invoice;
 import com.invoiceflow.invoice.LineItem;
+import com.invoiceflow.user.Plan;
 import com.invoiceflow.user.User;
 import com.itextpdf.io.image.ImageDataFactory;
 import com.itextpdf.kernel.colors.ColorConstants;
@@ -20,15 +21,20 @@ import org.springframework.stereotype.Service;
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.text.NumberFormat;
+import java.util.Base64;
 import java.util.Currency;
 import java.util.Locale;
 
 @Service
 public class PdfService {
 
-    private static final DeviceRgb DEFAULT_COLOR = new DeviceRgb(37, 99, 235); // blue-600
+    private static final DeviceRgb DEFAULT_BRAND_COLOR = new DeviceRgb(37, 99, 235); // blue-600
 
     public byte[] generate(Invoice invoice) {
+        User user = invoice.getUser();
+        DeviceRgb brandColor = parseBrandColor(user.getBrandColor());
+        boolean hasBranding = user.getPlan() == Plan.PRO || user.getPlan() == Plan.AGENCY;
+
         try (var baos = new ByteArrayOutputStream()) {
             var writer = new PdfWriter(baos);
             var pdf   = new PdfDocument(writer);
@@ -43,21 +49,25 @@ public class PdfService {
             var regularFont = PdfFontFactory.createFont(
                     com.itextpdf.io.font.constants.StandardFonts.HELVETICA);
 
-            // Logo (Pro/Agency only — shown when uploaded)
-            if (user.getPlan().customBranding && user.getLogoData() != null) {
+            // Logo (Pro/Agency only)
+            if (hasBranding && user.getLogoData() != null) {
                 try {
-                    var imgData = ImageDataFactory.create(user.getLogoData());
-                    var logo    = new Image(imgData);
-                    logo.scaleToFit(160, 60);
+                    byte[] logoBytes = Base64.getDecoder().decode(user.getLogoData());
+                    var imgData = ImageDataFactory.create(logoBytes);
+                    var logo = new Image(imgData);
+                    logo.setMaxHeight(50);
+                    logo.setAutoScaleWidth(true);
                     doc.add(logo);
                 } catch (Exception ignored) {
-                    // malformed image data — fall back to text header
-                    addTextHeader(doc, boldFont, regularFont, brandColor);
+                    // Corrupted logo data should not break PDF generation
                 }
-            } else {
-                addTextHeader(doc, boldFont, regularFont, brandColor);
             }
 
+            // Header
+            doc.add(new Paragraph("INVOICE")
+                    .setFont(boldFont).setFontSize(28).setFontColor(brandColor));
+            doc.add(new Paragraph(hasBranding ? user.getFullName() : "InvoiceFlow")
+                    .setFont(regularFont).setFontSize(10).setFontColor(ColorConstants.GRAY));
             doc.add(new Paragraph(" "));
 
             // Meta table
@@ -83,8 +93,7 @@ public class PdfService {
             for (String header : new String[]{"Description", "Qty", "Unit Price", "Total"}) {
                 table.addHeaderCell(new Cell()
                         .setBackgroundColor(brandColor)
-                        .add(new Paragraph(header)
-                                .setFont(boldFont).setFontSize(10)
+                        .add(new Paragraph(header).setFont(boldFont).setFontSize(10)
                                 .setFontColor(ColorConstants.WHITE)));
             }
 
@@ -107,12 +116,12 @@ public class PdfService {
             table.addCell(new Cell(1, 3)
                     .add(new Paragraph("TOTAL").setFont(boldFont).setFontSize(11))
                     .setTextAlignment(TextAlignment.RIGHT)
-                    .setBorderTop(new SolidBorder(brandColor, 1.5f)));
+                    .setBorderTop(new com.itextpdf.layout.borders.SolidBorder(brandColor, 1.5f)));
             table.addCell(new Cell()
-                    .add(new Paragraph(fmt.format(invoice.total()))
-                            .setFont(boldFont).setFontSize(11).setFontColor(brandColor))
+                    .add(new Paragraph(fmt.format(invoice.total())).setFont(boldFont).setFontSize(11)
+                            .setFontColor(brandColor))
                     .setTextAlignment(TextAlignment.RIGHT)
-                    .setBorderTop(new SolidBorder(brandColor, 1.5f)));
+                    .setBorderTop(new com.itextpdf.layout.borders.SolidBorder(brandColor, 1.5f)));
 
             doc.add(table);
 
@@ -128,13 +137,6 @@ public class PdfService {
                         .setFont(regularFont).setFontSize(9).setFontColor(brandColor));
             }
 
-            // Free-plan attribution footer
-            if (!user.getPlan().customBranding) {
-                doc.add(new Paragraph(" "));
-                doc.add(new Paragraph("Created with InvoiceFlow · invoiceflow.app/pricing?ref=pdf-footer")
-                        .setFont(regularFont).setFontSize(8).setFontColor(ColorConstants.GRAY));
-            }
-
             doc.close();
             return baos.toByteArray();
         } catch (Exception e) {
@@ -142,21 +144,9 @@ public class PdfService {
         }
     }
 
-    // ---- helpers ----
-
-    private void addTextHeader(Document doc,
-                                com.itextpdf.kernel.font.PdfFont boldFont,
-                                com.itextpdf.kernel.font.PdfFont regularFont,
-                                DeviceRgb brandColor) throws Exception {
-        doc.add(new Paragraph("INVOICE")
-                .setFont(boldFont).setFontSize(28).setFontColor(brandColor));
-        doc.add(new Paragraph("InvoiceFlow")
-                .setFont(regularFont).setFontSize(10).setFontColor(ColorConstants.GRAY));
-    }
-
     private DeviceRgb parseBrandColor(String hex) {
-        if (hex == null || !hex.matches("^#[0-9A-Fa-f]{6}$")) {
-            return DEFAULT_COLOR;
+        if (hex == null || !hex.matches("^#[0-9a-fA-F]{6}$")) {
+            return DEFAULT_BRAND_COLOR;
         }
         int r = Integer.parseInt(hex.substring(1, 3), 16);
         int g = Integer.parseInt(hex.substring(3, 5), 16);

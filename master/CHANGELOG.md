@@ -118,6 +118,10 @@ Full Spring Boot 3 + PostgreSQL SaaS application for freelancer invoicing from s
 
 ### What was built
 Pro and Agency users can now upload their company logo and choose a custom brand color. Both appear on all generated PDF invoices. Free and Solo users get an "InvoiceFlow" attribution footer on their PDFs (passive acquisition). All 8 tests pass.
+## 2026-04-22 — P10: Custom Branding (Logo + Brand Color) — Pro Plan
+
+### What was built
+Custom branding feature for Pro and Agency plan users: logo upload (PNG/JPEG/GIF/WebP, max 512 KB) and brand color (hex), applied to every generated PDF. Free and Solo users see the default InvoiceFlow brand.
 
 ### Files changed
 | File | Change |
@@ -134,3 +138,12 @@ Pro and Agency users can now upload their company logo and choose a custom brand
 - **Retention:** Logo and color personalization increases perceived value and switching cost for Pro subscribers.
 - **Upgrade incentive:** Every free-plan PDF now carries an "Created with InvoiceFlow" footer — passive acquisition on every invoice the user sends to their clients.
 - **Feature differentiation:** Custom branding is a tangible, visible reason to upgrade from Solo ($9) to Pro ($19), raising ARPU.
+| `invoiceflow/src/main/resources/db/migration/V2__branding.sql` | Flyway migration: adds `brand_color`, `logo_data`, `logo_mime` columns to `users` |
+| `invoiceflow/src/main/java/com/invoiceflow/user/User.java` | Three new fields + getters/setters for branding columns |
+| `invoiceflow/src/main/java/com/invoiceflow/branding/BrandingController.java` | New REST controller: GET/PUT color, POST/DELETE/GET logo — Pro-gated |
+| `invoiceflow/src/main/java/com/invoiceflow/pdf/PdfService.java` | Parses user brand color + decodes/embeds logo image (Pro/Agency only) |
+| `invoiceflow/src/main/resources/application.yml` | Multipart file limits (512 KB file, 1 MB request) |
+| `invoiceflow/src/test/java/com/invoiceflow/BrandingControllerTest.java` | 12 MockMvc tests covering plan enforcement, color update, logo upload/delete/serve |
+
+### Why it matters for income
+Custom branding is a **Pro-exclusive feature** ($19/mo). It creates a tangible value difference between free and paid tiers: paid users' clients see their logo and colors on every PDF invoice, while free users see generic InvoiceFlow branding. This increases perceived professionalism for paying customers, reduces churn ("my clients see my brand every invoice"), and serves as a visible reminder on every invoice to upgrade.
