@@ -2,6 +2,9 @@ package com.invoiceflow.pdf;
 
 import com.invoiceflow.invoice.Invoice;
 import com.invoiceflow.invoice.LineItem;
+import com.invoiceflow.user.Plan;
+import com.invoiceflow.user.User;
+import com.itextpdf.io.image.ImageDataFactory;
 import com.itextpdf.kernel.colors.ColorConstants;
 import com.itextpdf.kernel.colors.DeviceRgb;
 import com.itextpdf.kernel.font.PdfFontFactory;
@@ -16,15 +19,20 @@ import org.springframework.stereotype.Service;
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.text.NumberFormat;
+import java.util.Base64;
 import java.util.Currency;
 import java.util.Locale;
 
 @Service
 public class PdfService {
 
-    private static final DeviceRgb BRAND_COLOR = new DeviceRgb(37, 99, 235); // blue-600
+    private static final DeviceRgb DEFAULT_BRAND_COLOR = new DeviceRgb(37, 99, 235); // blue-600
 
     public byte[] generate(Invoice invoice) {
+        User user = invoice.getUser();
+        DeviceRgb brandColor = parseBrandColor(user.getBrandColor());
+        boolean hasBranding = user.getPlan() == Plan.PRO || user.getPlan() == Plan.AGENCY;
+
         try (var baos = new ByteArrayOutputStream()) {
             var writer = new PdfWriter(baos);
             var pdf = new PdfDocument(writer);
@@ -35,10 +43,24 @@ public class PdfService {
             var regularFont = PdfFontFactory.createFont(
                     com.itextpdf.io.font.constants.StandardFonts.HELVETICA);
 
+            // Logo (Pro/Agency only)
+            if (hasBranding && user.getLogoData() != null) {
+                try {
+                    byte[] logoBytes = Base64.getDecoder().decode(user.getLogoData());
+                    var imgData = ImageDataFactory.create(logoBytes);
+                    var logo = new Image(imgData);
+                    logo.setMaxHeight(50);
+                    logo.setAutoScaleWidth(true);
+                    doc.add(logo);
+                } catch (Exception ignored) {
+                    // Corrupted logo data should not break PDF generation
+                }
+            }
+
             // Header
             doc.add(new Paragraph("INVOICE")
-                    .setFont(boldFont).setFontSize(28).setFontColor(BRAND_COLOR));
-            doc.add(new Paragraph("InvoiceFlow")
+                    .setFont(boldFont).setFontSize(28).setFontColor(brandColor));
+            doc.add(new Paragraph(hasBranding ? user.getFullName() : "InvoiceFlow")
                     .setFont(regularFont).setFontSize(10).setFontColor(ColorConstants.GRAY));
             doc.add(new Paragraph(" "));
 
@@ -61,7 +83,7 @@ public class PdfService {
                     .setWidth(UnitValue.createPercentValue(100));
             for (String header : new String[]{"Description", "Qty", "Unit Price", "Total"}) {
                 table.addHeaderCell(new Cell()
-                        .setBackgroundColor(BRAND_COLOR)
+                        .setBackgroundColor(brandColor)
                         .add(new Paragraph(header).setFont(boldFont).setFontSize(10)
                                 .setFontColor(ColorConstants.WHITE)));
             }
@@ -85,12 +107,12 @@ public class PdfService {
             table.addCell(new Cell(1, 3)
                     .add(new Paragraph("TOTAL").setFont(boldFont).setFontSize(11))
                     .setTextAlignment(TextAlignment.RIGHT)
-                    .setBorderTop(new com.itextpdf.layout.borders.SolidBorder(BRAND_COLOR, 1.5f)));
+                    .setBorderTop(new com.itextpdf.layout.borders.SolidBorder(brandColor, 1.5f)));
             table.addCell(new Cell()
                     .add(new Paragraph(fmt.format(invoice.total())).setFont(boldFont).setFontSize(11)
-                            .setFontColor(BRAND_COLOR))
+                            .setFontColor(brandColor))
                     .setTextAlignment(TextAlignment.RIGHT)
-                    .setBorderTop(new com.itextpdf.layout.borders.SolidBorder(BRAND_COLOR, 1.5f)));
+                    .setBorderTop(new com.itextpdf.layout.borders.SolidBorder(brandColor, 1.5f)));
 
             doc.add(table);
 
@@ -103,7 +125,7 @@ public class PdfService {
             if (invoice.getStripePaymentLink() != null) {
                 doc.add(new Paragraph(" "));
                 doc.add(new Paragraph("Pay Online: " + invoice.getStripePaymentLink())
-                        .setFont(regularFont).setFontSize(9).setFontColor(BRAND_COLOR));
+                        .setFont(regularFont).setFontSize(9).setFontColor(brandColor));
             }
 
             doc.close();
@@ -111,6 +133,16 @@ public class PdfService {
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate PDF", e);
         }
+    }
+
+    private DeviceRgb parseBrandColor(String hex) {
+        if (hex == null || !hex.matches("^#[0-9a-fA-F]{6}$")) {
+            return DEFAULT_BRAND_COLOR;
+        }
+        int r = Integer.parseInt(hex.substring(1, 3), 16);
+        int g = Integer.parseInt(hex.substring(3, 5), 16);
+        int b = Integer.parseInt(hex.substring(5, 7), 16);
+        return new DeviceRgb(r, g, b);
     }
 
     private Cell labeledCell(String label, String value,
