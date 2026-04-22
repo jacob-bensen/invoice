@@ -1,5 +1,7 @@
 # QuickInvoice — Master TODO
 
+> **Audited:** 2026-04-22 — Code build v1.0.0 is complete (see CHANGELOG). All deployment steps below are pending human action. No optional improvements have been implemented yet; none are tagged [LIKELY DONE].
+
 This file tracks what YOU need to do to get QuickInvoice live and earning money.
 
 ---
