@@ -2,6 +2,28 @@
 
 ---
 
+## 2026-04-22 — P10: Custom Branding for Pro Plan
+
+### What was built
+Logo upload and custom brand color as a Pro/Agency-only feature, applied to all generated PDF invoices.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `db/migration/V2__add_branding.sql` | New — adds `logo_data` (TEXT) and `brand_color` (CHAR 7) columns to `users` |
+| `user/Plan.java` | Added `customBranding` boolean flag (true for PRO and AGENCY plans) |
+| `user/User.java` | Added `logoData` and `brandColor` fields with getters/setters |
+| `branding/BrandingController.java` | New — `GET /api/branding`, `PUT /api/branding/color`, `POST /api/branding/logo`, `DELETE /api/branding/logo` |
+| `pdf/PdfService.java` | Resolves brand color from hex string; renders user logo at top of PDF for Pro/Agency users |
+| `BrandingControllerTest.java` | New — 8 tests covering plan gating, color validation, logo upload/delete, size/type enforcement |
+
+### Why it matters for income
+- Custom branding is a named Pro-plan benefit at $19/month — it's a concrete, visible upgrade incentive.
+- Every invoice PDF a Pro user generates now reflects their brand instead of InvoiceFlow's default blue, making the product sticky (higher switching cost).
+- The feature is invisible to Free/Solo users but becomes a clear upgrade driver when they see branded PDFs from Pro users.
+
+---
+
 ## 2026-04-21 — v1.0.0 — Initial Build
 
 **What was built:** Full MVP of QuickInvoice, a professional invoicing SaaS for freelancers.
