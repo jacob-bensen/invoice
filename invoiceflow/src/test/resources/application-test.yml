@@ -28,3 +28,4 @@ app:
     price-id-agency: price_agency
   from-email: test@example.com
   base-url: http://localhost:8080
+  uploads-dir: /tmp/invoiceflow-test-uploads

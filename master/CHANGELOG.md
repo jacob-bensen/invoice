@@ -106,6 +106,30 @@ Full Spring Boot 3 + PostgreSQL SaaS application for freelancer invoicing from s
 - `TestConfig.java` — Mock Email, PDF, Stripe beans for test profile
 - `src/test/resources/application-test.yml` — H2 in-memory config, Flyway disabled
 
+---
+
+## 2026-04-22 — P10: Custom Branding for Pro/Agency Plans
+
+### What was built
+Pro and Agency users can now personalise every PDF invoice with their own brand color (hex) and company logo. Free/Solo users who try to use branding endpoints get HTTP 402 with an upgrade prompt.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `db/migration/V2__branding.sql` | Flyway migration: adds `logo_url` and `brand_color` columns to `users` |
+| `user/User.java` | Added `logoUrl`, `brandColor` fields + getters/setters |
+| `config/AppProperties.java` | Added `uploadsDir` config property |
+| `application.yml` | Added `app.uploads-dir: ${UPLOADS_DIR:./uploads}` |
+| `application-test.yml` | Added test uploads dir pointing to `/tmp` |
+| `branding/BrandingController.java` | **New** — `GET /api/branding`, `PUT /api/branding`, `POST /api/branding/logo`, `DELETE /api/branding/logo`; Pro-plan gated; validates hex color and image MIME/size |
+| `config/WebMvcConfig.java` | **New** — Serves `{uploadsDir}/**` under `/uploads/**` |
+| `config/SecurityConfig.java` | Permits `/uploads/**` (logo images are public URLs embeddable in PDFs) |
+| `pdf/PdfService.java` | Reads `user.getBrandColor()` and `user.getLogoUrl()` to apply custom color and logo; falls back to default blue if unset |
+| `BrandingControllerTest.java` | **New** — 10 integration tests covering GET, PUT color, logo upload/delete, plan enforcement, and validation |
+
+### Why it matters for income
+Custom branding is gated behind Pro ($19/mo) and Agency ($49/mo). It is one of the highest-perceived-value Pro features — freelancers want their invoices to look like their brand, not a generic tool. This increases Pro conversion and dramatically reduces cancellation once a user has uploaded their logo (switching cost is high). It also enables upsell copy: "Remove generic branding" on free-tier PDF footers.
+
 ### Why it matters for income
 - Freemium funnel: register free, hit invoice limit → upgrade prompt → Stripe Checkout → recurring subscription revenue
 - Stripe handles billing autonomously; webhook syncs plan state with zero manual intervention

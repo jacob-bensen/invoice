@@ -1,5 +1,6 @@
 package com.invoiceflow.pdf;
 
+import com.invoiceflow.config.AppProperties;
 import com.invoiceflow.invoice.Invoice;
 import com.invoiceflow.invoice.LineItem;
 import com.invoiceflow.user.Plan;
@@ -20,6 +21,8 @@ import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.text.NumberFormat;
 import java.util.Base64;
 import java.util.Currency;

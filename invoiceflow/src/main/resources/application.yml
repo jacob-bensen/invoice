@@ -57,6 +57,7 @@ app:
 
   from-email: ${FROM_EMAIL:noreply@invoiceflow.app}
   base-url: ${BASE_URL:http://localhost:8080}
+  uploads-dir: ${UPLOADS_DIR:./uploads}
 
 server:
   port: ${PORT:8080}
