@@ -11,6 +11,7 @@ public class AppProperties {
     private Stripe stripe = new Stripe();
     private String fromEmail;
     private String baseUrl;
+    private String uploadsDir = "./uploads";
 
     public static class Jwt {
         private String secret;
@@ -49,4 +50,6 @@ public class AppProperties {
     public void setFromEmail(String fromEmail) { this.fromEmail = fromEmail; }
     public String getBaseUrl() { return baseUrl; }
     public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
+    public String getUploadsDir() { return uploadsDir; }
+    public void setUploadsDir(String uploadsDir) { this.uploadsDir = uploadsDir; }
 }

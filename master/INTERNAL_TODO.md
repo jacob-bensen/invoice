@@ -212,6 +212,6 @@ Tasks are ordered highest → lowest value. Pick first unblocked item.
 
 ### PHASE 2 — Growth
 
-- [ ] P10 — Custom branding (logo upload, brand color) — Pro plan
+- [DONE 2026-04-22] P10 — Custom branding (logo upload, brand color) — Pro plan
 - [ ] P11 — Team seats (Agency plan)
 - [ ] P12 — Recurring invoice auto-generation
