@@ -3,6 +3,8 @@ package com.invoiceflow.pdf;
 import com.invoiceflow.config.AppProperties;
 import com.invoiceflow.invoice.Invoice;
 import com.invoiceflow.invoice.LineItem;
+import com.invoiceflow.user.Plan;
+import com.invoiceflow.user.User;
 import com.itextpdf.io.image.ImageDataFactory;
 import com.itextpdf.kernel.colors.ColorConstants;
 import com.itextpdf.kernel.colors.DeviceRgb;
@@ -10,6 +12,8 @@ import com.itextpdf.kernel.font.PdfFontFactory;
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
+import com.itextpdf.layout.borders.Border;
+import com.itextpdf.layout.borders.SolidBorder;
 import com.itextpdf.layout.element.*;
 import com.itextpdf.layout.properties.TextAlignment;
 import com.itextpdf.layout.properties.UnitValue;
@@ -20,6 +24,7 @@ import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.text.NumberFormat;
+import java.util.Base64;
 import java.util.Currency;
 import java.util.Locale;
 
@@ -28,44 +33,43 @@ public class PdfService {
 
     private static final DeviceRgb DEFAULT_BRAND_COLOR = new DeviceRgb(37, 99, 235); // blue-600
 
-    private final AppProperties props;
-
-    public PdfService(AppProperties props) {
-        this.props = props;
-    }
-
     public byte[] generate(Invoice invoice) {
+        User user = invoice.getUser();
+        DeviceRgb brandColor = parseBrandColor(user.getBrandColor());
+        boolean hasBranding = user.getPlan() == Plan.PRO || user.getPlan() == Plan.AGENCY;
+
         try (var baos = new ByteArrayOutputStream()) {
             var writer = new PdfWriter(baos);
-            var pdf = new PdfDocument(writer);
-            var doc = new Document(pdf);
+            var pdf   = new PdfDocument(writer);
+            var doc   = new Document(pdf);
 
-            var boldFont = PdfFontFactory.createFont(
+            User user = invoice.getUser();
+            DeviceRgb brandColor = parseBrandColor(
+                    user.getPlan().customBranding ? user.getBrandColor() : null);
+
+            var boldFont    = PdfFontFactory.createFont(
                     com.itextpdf.io.font.constants.StandardFonts.HELVETICA_BOLD);
             var regularFont = PdfFontFactory.createFont(
                     com.itextpdf.io.font.constants.StandardFonts.HELVETICA);
 
-            DeviceRgb brandColor = resolveBrandColor(invoice.getUser().getBrandColor());
-
-            // Logo (Pro/Agency with logo set)
-            String logoRelPath = invoice.getUser().getLogoUrl();
-            if (logoRelPath != null) {
-                var logoFile = Paths.get(props.getUploadsDir()).resolve(logoRelPath);
-                if (Files.isReadable(logoFile)) {
-                    try {
-                        var imageData = ImageDataFactory.create(logoFile.toAbsolutePath().toString());
-                        var logo = new Image(imageData).setWidth(80).setAutoScale(false);
-                        doc.add(logo);
-                    } catch (Exception ignored) {
-                        // logo load failure is non-fatal; continue without it
-                    }
+            // Logo (Pro/Agency only)
+            if (hasBranding && user.getLogoData() != null) {
+                try {
+                    byte[] logoBytes = Base64.getDecoder().decode(user.getLogoData());
+                    var imgData = ImageDataFactory.create(logoBytes);
+                    var logo = new Image(imgData);
+                    logo.setMaxHeight(50);
+                    logo.setAutoScaleWidth(true);
+                    doc.add(logo);
+                } catch (Exception ignored) {
+                    // Corrupted logo data should not break PDF generation
                 }
             }
 
             // Header
             doc.add(new Paragraph("INVOICE")
                     .setFont(boldFont).setFontSize(28).setFontColor(brandColor));
-            doc.add(new Paragraph("InvoiceFlow")
+            doc.add(new Paragraph(hasBranding ? user.getFullName() : "InvoiceFlow")
                     .setFont(regularFont).setFontSize(10).setFontColor(ColorConstants.GRAY));
             doc.add(new Paragraph(" "));
 
@@ -75,11 +79,14 @@ public class PdfService {
             meta.addCell(labeledCell("Invoice #", invoice.getInvoiceNumber(), boldFont, regularFont));
             meta.addCell(labeledCell("From", invoice.getUser().getFullName(), boldFont, regularFont));
             meta.addCell(labeledCell("Issue Date", invoice.getIssueDate().toString(), boldFont, regularFont));
-            meta.addCell(labeledCell("Bill To", invoice.getClient().getName()
-                    + (invoice.getClient().getCompany() != null ? "\n" + invoice.getClient().getCompany() : "")
-                    + "\n" + invoice.getClient().getEmail(), boldFont, regularFont));
+            meta.addCell(labeledCell("Bill To",
+                    invoice.getClient().getName()
+                            + (invoice.getClient().getCompany() != null
+                                    ? "\n" + invoice.getClient().getCompany() : "")
+                            + "\n" + invoice.getClient().getEmail(),
+                    boldFont, regularFont));
             meta.addCell(labeledCell("Due Date", invoice.getDueDate().toString(), boldFont, regularFont));
-            meta.addCell(new Cell().add(new Paragraph("")));
+            meta.addCell(new Cell().setBorder(Border.NO_BORDER).add(new Paragraph("")));
             doc.add(meta);
             doc.add(new Paragraph(" "));
 
@@ -140,22 +147,20 @@ public class PdfService {
         }
     }
 
-    private DeviceRgb resolveBrandColor(String hex) {
-        if (hex == null || hex.length() != 7 || hex.charAt(0) != '#') return DEFAULT_BRAND_COLOR;
-        try {
-            int r = Integer.parseInt(hex.substring(1, 3), 16);
-            int g = Integer.parseInt(hex.substring(3, 5), 16);
-            int b = Integer.parseInt(hex.substring(5, 7), 16);
-            return new DeviceRgb(r, g, b);
-        } catch (NumberFormatException e) {
+    private DeviceRgb parseBrandColor(String hex) {
+        if (hex == null || !hex.matches("^#[0-9a-fA-F]{6}$")) {
             return DEFAULT_BRAND_COLOR;
         }
+        int r = Integer.parseInt(hex.substring(1, 3), 16);
+        int g = Integer.parseInt(hex.substring(3, 5), 16);
+        int b = Integer.parseInt(hex.substring(5, 7), 16);
+        return new DeviceRgb(r, g, b);
     }
 
     private Cell labeledCell(String label, String value,
                               com.itextpdf.kernel.font.PdfFont bold,
                               com.itextpdf.kernel.font.PdfFont regular) {
-        return new Cell().setBorder(com.itextpdf.layout.borders.Border.NO_BORDER)
+        return new Cell().setBorder(Border.NO_BORDER)
                 .add(new Paragraph(label).setFont(bold).setFontSize(9).setFontColor(ColorConstants.GRAY))
                 .add(new Paragraph(value).setFont(regular).setFontSize(10));
     }

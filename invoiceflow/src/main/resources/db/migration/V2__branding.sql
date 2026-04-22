@@ -1,3 +1,3 @@
-ALTER TABLE users
-    ADD COLUMN logo_url    VARCHAR(512),
-    ADD COLUMN brand_color CHAR(7);
+ALTER TABLE users ADD COLUMN brand_color VARCHAR(7);
+ALTER TABLE users ADD COLUMN logo_data  TEXT;
+ALTER TABLE users ADD COLUMN logo_mime  VARCHAR(50);

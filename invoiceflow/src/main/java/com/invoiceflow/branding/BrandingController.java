@@ -1,7 +1,6 @@
 package com.invoiceflow.branding;
 
 import com.invoiceflow.common.PlanLimitException;
-import com.invoiceflow.config.AppProperties;
 import com.invoiceflow.user.Plan;
 import com.invoiceflow.user.User;
 import com.invoiceflow.user.UserRepository;
@@ -13,10 +12,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.util.Base64;
 import java.util.Map;
 import java.util.Set;
 
@@ -24,95 +20,99 @@ import java.util.Set;
 @RequestMapping("/api/branding")
 public class BrandingController {
 
-    private static final Set<String> ALLOWED_MIME_TYPES = Set.of(
+    private static final Set<String> ALLOWED_TYPES =
+            Set.of("image/png", "image/jpeg", "image/gif", "image/webp");
+    private static final long MAX_LOGO_BYTES = 2L * 1024 * 1024; // 2 MB
+    private static final long MAX_LOGO_BYTES = 512 * 1024L; // 512 KB
+    private static final Set<String> ALLOWED_MIME = Set.of(
             "image/png", "image/jpeg", "image/gif", "image/webp");
-    private static final long MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
 
     private final UserRepository userRepository;
-    private final AppProperties props;
 
-    public BrandingController(UserRepository userRepository, AppProperties props) {
+    public BrandingController(UserRepository userRepository) {
         this.userRepository = userRepository;
-        this.props = props;
     }
 
-    public record BrandingRequest(
-            @Pattern(regexp = "^#[0-9A-Fa-f]{6}$", message = "brand_color must be a valid hex color (#RRGGBB)")
-            String brandColor) {}
+    public record BrandingResponse(String brandColor, boolean hasLogo) {}
 
-    public record BrandingResponse(String brandColor, String logoUrl) {}
+    public record ColorRequest(
+            @Pattern(regexp = "^#[0-9A-Fa-f]{6}$", message = "Brand color must be a hex value like #2563EB")
+            @Pattern(regexp = "^#[0-9a-fA-F]{6}$", message = "must be a 6-digit hex color, e.g. #2563EB")
+            String brandColor) {}
 
     @GetMapping
     public BrandingResponse get(@AuthenticationPrincipal User user) {
-        return new BrandingResponse(user.getBrandColor(), buildPublicLogoUrl(user));
+        return new BrandingResponse(user.getBrandColor(), user.getLogoData() != null);
     }
 
-    @PutMapping
-    public ResponseEntity<?> updateBrandColor(@AuthenticationPrincipal User user,
-                                               @Valid @RequestBody BrandingRequest req) {
-        requireProOrAbove(user);
+    @PutMapping("/color")
+    public ResponseEntity<?> updateColor(@AuthenticationPrincipal User user,
+                                         @Valid @RequestBody ColorRequest req) {
+        requireBrandingPlan(user);
         user.setBrandColor(req.brandColor());
         userRepository.save(user);
-        return ResponseEntity.ok(new BrandingResponse(user.getBrandColor(), buildPublicLogoUrl(user)));
+        return ResponseEntity.ok(new BrandingResponse(user.getBrandColor(), user.getLogoData() != null));
     }
 
     @PostMapping(value = "/logo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> uploadLogo(@AuthenticationPrincipal User user,
-                                         @RequestParam("file") MultipartFile file) {
-        requireProOrAbove(user);
+                                        @RequestParam("file") MultipartFile file) {
+        requireBrandingPlan(user);
 
-        String contentType = file.getContentType();
-        if (contentType == null || !ALLOWED_MIME_TYPES.contains(contentType)) {
-            return ResponseEntity.badRequest().body("Unsupported file type. Use PNG, JPEG, GIF, or WebP.");
+        if (file.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "File is empty"));
         }
         if (file.getSize() > MAX_LOGO_BYTES) {
-            return ResponseEntity.badRequest().body("Logo must be 2 MB or smaller.");
+            return ResponseEntity.badRequest().body(Map.of("error", "Logo must be 512 KB or smaller"));
         }
-
-        String ext = switch (contentType) {
-            case "image/png"  -> "png";
-            case "image/gif"  -> "gif";
-            case "image/webp" -> "webp";
-            default           -> "jpg";
-        };
-
-        String relativePath = "logos/" + user.getId() + "." + ext;
-        Path dest = Paths.get(props.getUploadsDir()).resolve(relativePath);
+        String mime = file.getContentType();
+        if (mime == null || !ALLOWED_MIME.contains(mime)) {
+            return ResponseEntity.badRequest().body(
+                    Map.of("error", "Unsupported file type. Use PNG, JPEG, GIF, or WebP"));
+        }
 
         try {
-            Files.createDirectories(dest.getParent());
-            file.transferTo(dest);
-        } catch (IOException e) {
-            return ResponseEntity.internalServerError().body("Failed to save logo: " + e.getMessage());
+            byte[] bytes = file.getBytes();
+            user.setLogoData(Base64.getEncoder().encodeToString(bytes));
+            user.setLogoMime(mime);
+            userRepository.save(user);
+            return ResponseEntity.ok(Map.of("hasLogo", true));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to store logo"));
         }
-
-        user.setLogoUrl(relativePath);
-        userRepository.save(user);
-
-        return ResponseEntity.ok(Map.of("logoUrl", buildPublicLogoUrl(user)));
     }
 
     @DeleteMapping("/logo")
-    public ResponseEntity<?> deleteLogo(@AuthenticationPrincipal User user) {
-        requireProOrAbove(user);
-        if (user.getLogoUrl() != null) {
-            try {
-                Files.deleteIfExists(Paths.get(props.getUploadsDir()).resolve(user.getLogoUrl()));
-            } catch (IOException ignored) {}
-            user.setLogoUrl(null);
-            userRepository.save(user);
-        }
-        return ResponseEntity.ok(new BrandingResponse(user.getBrandColor(), null));
+    public ResponseEntity<Void> deleteLogo(@AuthenticationPrincipal User user) {
+        requireBrandingPlan(user);
+        user.setLogoData(null);
+        user.setLogoMime(null);
+        userRepository.save(user);
+        return ResponseEntity.noContent().build();
     }
 
-    private void requireProOrAbove(User user) {
+    @GetMapping("/logo")
+    public ResponseEntity<byte[]> getLogo(@AuthenticationPrincipal User user) {
+        if (user.getLogoData() == null) {
+            return ResponseEntity.notFound().build();
+        }
+        byte[] bytes = Base64.getDecoder().decode(user.getLogoData());
+        MediaType mediaType = parseMediaType(user.getLogoMime());
+        return ResponseEntity.ok().contentType(mediaType).body(bytes);
+    }
+
+    private void requireBrandingPlan(User user) {
         if (user.getPlan() != Plan.PRO && user.getPlan() != Plan.AGENCY) {
-            throw new PlanLimitException("Custom branding requires a Pro or Agency plan.");
+            throw new PlanLimitException("Custom branding requires the Pro plan. Please upgrade.");
         }
     }
 
-    private String buildPublicLogoUrl(User user) {
-        if (user.getLogoUrl() == null) return null;
-        return props.getBaseUrl() + "/uploads/" + user.getLogoUrl();
+    private MediaType parseMediaType(String mime) {
+        if (mime == null) return MediaType.IMAGE_PNG;
+        return switch (mime) {
+            case "image/jpeg" -> MediaType.IMAGE_JPEG;
+            case "image/gif"  -> MediaType.IMAGE_GIF;
+            default           -> MediaType.IMAGE_PNG;
+        };
     }
 }
