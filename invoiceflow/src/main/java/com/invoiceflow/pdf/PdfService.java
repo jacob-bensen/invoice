@@ -1,20 +1,25 @@
 package com.invoiceflow.pdf;
 
+import com.invoiceflow.branding.UserLogoRepository;
 import com.invoiceflow.invoice.Invoice;
 import com.invoiceflow.invoice.LineItem;
+import com.invoiceflow.user.User;
+import com.itextpdf.io.image.ImageDataFactory;
 import com.itextpdf.kernel.colors.ColorConstants;
 import com.itextpdf.kernel.colors.DeviceRgb;
+import com.itextpdf.kernel.font.PdfFont;
 import com.itextpdf.kernel.font.PdfFontFactory;
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
+import com.itextpdf.layout.borders.Border;
+import com.itextpdf.layout.borders.SolidBorder;
 import com.itextpdf.layout.element.*;
 import com.itextpdf.layout.properties.TextAlignment;
 import com.itextpdf.layout.properties.UnitValue;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
-import java.math.BigDecimal;
 import java.text.NumberFormat;
 import java.util.Currency;
 import java.util.Locale;
@@ -22,7 +27,14 @@ import java.util.Locale;
 @Service
 public class PdfService {
 
-    private static final DeviceRgb BRAND_COLOR = new DeviceRgb(37, 99, 235); // blue-600
+    private static final DeviceRgb DEFAULT_BRAND_COLOR = new DeviceRgb(37, 99, 235);
+    private static final String FOOTER_TEXT = "Created with InvoiceFlow · invoiceflow.app";
+
+    private final UserLogoRepository userLogoRepository;
+
+    public PdfService(UserLogoRepository userLogoRepository) {
+        this.userLogoRepository = userLogoRepository;
+    }
 
     public byte[] generate(Invoice invoice) {
         try (var baos = new ByteArrayOutputStream()) {
@@ -30,16 +42,41 @@ public class PdfService {
             var pdf = new PdfDocument(writer);
             var doc = new Document(pdf);
 
+            User user = invoice.getUser();
+            DeviceRgb brandColor = resolveBrandColor(user);
+
             var boldFont = PdfFontFactory.createFont(
                     com.itextpdf.io.font.constants.StandardFonts.HELVETICA_BOLD);
             var regularFont = PdfFontFactory.createFont(
                     com.itextpdf.io.font.constants.StandardFonts.HELVETICA);
 
+            // Logo (Pro/Agency with custom branding only)
+            if (user.getPlan().customBranding) {
+                userLogoRepository.findById(user.getId()).ifPresent(logo -> {
+                    try {
+                        var imgData = ImageDataFactory.create(logo.getLogoData());
+                        var img = new Image(imgData);
+                        img.setMaxWidth(UnitValue.createPointValue(150));
+                        img.setMaxHeight(UnitValue.createPointValue(60));
+                        doc.add(img);
+                    } catch (Exception ignored) {}
+                });
+            }
+
             // Header
             doc.add(new Paragraph("INVOICE")
-                    .setFont(boldFont).setFontSize(28).setFontColor(BRAND_COLOR));
-            doc.add(new Paragraph("InvoiceFlow")
+                    .setFont(boldFont).setFontSize(28).setFontColor(brandColor));
+
+            String senderName = (user.getPlan().customBranding && user.getCompanyName() != null)
+                    ? user.getCompanyName() : user.getFullName();
+            doc.add(new Paragraph(senderName)
                     .setFont(regularFont).setFontSize(10).setFontColor(ColorConstants.GRAY));
+
+            if (user.getPlan().customBranding) {
+                addGrayLine(doc, user.getCompanyAddress(), regularFont);
+                addGrayLine(doc, user.getCompanyPhone(), regularFont);
+                addGrayLine(doc, user.getCompanyWebsite(), regularFont);
+            }
             doc.add(new Paragraph(" "));
 
             // Meta table
@@ -61,7 +98,7 @@ public class PdfService {
                     .setWidth(UnitValue.createPercentValue(100));
             for (String header : new String[]{"Description", "Qty", "Unit Price", "Total"}) {
                 table.addHeaderCell(new Cell()
-                        .setBackgroundColor(BRAND_COLOR)
+                        .setBackgroundColor(brandColor)
                         .add(new Paragraph(header).setFont(boldFont).setFontSize(10)
                                 .setFontColor(ColorConstants.WHITE)));
             }
@@ -85,12 +122,12 @@ public class PdfService {
             table.addCell(new Cell(1, 3)
                     .add(new Paragraph("TOTAL").setFont(boldFont).setFontSize(11))
                     .setTextAlignment(TextAlignment.RIGHT)
-                    .setBorderTop(new com.itextpdf.layout.borders.SolidBorder(BRAND_COLOR, 1.5f)));
+                    .setBorderTop(new SolidBorder(brandColor, 1.5f)));
             table.addCell(new Cell()
                     .add(new Paragraph(fmt.format(invoice.total())).setFont(boldFont).setFontSize(11)
-                            .setFontColor(BRAND_COLOR))
+                            .setFontColor(brandColor))
                     .setTextAlignment(TextAlignment.RIGHT)
-                    .setBorderTop(new com.itextpdf.layout.borders.SolidBorder(BRAND_COLOR, 1.5f)));
+                    .setBorderTop(new SolidBorder(brandColor, 1.5f)));
 
             doc.add(table);
 
@@ -103,7 +140,16 @@ public class PdfService {
             if (invoice.getStripePaymentLink() != null) {
                 doc.add(new Paragraph(" "));
                 doc.add(new Paragraph("Pay Online: " + invoice.getStripePaymentLink())
-                        .setFont(regularFont).setFontSize(9).setFontColor(BRAND_COLOR));
+                        .setFont(regularFont).setFontSize(9).setFontColor(brandColor));
+            }
+
+            // Branded footer on free/solo plans — passive acquisition touchpoint
+            if (!user.getPlan().customBranding) {
+                doc.add(new Paragraph(" "));
+                doc.add(new Paragraph(FOOTER_TEXT)
+                        .setFont(regularFont).setFontSize(8)
+                        .setFontColor(ColorConstants.LIGHT_GRAY)
+                        .setTextAlignment(TextAlignment.CENTER));
             }
 
             doc.close();
@@ -113,15 +159,32 @@ public class PdfService {
         }
     }
 
-    private Cell labeledCell(String label, String value,
-                              com.itextpdf.kernel.font.PdfFont bold,
-                              com.itextpdf.kernel.font.PdfFont regular) {
-        return new Cell().setBorder(com.itextpdf.layout.borders.Border.NO_BORDER)
+    private DeviceRgb resolveBrandColor(User user) {
+        if (user.getPlan().customBranding && user.getBrandColor() != null) {
+            try {
+                String hex = user.getBrandColor().replace("#", "");
+                int r = Integer.parseInt(hex.substring(0, 2), 16);
+                int g = Integer.parseInt(hex.substring(2, 4), 16);
+                int b = Integer.parseInt(hex.substring(4, 6), 16);
+                return new DeviceRgb(r, g, b);
+            } catch (Exception ignored) {}
+        }
+        return DEFAULT_BRAND_COLOR;
+    }
+
+    private void addGrayLine(Document doc, String value, PdfFont font) {
+        if (value != null && !value.isBlank()) {
+            doc.add(new Paragraph(value).setFont(font).setFontSize(9).setFontColor(ColorConstants.GRAY));
+        }
+    }
+
+    private Cell labeledCell(String label, String value, PdfFont bold, PdfFont regular) {
+        return new Cell().setBorder(Border.NO_BORDER)
                 .add(new Paragraph(label).setFont(bold).setFontSize(9).setFontColor(ColorConstants.GRAY))
                 .add(new Paragraph(value).setFont(regular).setFontSize(10));
     }
 
-    private Cell cell(String text, com.itextpdf.kernel.font.PdfFont font) {
+    private Cell cell(String text, PdfFont font) {
         return new Cell().add(new Paragraph(text).setFont(font).setFontSize(10));
     }
 }

@@ -111,3 +111,27 @@ Full Spring Boot 3 + PostgreSQL SaaS application for freelancer invoicing from s
 - Stripe handles billing autonomously; webhook syncs plan state with zero manual intervention
 - Automated reminder emails reduce time-to-payment without human input
 - PDF + email delivery makes the product immediately useful, driving activation and retention
+
+---
+
+## 2026-04-22 — P10: Custom Branding (Pro/Agency feature)
+
+### What was built
+Pro and Agency users can now fully white-label their invoices: upload a PNG/JPEG logo (stored in PostgreSQL as BYTEA), set a custom brand color (hex), and fill in company contact details. All branding fields appear in generated PDFs. Free/Solo users get a subtle "Created with InvoiceFlow" footer on every PDF — a zero-effort viral acquisition channel.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `db/migration/V2__branding.sql` | Adds `brand_color`, `company_name`, `company_address`, `company_phone`, `company_website` to `users`; creates `user_logos` table (BYTEA) |
+| `user/Plan.java` | Added `customBranding` boolean flag (true for PRO + AGENCY) |
+| `user/User.java` | Added 5 branding fields with getters/setters |
+| `branding/UserLogo.java` | New JPA entity for logo storage (shared PK via @MapsId) |
+| `branding/UserLogoRepository.java` | Spring Data repo for logo CRUD |
+| `branding/BrandingController.java` | 5 REST endpoints: GET/PUT branding settings, POST/DELETE/GET logo; plan-gated with 402 for non-Pro |
+| `pdf/PdfService.java` | Uses user's brand color + logo for Pro/Agency; renders company contact block; adds branded footer for free users |
+| `BrandingControllerTest.java` | 9 test cases covering defaults, plan gating, color validation, logo upload/retrieval/deletion, size + MIME type guards |
+
+### Why it matters for income
+- **Directly unlocks Pro upgrades**: custom branding is a tangible, visible reason to pay $19/mo
+- **Increases retention**: once a logo + color scheme is configured, switching to a competitor resets the setup
+- **Viral loop at zero cost**: every invoice sent by a free user carries the InvoiceFlow footer, exposing the brand to clients who may sign up

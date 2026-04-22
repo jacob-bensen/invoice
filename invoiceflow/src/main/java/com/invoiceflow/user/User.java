@@ -36,6 +36,21 @@ public class User {
     @Column(name = "sub_status", length = 20)
     private SubscriptionStatus subStatus;
 
+    @Column(name = "brand_color", length = 7)
+    private String brandColor = "#2563eb";
+
+    @Column(name = "company_name")
+    private String companyName;
+
+    @Column(name = "company_address")
+    private String companyAddress;
+
+    @Column(name = "company_phone", length = 50)
+    private String companyPhone;
+
+    @Column(name = "company_website")
+    private String companyWebsite;
+
     @Column(name = "created_at", updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -58,6 +73,16 @@ public class User {
     public void setStripeSubId(String stripeSubId) { this.stripeSubId = stripeSubId; }
     public SubscriptionStatus getSubStatus() { return subStatus; }
     public void setSubStatus(SubscriptionStatus subStatus) { this.subStatus = subStatus; }
+    public String getBrandColor() { return brandColor; }
+    public void setBrandColor(String brandColor) { this.brandColor = brandColor; }
+    public String getCompanyName() { return companyName; }
+    public void setCompanyName(String companyName) { this.companyName = companyName; }
+    public String getCompanyAddress() { return companyAddress; }
+    public void setCompanyAddress(String companyAddress) { this.companyAddress = companyAddress; }
+    public String getCompanyPhone() { return companyPhone; }
+    public void setCompanyPhone(String companyPhone) { this.companyPhone = companyPhone; }
+    public String getCompanyWebsite() { return companyWebsite; }
+    public void setCompanyWebsite(String companyWebsite) { this.companyWebsite = companyWebsite; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }
