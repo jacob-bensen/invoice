@@ -2,12 +2,16 @@ package com.invoiceflow.pdf;
 
 import com.invoiceflow.invoice.Invoice;
 import com.invoiceflow.invoice.LineItem;
+import com.invoiceflow.user.User;
+import com.itextpdf.io.image.ImageDataFactory;
 import com.itextpdf.kernel.colors.ColorConstants;
 import com.itextpdf.kernel.colors.DeviceRgb;
 import com.itextpdf.kernel.font.PdfFontFactory;
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
+import com.itextpdf.layout.borders.Border;
+import com.itextpdf.layout.borders.SolidBorder;
 import com.itextpdf.layout.element.*;
 import com.itextpdf.layout.properties.TextAlignment;
 import com.itextpdf.layout.properties.UnitValue;
@@ -22,24 +26,38 @@ import java.util.Locale;
 @Service
 public class PdfService {
 
-    private static final DeviceRgb BRAND_COLOR = new DeviceRgb(37, 99, 235); // blue-600
+    private static final DeviceRgb DEFAULT_COLOR = new DeviceRgb(37, 99, 235); // blue-600
 
     public byte[] generate(Invoice invoice) {
         try (var baos = new ByteArrayOutputStream()) {
             var writer = new PdfWriter(baos);
-            var pdf = new PdfDocument(writer);
-            var doc = new Document(pdf);
+            var pdf   = new PdfDocument(writer);
+            var doc   = new Document(pdf);
 
-            var boldFont = PdfFontFactory.createFont(
+            User user = invoice.getUser();
+            DeviceRgb brandColor = parseBrandColor(
+                    user.getPlan().customBranding ? user.getBrandColor() : null);
+
+            var boldFont    = PdfFontFactory.createFont(
                     com.itextpdf.io.font.constants.StandardFonts.HELVETICA_BOLD);
             var regularFont = PdfFontFactory.createFont(
                     com.itextpdf.io.font.constants.StandardFonts.HELVETICA);
 
-            // Header
-            doc.add(new Paragraph("INVOICE")
-                    .setFont(boldFont).setFontSize(28).setFontColor(BRAND_COLOR));
-            doc.add(new Paragraph("InvoiceFlow")
-                    .setFont(regularFont).setFontSize(10).setFontColor(ColorConstants.GRAY));
+            // Logo (Pro/Agency only — shown when uploaded)
+            if (user.getPlan().customBranding && user.getLogoData() != null) {
+                try {
+                    var imgData = ImageDataFactory.create(user.getLogoData());
+                    var logo    = new Image(imgData);
+                    logo.scaleToFit(160, 60);
+                    doc.add(logo);
+                } catch (Exception ignored) {
+                    // malformed image data — fall back to text header
+                    addTextHeader(doc, boldFont, regularFont, brandColor);
+                }
+            } else {
+                addTextHeader(doc, boldFont, regularFont, brandColor);
+            }
+
             doc.add(new Paragraph(" "));
 
             // Meta table
@@ -48,11 +66,14 @@ public class PdfService {
             meta.addCell(labeledCell("Invoice #", invoice.getInvoiceNumber(), boldFont, regularFont));
             meta.addCell(labeledCell("From", invoice.getUser().getFullName(), boldFont, regularFont));
             meta.addCell(labeledCell("Issue Date", invoice.getIssueDate().toString(), boldFont, regularFont));
-            meta.addCell(labeledCell("Bill To", invoice.getClient().getName()
-                    + (invoice.getClient().getCompany() != null ? "\n" + invoice.getClient().getCompany() : "")
-                    + "\n" + invoice.getClient().getEmail(), boldFont, regularFont));
+            meta.addCell(labeledCell("Bill To",
+                    invoice.getClient().getName()
+                            + (invoice.getClient().getCompany() != null
+                                    ? "\n" + invoice.getClient().getCompany() : "")
+                            + "\n" + invoice.getClient().getEmail(),
+                    boldFont, regularFont));
             meta.addCell(labeledCell("Due Date", invoice.getDueDate().toString(), boldFont, regularFont));
-            meta.addCell(new Cell().add(new Paragraph("")));
+            meta.addCell(new Cell().setBorder(Border.NO_BORDER).add(new Paragraph("")));
             doc.add(meta);
             doc.add(new Paragraph(" "));
 
@@ -61,8 +82,9 @@ public class PdfService {
                     .setWidth(UnitValue.createPercentValue(100));
             for (String header : new String[]{"Description", "Qty", "Unit Price", "Total"}) {
                 table.addHeaderCell(new Cell()
-                        .setBackgroundColor(BRAND_COLOR)
-                        .add(new Paragraph(header).setFont(boldFont).setFontSize(10)
+                        .setBackgroundColor(brandColor)
+                        .add(new Paragraph(header)
+                                .setFont(boldFont).setFontSize(10)
                                 .setFontColor(ColorConstants.WHITE)));
             }
 
@@ -85,12 +107,12 @@ public class PdfService {
             table.addCell(new Cell(1, 3)
                     .add(new Paragraph("TOTAL").setFont(boldFont).setFontSize(11))
                     .setTextAlignment(TextAlignment.RIGHT)
-                    .setBorderTop(new com.itextpdf.layout.borders.SolidBorder(BRAND_COLOR, 1.5f)));
+                    .setBorderTop(new SolidBorder(brandColor, 1.5f)));
             table.addCell(new Cell()
-                    .add(new Paragraph(fmt.format(invoice.total())).setFont(boldFont).setFontSize(11)
-                            .setFontColor(BRAND_COLOR))
+                    .add(new Paragraph(fmt.format(invoice.total()))
+                            .setFont(boldFont).setFontSize(11).setFontColor(brandColor))
                     .setTextAlignment(TextAlignment.RIGHT)
-                    .setBorderTop(new com.itextpdf.layout.borders.SolidBorder(BRAND_COLOR, 1.5f)));
+                    .setBorderTop(new SolidBorder(brandColor, 1.5f)));
 
             doc.add(table);
 
@@ -103,7 +125,14 @@ public class PdfService {
             if (invoice.getStripePaymentLink() != null) {
                 doc.add(new Paragraph(" "));
                 doc.add(new Paragraph("Pay Online: " + invoice.getStripePaymentLink())
-                        .setFont(regularFont).setFontSize(9).setFontColor(BRAND_COLOR));
+                        .setFont(regularFont).setFontSize(9).setFontColor(brandColor));
+            }
+
+            // Free-plan attribution footer
+            if (!user.getPlan().customBranding) {
+                doc.add(new Paragraph(" "));
+                doc.add(new Paragraph("Created with InvoiceFlow · invoiceflow.app/pricing?ref=pdf-footer")
+                        .setFont(regularFont).setFontSize(8).setFontColor(ColorConstants.GRAY));
             }
 
             doc.close();
@@ -113,10 +142,32 @@ public class PdfService {
         }
     }
 
+    // ---- helpers ----
+
+    private void addTextHeader(Document doc,
+                                com.itextpdf.kernel.font.PdfFont boldFont,
+                                com.itextpdf.kernel.font.PdfFont regularFont,
+                                DeviceRgb brandColor) throws Exception {
+        doc.add(new Paragraph("INVOICE")
+                .setFont(boldFont).setFontSize(28).setFontColor(brandColor));
+        doc.add(new Paragraph("InvoiceFlow")
+                .setFont(regularFont).setFontSize(10).setFontColor(ColorConstants.GRAY));
+    }
+
+    private DeviceRgb parseBrandColor(String hex) {
+        if (hex == null || !hex.matches("^#[0-9A-Fa-f]{6}$")) {
+            return DEFAULT_COLOR;
+        }
+        int r = Integer.parseInt(hex.substring(1, 3), 16);
+        int g = Integer.parseInt(hex.substring(3, 5), 16);
+        int b = Integer.parseInt(hex.substring(5, 7), 16);
+        return new DeviceRgb(r, g, b);
+    }
+
     private Cell labeledCell(String label, String value,
                               com.itextpdf.kernel.font.PdfFont bold,
                               com.itextpdf.kernel.font.PdfFont regular) {
-        return new Cell().setBorder(com.itextpdf.layout.borders.Border.NO_BORDER)
+        return new Cell().setBorder(Border.NO_BORDER)
                 .add(new Paragraph(label).setFont(bold).setFontSize(9).setFontColor(ColorConstants.GRAY))
                 .add(new Paragraph(value).setFont(regular).setFontSize(10));
     }

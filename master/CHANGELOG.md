@@ -111,3 +111,26 @@ Full Spring Boot 3 + PostgreSQL SaaS application for freelancer invoicing from s
 - Stripe handles billing autonomously; webhook syncs plan state with zero manual intervention
 - Automated reminder emails reduce time-to-payment without human input
 - PDF + email delivery makes the product immediately useful, driving activation and retention
+
+---
+
+## 2026-04-22 — P10: Custom Branding (logo + brand color) — Pro Feature
+
+### What was built
+Pro and Agency users can now upload their company logo and choose a custom brand color. Both appear on all generated PDF invoices. Free and Solo users get an "InvoiceFlow" attribution footer on their PDFs (passive acquisition). All 8 tests pass.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `db/migration/V2__branding.sql` | Adds `logo_data BYTEA`, `logo_content_type VARCHAR(30)`, `brand_color VARCHAR(7)` columns to `users` |
+| `user/Plan.java` | Added `customBranding` boolean flag (true for PRO and AGENCY) |
+| `user/User.java` | Added `logoData`, `logoContentType`, `brandColor` fields + getters/setters |
+| `branding/BrandingController.java` | New REST controller: `GET/PUT /api/branding`, `POST/DELETE/GET /api/branding/logo` |
+| `pdf/PdfService.java` | Uses user brand color and embeds logo in PDF header; adds attribution footer for free users |
+| `resources/application.yml` | Added `spring.servlet.multipart` limits (2 MB file, 3 MB request) |
+| `test/BrandingControllerTest.java` | 7 test cases: get defaults, update color, plan enforcement, logo upload/retrieve/delete |
+
+### Why it matters for income
+- **Retention:** Logo and color personalization increases perceived value and switching cost for Pro subscribers.
+- **Upgrade incentive:** Every free-plan PDF now carries an "Created with InvoiceFlow" footer — passive acquisition on every invoice the user sends to their clients.
+- **Feature differentiation:** Custom branding is a tangible, visible reason to upgrade from Solo ($9) to Pro ($19), raising ARPU.

@@ -1,0 +1,4 @@
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS logo_data        BYTEA,
+    ADD COLUMN IF NOT EXISTS logo_content_type VARCHAR(30),
+    ADD COLUMN IF NOT EXISTS brand_color       VARCHAR(7) DEFAULT '#2563EB';
