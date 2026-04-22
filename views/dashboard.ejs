@@ -1,0 +1,102 @@
+<%- include('partials/head') %>
+<%- include('partials/nav') %>
+
+<div class="max-w-5xl mx-auto px-4 py-10">
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">My Invoices</h1>
+      <p class="text-gray-500 text-sm mt-1">
+        <% if (user && user.plan === 'free') { %>
+          Free plan · <%= user.invoice_count || 0 %>/3 invoices used ·
+          <a href="/billing/upgrade" class="text-brand-600 hover:underline font-medium">Upgrade for unlimited</a>
+        <% } else { %>
+          Pro plan · Unlimited invoices
+        <% } %>
+      </p>
+    </div>
+    <a href="/invoices/new" class="bg-brand-600 text-white font-semibold px-5 py-2.5 rounded-lg hover:bg-brand-700 transition flex items-center gap-2">
+      + New Invoice
+    </a>
+  </div>
+
+  <% if (locals.flash) { %>
+    <div class="mb-6 p-3 rounded-lg text-sm <%= flash.type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200' %>">
+      <%= flash.message %>
+    </div>
+  <% } %>
+
+  <% if (invoices.length === 0) { %>
+    <!-- Empty state -->
+    <div class="bg-white rounded-2xl border border-gray-200 p-16 text-center">
+      <div class="text-5xl mb-4">📄</div>
+      <h2 class="text-lg font-semibold text-gray-700 mb-2">No invoices yet</h2>
+      <p class="text-gray-400 mb-6 text-sm">Create your first invoice and start getting paid.</p>
+      <a href="/invoices/new" class="bg-brand-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-brand-700 transition inline-block">
+        Create your first invoice
+      </a>
+    </div>
+  <% } else { %>
+    <!-- Stats -->
+    <%
+      const total = invoices.reduce((s, i) => s + parseFloat(i.total), 0);
+      const paid = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + parseFloat(i.total), 0);
+      const outstanding = invoices.filter(i => i.status !== 'paid').reduce((s, i) => s + parseFloat(i.total), 0);
+    %>
+    <div class="grid grid-cols-3 gap-4 mb-8">
+      <div class="bg-white rounded-xl border border-gray-200 p-5">
+        <p class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Total Invoiced</p>
+        <p class="text-2xl font-bold text-gray-900">$<%= total.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) %></p>
+      </div>
+      <div class="bg-white rounded-xl border border-gray-200 p-5">
+        <p class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Collected</p>
+        <p class="text-2xl font-bold text-green-600">$<%= paid.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) %></p>
+      </div>
+      <div class="bg-white rounded-xl border border-gray-200 p-5">
+        <p class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Outstanding</p>
+        <p class="text-2xl font-bold text-orange-500">$<%= outstanding.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) %></p>
+      </div>
+    </div>
+
+    <!-- Invoice table -->
+    <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th class="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Invoice</th>
+            <th class="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Client</th>
+            <th class="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
+            <th class="text-right px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
+            <th class="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          <% invoices.forEach(inv => { %>
+            <tr class="hover:bg-gray-50 cursor-pointer" onclick="window.location='/invoices/<%= inv.id %>'">
+              <td class="px-6 py-4 font-medium text-brand-600"><%= inv.invoice_number %></td>
+              <td class="px-6 py-4 text-gray-700"><%= inv.client_name %></td>
+              <td class="px-6 py-4 text-gray-500"><%= new Date(inv.issued_date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) %></td>
+              <td class="px-6 py-4 text-right font-semibold text-gray-900">$<%= parseFloat(inv.total).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) %></td>
+              <td class="px-6 py-4">
+                <%
+                  const statusColors = {
+                    draft: 'bg-gray-100 text-gray-600',
+                    sent: 'bg-blue-100 text-blue-700',
+                    paid: 'bg-green-100 text-green-700',
+                    overdue: 'bg-red-100 text-red-700'
+                  };
+                %>
+                <span class="inline-block text-xs font-semibold px-2.5 py-0.5 rounded-full <%= statusColors[inv.status] || 'bg-gray-100 text-gray-600' %>">
+                  <%= inv.status.charAt(0).toUpperCase() + inv.status.slice(1) %>
+                </span>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+</div>
+
+</body>
+</html>
