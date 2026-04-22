@@ -77,7 +77,7 @@ public class PdfService {
             var meta = new Table(UnitValue.createPercentArray(new float[]{1, 1}))
                     .setWidth(UnitValue.createPercentValue(100));
             meta.addCell(labeledCell("Invoice #", invoice.getInvoiceNumber(), boldFont, regularFont));
-            meta.addCell(labeledCell("From", invoice.getUser().getFullName(), boldFont, regularFont));
+            meta.addCell(labeledCell("From", user.getFullName(), boldFont, regularFont));
             meta.addCell(labeledCell("Issue Date", invoice.getIssueDate().toString(), boldFont, regularFont));
             meta.addCell(labeledCell("Bill To",
                     invoice.getClient().getName()
