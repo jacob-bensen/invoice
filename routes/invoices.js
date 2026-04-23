@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { db } = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { createInvoicePaymentLink } = require('../lib/stripe-payment-link');
 
 const router = express.Router();
 const FREE_LIMIT = 3;
@@ -21,11 +22,7 @@ router.get('/', requireAuth, async (req, res) => {
 router.get('/new', requireAuth, async (req, res) => {
   const user = await db.getUserById(req.session.user.id);
   if (user.plan === 'free' && user.invoice_count >= FREE_LIMIT) {
-    req.session.flash = {
-      type: 'error',
-      message: `You've reached the free plan limit of ${FREE_LIMIT} invoices. Upgrade to Pro for unlimited invoices.`
-    };
-    return res.redirect('/billing/upgrade');
+    return res.redirect('/invoices?limit_hit=1');
   }
   const invoiceNumber = await db.getNextInvoiceNumber(req.session.user.id);
   res.render('invoice-form', {
@@ -43,7 +40,7 @@ router.post('/new', requireAuth, [
 ], async (req, res) => {
   const user = await db.getUserById(req.session.user.id);
   if (user.plan === 'free' && user.invoice_count >= FREE_LIMIT) {
-    return res.redirect('/billing/upgrade');
+    return res.redirect('/invoices?limit_hit=1');
   }
 
   const errors = validationResult(req);
@@ -155,10 +152,27 @@ router.post('/:id/edit', requireAuth, async (req, res) => {
 
 router.post('/:id/status', requireAuth, async (req, res) => {
   try {
-    await db.updateInvoiceStatus(req.params.id, req.session.user.id, req.body.status);
-    req.session.flash = { type: 'success', message: `Invoice marked as ${req.body.status}.` };
+    const newStatus = req.body.status;
+    const updated = await db.updateInvoiceStatus(req.params.id, req.session.user.id, newStatus);
+
+    if (updated && newStatus === 'sent' && !updated.payment_link_url) {
+      const user = await db.getUserById(req.session.user.id);
+      if (user && (user.plan === 'pro' || user.plan === 'agency')) {
+        try {
+          const link = await createInvoicePaymentLink(updated, user);
+          if (link && link.url) {
+            await db.setInvoicePaymentLink(updated.id, user.id, link.url, link.id);
+          }
+        } catch (e) {
+          console.error('Payment Link creation failed:', e.message);
+        }
+      }
+    }
+
+    req.session.flash = { type: 'success', message: `Invoice marked as ${newStatus}.` };
     res.redirect(`/invoices/${req.params.id}`);
   } catch (err) {
+    console.error('Status update error:', err);
     res.redirect(`/invoices/${req.params.id}`);
   }
 });

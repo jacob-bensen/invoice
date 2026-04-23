@@ -11,6 +11,20 @@ router.get('/upgrade', requireAuth, (req, res) => {
   res.render('pricing', { title: 'Upgrade to Pro', flash });
 });
 
+function resolvePriceId(billingCycle) {
+  const cycle = billingCycle === 'annual' ? 'annual' : 'monthly';
+  if (cycle === 'annual') {
+    // Fall back to monthly price if annual is not configured yet, so the
+    // checkout flow never breaks for users who select annual before Master
+    // has created the Stripe price.
+    return {
+      cycle,
+      priceId: process.env.STRIPE_PRO_ANNUAL_PRICE_ID || process.env.STRIPE_PRO_PRICE_ID
+    };
+  }
+  return { cycle, priceId: process.env.STRIPE_PRO_PRICE_ID };
+}
+
 router.post('/create-checkout', requireAuth, async (req, res) => {
   try {
     const user = await db.getUserById(req.session.user.id);
@@ -26,14 +40,17 @@ router.post('/create-checkout', requireAuth, async (req, res) => {
       await db.updateUser(user.id, { stripe_customer_id: customerId });
     }
 
+    const { cycle, priceId } = resolvePriceId(req.body && req.body.billing_cycle);
+
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       payment_method_types: ['card'],
       line_items: [{
-        price: process.env.STRIPE_PRO_PRICE_ID,
+        price: priceId,
         quantity: 1
       }],
       mode: 'subscription',
+      metadata: { billing_cycle: cycle, user_id: String(user.id) },
       success_url: `${process.env.APP_URL}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.APP_URL}/billing/upgrade`
     });
@@ -93,6 +110,12 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
               plan: 'pro',
               stripe_subscription_id: session.subscription
             });
+          }
+        } else if (session.mode === 'payment' && session.payment_link) {
+          // Invoice Payment Link was paid — mark the invoice as paid.
+          const updated = await db.markInvoicePaidByPaymentLinkId(session.payment_link);
+          if (!updated) {
+            console.warn(`No invoice found for payment_link ${session.payment_link}`);
           }
         }
         break;

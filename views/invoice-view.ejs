@@ -28,6 +28,12 @@
 
   <!-- Action bar -->
   <div class="flex flex-wrap gap-3 mb-8">
+    <% if (invoice.payment_link_url && user.plan === 'pro') { %>
+      <a href="<%= invoice.payment_link_url %>" target="_blank" rel="noopener"
+        class="bg-green-600 text-white font-semibold px-5 py-2.5 rounded-lg hover:bg-green-700 transition flex items-center gap-2">
+        💳 Pay Now
+      </a>
+    <% } %>
     <a href="/invoices/<%= invoice.id %>/print" target="_blank"
       class="bg-brand-600 text-white font-semibold px-5 py-2.5 rounded-lg hover:bg-brand-700 transition flex items-center gap-2">
       🖨️ Print / Download PDF
@@ -147,6 +153,24 @@
         </div>
       </div>
     </div>
+
+    <!-- Payment Link (Pro) -->
+    <% if (invoice.payment_link_url && user.plan === 'pro') { %>
+      <div class="border-t border-gray-100 pt-6 mb-6" x-data="{ copied: false }">
+        <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Payment Link</p>
+        <p class="text-gray-500 text-sm mb-3">Send this secure Stripe link to your client so they can pay in one click.</p>
+        <div class="flex items-center gap-2">
+          <input type="text" readonly value="<%= invoice.payment_link_url %>"
+            class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-gray-50 font-mono" />
+          <button type="button"
+            @click="navigator.clipboard.writeText('<%= invoice.payment_link_url %>').then(() => { copied = true; setTimeout(() => copied = false, 2000); })"
+            class="border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-gray-50 transition text-sm">
+            <span x-show="!copied">Copy</span>
+            <span x-show="copied" class="text-green-600">Copied!</span>
+          </button>
+        </div>
+      </div>
+    <% } %>
 
     <!-- Notes -->
     <% if (invoice.notes) { %>

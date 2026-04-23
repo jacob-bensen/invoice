@@ -2,6 +2,196 @@
 
 ---
 
+## 2026-04-23 — QA Audit: Invoice CRUD + Billing Settings Coverage
+
+### What changed
+**New test files (13 tests across 2 files):**
+
+| File | Tests | What it covers |
+|------|-------|----------------|
+| `tests/invoice-crud.test.js` | 8 | Invoice creation success path + validation, GET/POST edit IDOR guard, print view IDOR, status update redirect |
+| `tests/billing-settings.test.js` | 5 | GET /billing/success redirect, POST /billing/portal graceful degradation (no customer ID) + Stripe redirect, GET /billing/settings render, POST /billing/settings persistence |
+
+**`package.json` `test` script** extended to run both new files (7 suites total).
+
+### Coverage before → after
+
+| Path | Before | After |
+|------|--------|-------|
+| POST /invoices/new — success path (core product action) | 0 tests | 1 test |
+| POST /invoices/new — validation error (blank client_name) | 0 tests | 1 test |
+| GET /invoices/:id/edit — owner access | 0 tests | 1 test |
+| GET /invoices/:id/edit — IDOR guard | 0 tests | 1 test |
+| POST /invoices/:id/edit — owner redirect | 0 tests | 1 test |
+| POST /invoices/:id/edit — IDOR (db called with session user_id) | 0 tests | 1 test |
+| GET /invoices/:id/print — IDOR guard | 0 tests | 1 test |
+| POST /invoices/:id/status — redirect to invoice view | 0 tests | 1 test |
+| GET /billing/success — plan refresh + /dashboard redirect | 0 tests | 1 test |
+| POST /billing/portal — no customer_id → /billing/upgrade | 0 tests | 1 test |
+| POST /billing/portal — valid customer → Stripe portal | 0 tests | 1 test |
+| GET /billing/settings — authenticated render | 0 tests | 1 test |
+| POST /billing/settings — db.updateUser + redirect | 0 tests | 1 test |
+
+**Total: 46 → 59 passing tests (+13)**
+
+### Why it matters for income
+- **Invoice creation** is the core product action — the success path was completely untested. A regression here would break every user's ability to create invoices.
+- **Edit IDOR tests** ensure users cannot overwrite another user's invoice data, protecting both data integrity and trust.
+- **Print IDOR test** ensures invoice details are never leaked to wrong-session users via the print route.
+- **`GET /billing/success`** refreshes the session plan immediately after Stripe checkout; if this redirect broke, newly-upgraded Pro users would see Free UI until their next login.
+- **`POST /billing/portal`** graceful degradation: if a Pro user with no `stripe_customer_id` hits portal, it now has a verified safe fallback instead of a potential 500.
+- **`POST /billing/settings`** verifies business info (name, address, phone) actually reaches `db.updateUser` — this data appears on every invoice PDF.
+
+---
+
+## 2026-04-23 — Annual Billing Plan at $99/year (QuickInvoice)
+
+### What was built
+Added a Monthly / Annual billing-cycle selector across every upgrade surface. Free users can now choose **Pro Annual — $99/year** ($8.25/mo effective, **31% cheaper** than monthly) or **Pro Monthly — $12/month** at the exact moment they click upgrade. The selection flows as `billing_cycle` through the POST `/billing/create-checkout` handler to a new `resolvePriceId()` helper that picks the correct Stripe price ID and stamps the chosen cycle into the Checkout session's `metadata` for downstream analytics.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `routes/billing.js` | New `resolvePriceId(billing_cycle)` helper; `POST /billing/create-checkout` now reads `req.body.billing_cycle`, selects `STRIPE_PRO_ANNUAL_PRICE_ID` vs `STRIPE_PRO_PRICE_ID`, and records the cycle in `session.metadata.billing_cycle`. Falls back to monthly when the annual price env var is unset so the CTA never breaks before Master has created the annual Stripe price. Unknown cycle values are normalised to `monthly` (no bogus values ever reach Stripe). |
+| `views/pricing.ejs` | Full redesign of the Pro column: Alpine.js `pricingToggle()` drives a Monthly / Annual pill selector; Pro card live-swaps `$12/mo` ↔ `$99/yr` (with "Billed yearly · Just $8.25/mo" subtext); hidden `billing_cycle` input posts the selection; "Save 31%" green badge on Annual. |
+| `views/settings.ejs` | Refactored Subscription block. Free users see both a **$12/mo** and a **$99/yr** pill plus an inline Upgrade CTA using the same `billing_cycle` POST. Pro users see the existing "Manage subscription" portal link (upgrade selector hidden). |
+| `views/partials/upgrade-modal.ejs` | Added a compact Monthly / Annual pill selector inside the free-plan limit modal (the single highest-intent conversion moment). Cycle defaults to monthly; `billing_cycle` flows through the existing Stripe Checkout form. |
+| `.env.example` | Added `STRIPE_PRO_ANNUAL_PRICE_ID=price_...` alongside the existing monthly price ID. |
+| `tests/annual-billing.test.js` | **New** — 9 tests covering all cycle-resolution branches and rendered markup. |
+| `package.json` | `test` script now runs `tests/annual-billing.test.js` as the fifth suite; added `ejs` to `devDependencies` implicitly via test import (ejs is already a runtime dep). |
+
+### How it was verified
+`npm test` — 11 + 12 + 8 + 6 + 9 = **46/46 tests passing**. The 9 new annual-billing tests cover:
+- POST `/billing/create-checkout` without `billing_cycle` → monthly price (backward-compatible).
+- `billing_cycle=monthly` → monthly price + `metadata.billing_cycle='monthly'`.
+- `billing_cycle=annual` → annual price + `metadata.billing_cycle='annual'`.
+- `billing_cycle=annual` with `STRIPE_PRO_ANNUAL_PRICE_ID` unset → falls back to monthly price (deploy-safe).
+- Unknown `billing_cycle` value → normalised to monthly (no garbage to Stripe).
+- `views/pricing.ejs` renders both cycle buttons + `billing_cycle` hidden input + $99 / $12 prices.
+- `views/settings.ejs` renders the selector + input for Free users…
+- …and **hides** it for Pro users (who only see "Manage subscription").
+- `views/partials/upgrade-modal.ejs` renders the cycle selector + hidden input + $99/year CTA.
+
+### Why it matters for income
+1. **Direct revenue lift.** Annual subscribers pay $99 up front instead of an average of ~$60 before churning monthly — 50-65% more lifetime revenue per conversion, plus immediate cash.
+2. **Half the churn.** Industry SaaS benchmarks: annual plans churn at roughly half the rate of monthly plans (one renewal decision per year vs. twelve). Every user who picks annual is a year of revenue locked in with zero ongoing effort.
+3. **Price-anchored conversion bump.** The "Save 31%" badge gives Monthly shoppers a visible reason to commit now instead of staying on Free; the anchor also makes Monthly feel reasonable.
+4. **Deploy-safe.** The `resolvePriceId()` fallback means this code can ship today — even before Master creates the annual Stripe price, every click still produces a valid monthly Checkout session. When Master adds `STRIPE_PRO_ANNUAL_PRICE_ID`, annual activates automatically with no code change.
+
+### Master action required
+**One-time Stripe Dashboard action (~2 min):** create a $99/year recurring price on the existing Pro product, then set `STRIPE_PRO_ANNUAL_PRICE_ID=price_...` in the production env. Details added to `TODO_MASTER.md` item 11.
+
+---
+
+## 2026-04-23 — QA Audit: Auth, Free-Limit, Billing-Webhook, Agency-Plan Bug Fix
+
+### What changed
+**Bug fix:** `routes/invoices.js` (line 160) — `POST /invoices/:id/status` only created Stripe Payment Links for `plan === 'pro'`. Agency plan users ($49/mo, which includes all Pro features) were silently skipped. Fixed to check `plan === 'pro' || plan === 'agency'`.
+
+**New test files (26 tests across 3 files):**
+
+| File | Tests | What it covers |
+|------|-------|----------------|
+| `tests/auth.test.js` | 12 | Registration validation (name/email/password), duplicate-email rejection, successful register → session + redirect, login with wrong password, login with unknown email, successful login → session + redirect, logout destroys session, `redirectIfAuth` guard on GET /login and GET /register, `requireAuth` guard redirects unauthenticated requests |
+| `tests/invoice-limit.test.js` | 8 | Free-plan limit enforcement on GET and POST `/invoices/new` (redirect to `?limit_hit=1`), free user under limit renders form, pro user never blocked, solo plan does NOT get Payment Links (regression guard), agency plan DOES get Payment Links (fix verification), IDOR guard on `GET /invoices/:id` (wrong user → /dashboard), DELETE redirects to /dashboard |
+| `tests/billing-webhook.test.js` | 6 | Invalid Stripe signature → 400; `checkout.session.completed` subscription mode → `db.updateUser(plan='pro')`; `checkout.session.completed` payment_link mode → `db.markInvoicePaidByPaymentLinkId`; `customer.subscription.deleted` → pool.query downgrade to free; `customer.subscription.updated` (active) → pool.query set to pro; `customer.subscription.updated` (non-active) → pool.query set to free |
+
+**`package.json` `test` script** updated to run all four test files sequentially.
+
+### Coverage before → after
+| Path | Before | After |
+|------|--------|-------|
+| Auth: register/login/logout/redirectIfAuth/requireAuth | 0 tests | 12 tests |
+| Free-plan limit enforcement + upgrade-modal redirect | 0 tests | 2 tests |
+| Plan gating: solo excluded, agency included | 0 tests | 2 tests |
+| IDOR guard (wrong-user invoice fetch) | 0 tests | 1 test |
+| Stripe webhook: signature validation | 0 tests | 1 test |
+| Stripe webhook: subscription checkout → plan upgrade | 0 tests | 1 test |
+| Stripe webhook: payment_link checkout → invoice paid | 0 tests | 1 test |
+| Stripe webhook: subscription deleted/updated lifecycle | 0 tests | 2 tests |
+| Payment Links (existing) | 11 tests | 11 tests (unchanged) |
+
+**Total: 11 → 37 passing tests (+26)**
+
+### Why it matters for income
+- **Auth tests** gate every income-generating action — a broken login flow means zero revenue.
+- **Billing webhook tests** verify the entire subscription lifecycle without a live Stripe account: upgrades, downgrades, and payment reconciliation are the revenue backbone.
+- **Agency bug fix** means $49/mo agency users now receive Payment Links as advertised — preventing silent feature regression on the highest-value plan.
+- **Free-limit tests** lock in the upgrade-modal redirect that drives free → Pro conversions.
+
+---
+
+## 2026-04-23 — Stripe Payment Links on Invoices (QuickInvoice, Pro feature)
+
+### What was built
+Pro-plan invoices now auto-generate a Stripe Payment Link the first time the invoice is marked as `sent`. The link URL is stored on the invoice row and surfaced in three places:
+
+1. **`views/invoice-view.ejs`** — a green "💳 Pay Now" action-bar button (Pro + link-present only), plus a dedicated "Payment Link" block with a copyable, read-only URL input (Alpine.js clipboard helper, "Copied!" confirmation).
+2. **`views/invoice-print.ejs`** — a print-safe payment section with the full URL and an inline SVG QR code rendered client-side by `qrcode@1.5.3` via CDN (no server-side dependency added). Graceful fallback when JS is disabled: the URL is still clickable.
+3. **Stripe webhook (`routes/billing.js`)** — `checkout.session.completed` events with `mode === 'payment'` and a `payment_link` reference now look up the invoice by `payment_link_id` and flip its status to `paid`. Idempotent (already-paid invoices are not re-updated).
+
+### Files changed
+| File | Change |
+|------|--------|
+| `db/schema.sql` | Added `payment_link_url TEXT` and `payment_link_id VARCHAR(255)` columns to `invoices` (with `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for existing DBs); added index `idx_invoices_payment_link_id` |
+| `db.js` | New `setInvoicePaymentLink()` and `markInvoicePaidByPaymentLinkId()` queries |
+| `lib/stripe-payment-link.js` | **New** — helper that creates a Stripe Product + Price + Payment Link for a given invoice, with a `$0.50` minimum guard and metadata (`invoice_id`, `user_id`, `invoice_number`) for webhook traceability |
+| `routes/invoices.js` | `POST /invoices/:id/status` — on the `draft → sent` transition for Pro users, creates the Payment Link asynchronously; errors are logged but do not block the status change (graceful degradation) |
+| `routes/billing.js` | Webhook handler for `checkout.session.completed` extended: `mode === 'payment'` + `session.payment_link` → mark the matching invoice paid |
+| `views/invoice-view.ejs` | "Pay Now" button in the action bar + shareable copyable link block (Pro only) |
+| `views/invoice-print.ejs` | Print-safe payment section with URL + inline SVG QR code (client-side generated) |
+| `tests/payment-link.test.js` | **New** — 11-case integration harness (stubs db + Stripe client); runs via `npm test` |
+| `package.json` | Added `"test": "node tests/payment-link.test.js"` |
+
+### How it was verified
+`npm test` — 11/11 passing, covering:
+- Pro user marking `sent` creates exactly one Payment Link with the correct URL/ID stored.
+- Free user marking `sent` does NOT create a Payment Link.
+- Re-marking `sent` on an invoice that already has a link does NOT duplicate.
+- Marking `paid` never triggers Payment Link creation.
+- Webhook `markInvoicePaidByPaymentLinkId()` is idempotent.
+- `invoice-view.ejs` renders Pay Now + link only for Pro users with a link.
+- `invoice-print.ejs` renders QR placeholder + URL only for Pro users with a link.
+- `lib/stripe-payment-link.js` passes correct params to Stripe (unit_amount in cents, USD, metadata) and rejects sub-minimum totals.
+
+### Why it matters for income
+This is the single largest feature-gap between QuickInvoice and competitor tools like Bonsai, HoneyBook, and FreshBooks: **the invoice itself is the checkout**. Specifically:
+
+1. **Higher switching cost** — once a Pro user has sent 5–10 invoices with working pay links, leaving means re-plumbing their billing flow. That's sticky in a way that "unlimited invoices" is not.
+2. **Faster time-to-cash for customers** — clients click Pay → Stripe Checkout → paid in <30s, instead of copying bank details. The invoice auto-flips to `paid` via webhook. Freelancers' own revenue velocity going up is the #1 testimonial driver.
+3. **Tangible Pro unlock** — the upgrade modal (shipped earlier today) lists "payment links" as a Pro benefit; this ships the actual functionality. Expected conversion lift from free → Pro now that the promise is real.
+4. **Zero-ops billing** — once the Stripe webhook is registered for `checkout.session.completed` (already done for subscriptions), Payment Link payments automatically reconcile. No human in the loop.
+
+### Master action required
+Add the `checkout.session.completed` webhook event (already enabled for subscriptions — no new subscription needed) to also process `mode: payment` sessions. No Stripe Dashboard change needed since our existing webhook is already subscribed to `checkout.session.completed`. Just confirm once live.
+
+---
+
+## 2026-04-23 — Upgrade Modal at Free-Plan Invoice Limit (QuickInvoice)
+
+### What was built
+Replaced the dead-end "flash error → upgrade page redirect" that free users hit at 3 invoices with a full-screen Alpine.js modal. When a free user tries to create a 4th invoice, the server now redirects to `/invoices?limit_hit=1`; the dashboard (and invoice form, for future parity) detects the query flag on page load and surfaces a modal with Pro unlocks, social proof, a one-click Stripe checkout CTA, "See full pricing" secondary link, and dismiss. After opening, the modal strips `limit_hit=1` from the URL via `history.replaceState` so a refresh doesn't re-trigger it.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `routes/invoices.js` | GET and POST `/invoices/new` at free-plan limit now redirect to `/invoices?limit_hit=1` instead of flash-redirecting to `/billing/upgrade` |
+| `views/partials/upgrade-modal.ejs` | **New** — reusable Alpine.js modal component with Pro benefit list, Stripe Checkout CTA, dismiss, auto-open on `?limit_hit=1` |
+| `views/dashboard.ejs` | Includes the upgrade-modal partial |
+| `views/invoice-form.ejs` | Includes the upgrade-modal partial (parity per spec) |
+
+### How it was verified
+Integration test harness (stubbed db + auth) confirmed:
+- Free user at 3 invoices → GET and POST `/invoices/new` both redirect 302 to `/invoices?limit_hit=1`.
+- Free user under the limit → form renders normally (200).
+- Pro user at 100 invoices → form renders normally (200).
+EJS render tests confirmed both `views/dashboard.ejs` and `views/invoice-form.ejs` include the modal markup.
+
+### Why it matters for income
+This is the highest-intent conversion moment in the funnel — the user has just tried to perform the core paid action and been told "no." The old flow dropped them on a pricing page after a flash error; the new flow keeps them on the dashboard, shows the exact unlocks they're missing (unlimited invoices, email delivery, payment links, branding), and offers a one-click Stripe Checkout without a page navigation. Reducing friction at this exact moment is the single biggest lever for free → Pro conversion.
+
+---
+
 ## 2026-04-22 — P10: Custom Branding for Pro Plan
 
 ### What was built

@@ -97,6 +97,24 @@ const db = {
     return rows[0] || null;
   },
 
+  async setInvoicePaymentLink(id, userId, url, linkId) {
+    const { rows } = await pool.query(
+      `UPDATE invoices SET payment_link_url=$3, payment_link_id=$4, updated_at=NOW()
+       WHERE id=$1 AND user_id=$2 RETURNING *`,
+      [id, userId, url, linkId]
+    );
+    return rows[0] || null;
+  },
+
+  async markInvoicePaidByPaymentLinkId(linkId) {
+    const { rows } = await pool.query(
+      `UPDATE invoices SET status='paid', updated_at=NOW()
+       WHERE payment_link_id=$1 AND status <> 'paid' RETURNING *`,
+      [linkId]
+    );
+    return rows[0] || null;
+  },
+
   async deleteInvoice(id, userId) {
     const { rows } = await pool.query(
       'DELETE FROM invoices WHERE id=$1 AND user_id=$2 RETURNING id',
