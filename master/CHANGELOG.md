@@ -2,6 +2,65 @@
 
 ---
 
+## 2026-04-23 — SEO Niche Landing Pages + Sitemap (QuickInvoice) [GROWTH]
+
+### What was built
+Implemented INTERNAL_TODO #8. Six new public landing pages targeting high-intent long-tail search queries — each with vertical-specific headline, benefits, example invoice, and FAQ — plus a machine-readable `/sitemap.xml` for Google / Bing ingestion. All six pages are logged-out-friendly (primary CTA points at `/auth/register`) but also render cleanly for logged-in users (nav partial reflects their session state).
+
+| URL | Target query | Audience |
+|-----|--------------|----------|
+| `/invoice-template/freelance-designer` | "invoice template freelance designer" | Designers |
+| `/invoice-template/freelance-developer` | "freelance developer invoice" | Developers |
+| `/invoice-template/freelance-writer` | "freelance writer invoice template" | Writers |
+| `/invoice-template/freelance-photographer` | "photographer invoice template" | Photographers |
+| `/invoice-template/consultant` | "consultant invoice template" | Consultants |
+| `/invoice-generator` | "free online invoice generator" (highest-volume) | All freelancers |
+
+### Files changed
+| File | Change |
+|------|--------|
+| `views/partials/lp-niche.ejs` | **New.** Shared landing-page template driven by slot variables (`nicheHeadline`, `nicheDescription`, `nicheSubheadline`, `nicheAudience`, `nicheSingular`, `nicheBenefits`, `nicheFaq`, `exampleInvoice`). Rendered layout: gradient hero → benefits grid → realistic sample invoice with line items + total → niche FAQ → CTA footer. Includes `partials/head.ejs` and `partials/nav.ejs` so nav + brand styling stay centralised. |
+| `routes/landing.js` | **New.** Single `NICHES` map is the source of truth: slug → {title, audience, headline, description, subheadline, benefits[], faq[], exampleInvoice}. Each slug auto-registers a GET route (5 under `/invoice-template/*`, 1 top-level `/invoice-generator`). Also exports `listNiches()` for the sitemap generator — one source of truth, no duplication. |
+| `server.js` | Mount `landingRoutes` and add `GET /sitemap.xml`. Sitemap uses `APP_URL` env var (falls back to request `Host` header) for canonical URLs; 9 `<url>` entries (3 core + 6 niche) each with `<lastmod>` / `<changefreq>weekly</changefreq>` / `<priority>`. |
+| `tests/landing.test.js` | **New — 15 tests.** |
+| `package.json` | `test` script appends `tests/landing.test.js` as the thirteenth suite. |
+
+### How it was verified
+`npm test` — **127/127 passing** (was 112; +15). `landing.test.js` covers:
+- All 6 niche routes return 200 with substantive HTML (>500 bytes).
+- Each niche carries a `/auth/register` CTA + "Create your first invoice" copy.
+- Each niche renders nav + QuickInvoice brand (partial plumbing works).
+- Every niche has a **unique** `<h1>` headline — guards against copy-paste regression.
+- Designer / developer / consultant pages contain audience-specific keywords in copy (minimum SEO signal).
+- `/invoice-generator` lives at the top-level (no `/invoice-template` prefix) since it's the highest-volume search term.
+- `/sitemap.xml` returns `application/xml` Content-Type, starts with `<?xml` declaration, uses the sitemap.org schema.
+- Sitemap includes every niche URL + the register page.
+- Every `<url>` entry carries a `<lastmod>` with an ISO date.
+- Unknown niche slug (`/invoice-template/not-a-real-niche`) hits the existing 404 → `/` redirect.
+- `listNiches()` exposes exactly the 6 expected slugs.
+- Direct EJS render of `lp-niche.ejs` with supplied locals (regression guard against template crashes).
+- Landing pages render correctly for **logged-in users** — nav partial reflects the Pro badge + Invoices/Settings links instead of "Get started free."
+
+Live smoke test: `node server.js` + `curl /invoice-template/freelance-designer`, `/invoice-generator`, and `/sitemap.xml` all return 200 and render expected content.
+
+All 112 pre-existing tests still pass — no touches on existing routes or views.
+
+### Why it matters for income
+1. **Compounding, zero-ad-spend acquisition.** SEO traffic is the cheapest customer acquisition channel in SaaS — once a page ranks on page 1 for "invoice template freelance developer" or "free invoice generator", it drives steady signups for months with zero ongoing work. Each of the 6 pages targets a distinct long-tail query with lower competition than the generic "invoice software" head term.
+2. **Intent-matched copy = higher conversion.** A designer landing on `/invoice-template/freelance-designer` sees an example invoice with line items like "Logo design — 3 concepts + 2 revisions" instead of generic placeholder copy. Intent-matched examples convert better than generic landing pages because the prospect sees their own use case reflected in the product.
+3. **Niche landing pages unlock tier-1 content marketing.** TODO_MASTER item 17 ("Tweet/LinkedIn Content Series") can now link directly to the relevant niche page instead of the generic root — better click-through, better conversion per tweet.
+4. **Sitemap accelerates indexing.** Google typically indexes new pages 3–14 days after sitemap submission vs. weeks–months for organic discovery. Master submits the sitemap once to Search Console and all 6 pages enter the crawl queue on day one.
+5. **Zero ongoing ops, zero trust risk.** All 6 routes are pure read-only EJS renders — no DB reads, no auth, no Stripe calls. A spike in traffic from a good Hacker News ranking costs nothing. No new env var is strictly required (the sitemap falls back to `Host` header) — but setting `APP_URL=https://yourdomain.com` on deploy gives canonical URLs.
+6. **One source of truth for SEO copy.** The `NICHES` map in `routes/landing.js` is the only place to edit niche copy — no string duplication between routes, sitemap, and partial. Adding a 7th niche is ~15 lines of map entry.
+
+### Master action required
+1. **Set `APP_URL` env var** on the deployed app (e.g. `APP_URL=https://yourdomain.com`) so sitemap entries carry the canonical production hostname. The feature works without it (falls back to request `Host` header), but a canonical `APP_URL` produces more reliable sitemap URLs behind proxies.
+2. **Submit `https://yourdomain.com/sitemap.xml` to Google Search Console** (and optionally Bing Webmaster Tools). Detailed instructions added to `TODO_MASTER.md` item 15. Indexing is asynchronous — expect measurable long-tail traffic within 30–60 days of submission.
+
+No DB migration, no Stripe change, no third-party account beyond Google Search Console (free).
+
+---
+
 ## 2026-04-23 — Zapier Outbound Webhook on Invoice Paid (QuickInvoice Pro) [GROWTH]
 
 ### What was built

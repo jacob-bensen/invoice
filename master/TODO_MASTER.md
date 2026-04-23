@@ -111,6 +111,37 @@ is safe to run against production (no-op on already-migrated DBs). No env var, n
 
 ---
 
+## 15. QuickInvoice: submit sitemap to Google Search Console (added 2026-04-23)
+The SEO niche landing pages feature (INTERNAL_TODO #8) is now live at:
+- `/invoice-template/freelance-designer`
+- `/invoice-template/freelance-developer`
+- `/invoice-template/freelance-writer`
+- `/invoice-template/freelance-photographer`
+- `/invoice-template/consultant`
+- `/invoice-generator`
+
+plus a machine-readable `/sitemap.xml`. To unlock organic search traffic:
+
+1. **Set `APP_URL` env var** on the deployed app so sitemap entries carry the canonical production hostname:
+   ```
+   APP_URL=https://yourdomain.com
+   ```
+   If unset, the sitemap falls back to the `Host` header from the incoming request (works but non-canonical if the app is behind a proxy).
+
+2. **Submit the sitemap to Google Search Console** (~5 min):
+   - Sign in at https://search.google.com/search-console
+   - Add and verify your domain property (DNS TXT record or HTML file)
+   - Left nav → **Sitemaps** → enter `sitemap.xml` → Submit
+   - Google typically indexes the listed URLs within 3–14 days
+
+3. **(Optional) Submit to Bing Webmaster Tools** at https://www.bing.com/webmasters — same process, covers ~5% of US search.
+
+4. **Verify before submitting:** open `https://yourdomain.com/sitemap.xml` in a browser — it should return XML with 9 `<url>` entries (6 niche + 3 core: `/`, `/auth/register`, `/auth/login`).
+
+No code change, no env var dependency for the pages themselves to work — only the sitemap's hostname benefits from `APP_URL`. Indexing is asynchronous; expect measurable long-tail traffic within 30–60 days of submission.
+
+---
+
 ## 13. InvoiceFlow: deploy V3 Flyway migration for recurring invoices (added 2026-04-23)
 The InvoiceFlow recurring-invoice feature (INTERNAL_TODO #6) adds migration `V3__recurring_invoices.sql`. On the **next deploy**, Flyway picks it up automatically — no manual action required. The migration adds four additive columns to the `invoices` table (`recurrence_frequency`, `recurrence_next_run`, `recurrence_active DEFAULT FALSE`, `recurrence_source_id`) plus two indexes. No data backfill, no downtime, and existing invoices behave exactly as before (`recurrence_active` defaults to FALSE).
 

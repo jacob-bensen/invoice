@@ -121,7 +121,7 @@ Replace the dead-end at the 3-invoice limit with a full-screen Alpine.js modal i
 
 ---
 
-### 8. [GROWTH] SEO Niche Landing Pages for Freelancer Verticals [M]
+### 8. [DONE 2026-04-23] [GROWTH] SEO Niche Landing Pages for Freelancer Verticals [M]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** MEDIUM–HIGH (long-term; compounds monthly with zero ad spend)
