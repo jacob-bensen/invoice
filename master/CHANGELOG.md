@@ -2,6 +2,48 @@
 
 ---
 
+## 2026-04-23 — QA Audit: Invoice CRUD + Billing Settings Coverage
+
+### What changed
+**New test files (13 tests across 2 files):**
+
+| File | Tests | What it covers |
+|------|-------|----------------|
+| `tests/invoice-crud.test.js` | 8 | Invoice creation success path + validation, GET/POST edit IDOR guard, print view IDOR, status update redirect |
+| `tests/billing-settings.test.js` | 5 | GET /billing/success redirect, POST /billing/portal graceful degradation (no customer ID) + Stripe redirect, GET /billing/settings render, POST /billing/settings persistence |
+
+**`package.json` `test` script** extended to run both new files (7 suites total).
+
+### Coverage before → after
+
+| Path | Before | After |
+|------|--------|-------|
+| POST /invoices/new — success path (core product action) | 0 tests | 1 test |
+| POST /invoices/new — validation error (blank client_name) | 0 tests | 1 test |
+| GET /invoices/:id/edit — owner access | 0 tests | 1 test |
+| GET /invoices/:id/edit — IDOR guard | 0 tests | 1 test |
+| POST /invoices/:id/edit — owner redirect | 0 tests | 1 test |
+| POST /invoices/:id/edit — IDOR (db called with session user_id) | 0 tests | 1 test |
+| GET /invoices/:id/print — IDOR guard | 0 tests | 1 test |
+| POST /invoices/:id/status — redirect to invoice view | 0 tests | 1 test |
+| GET /billing/success — plan refresh + /dashboard redirect | 0 tests | 1 test |
+| POST /billing/portal — no customer_id → /billing/upgrade | 0 tests | 1 test |
+| POST /billing/portal — valid customer → Stripe portal | 0 tests | 1 test |
+| GET /billing/settings — authenticated render | 0 tests | 1 test |
+| POST /billing/settings — db.updateUser + redirect | 0 tests | 1 test |
+
+**Total: 46 → 59 passing tests (+13)**
+
+### Why it matters for income
+- **Invoice creation** is the core product action — the success path was completely untested. A regression here would break every user's ability to create invoices.
+- **Edit IDOR tests** ensure users cannot overwrite another user's invoice data, protecting both data integrity and trust.
+- **Print IDOR test** ensures invoice details are never leaked to wrong-session users via the print route.
+- **`GET /billing/success`** refreshes the session plan immediately after Stripe checkout; if this redirect broke, newly-upgraded Pro users would see Free UI until their next login.
+- **`POST /billing/portal`** graceful degradation: if a Pro user with no `stripe_customer_id` hits portal, it now has a verified safe fallback instead of a potential 500.
+- **`POST /billing/settings`** verifies business info (name, address, phone) actually reaches `db.updateUser` — this data appears on every invoice PDF.
+
+---
+
 ## 2026-04-23 — Annual Billing Plan at $99/year (QuickInvoice)
 
 ### What was built
