@@ -25,7 +25,7 @@ Replace the dead-end at the 3-invoice limit with a full-screen Alpine.js modal i
 
 ---
 
-### 2. [GROWTH] Stripe Payment Links on Invoices (Pro Feature) [M]
+### 2. [DONE 2026-04-23] [GROWTH] Stripe Payment Links on Invoices (Pro Feature) [M]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** HIGH — turns product into a payment collection tool; dramatically raises switching cost

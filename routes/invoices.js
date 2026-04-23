@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { db } = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { createInvoicePaymentLink } = require('../lib/stripe-payment-link');
 
 const router = express.Router();
 const FREE_LIMIT = 3;
@@ -151,10 +152,27 @@ router.post('/:id/edit', requireAuth, async (req, res) => {
 
 router.post('/:id/status', requireAuth, async (req, res) => {
   try {
-    await db.updateInvoiceStatus(req.params.id, req.session.user.id, req.body.status);
-    req.session.flash = { type: 'success', message: `Invoice marked as ${req.body.status}.` };
+    const newStatus = req.body.status;
+    const updated = await db.updateInvoiceStatus(req.params.id, req.session.user.id, newStatus);
+
+    if (updated && newStatus === 'sent' && !updated.payment_link_url) {
+      const user = await db.getUserById(req.session.user.id);
+      if (user && user.plan === 'pro') {
+        try {
+          const link = await createInvoicePaymentLink(updated, user);
+          if (link && link.url) {
+            await db.setInvoicePaymentLink(updated.id, user.id, link.url, link.id);
+          }
+        } catch (e) {
+          console.error('Payment Link creation failed:', e.message);
+        }
+      }
+    }
+
+    req.session.flash = { type: 'success', message: `Invoice marked as ${newStatus}.` };
     res.redirect(`/invoices/${req.params.id}`);
   } catch (err) {
+    console.error('Status update error:', err);
     res.redirect(`/invoices/${req.params.id}`);
   }
 });

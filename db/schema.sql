@@ -33,9 +33,16 @@ CREATE TABLE IF NOT EXISTS invoices (
   status VARCHAR(20) DEFAULT 'draft' CHECK (status IN ('draft', 'sent', 'paid', 'overdue')),
   issued_date DATE DEFAULT CURRENT_DATE,
   due_date DATE,
+  payment_link_url TEXT,
+  payment_link_id VARCHAR(255),
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Idempotent migration for existing deployments
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_link_url TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_link_id VARCHAR(255);
+
 CREATE INDEX IF NOT EXISTS idx_invoices_user_id ON invoices(user_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
+CREATE INDEX IF NOT EXISTS idx_invoices_payment_link_id ON invoices(payment_link_id);

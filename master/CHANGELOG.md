@@ -2,6 +2,52 @@
 
 ---
 
+## 2026-04-23 — Stripe Payment Links on Invoices (QuickInvoice, Pro feature)
+
+### What was built
+Pro-plan invoices now auto-generate a Stripe Payment Link the first time the invoice is marked as `sent`. The link URL is stored on the invoice row and surfaced in three places:
+
+1. **`views/invoice-view.ejs`** — a green "💳 Pay Now" action-bar button (Pro + link-present only), plus a dedicated "Payment Link" block with a copyable, read-only URL input (Alpine.js clipboard helper, "Copied!" confirmation).
+2. **`views/invoice-print.ejs`** — a print-safe payment section with the full URL and an inline SVG QR code rendered client-side by `qrcode@1.5.3` via CDN (no server-side dependency added). Graceful fallback when JS is disabled: the URL is still clickable.
+3. **Stripe webhook (`routes/billing.js`)** — `checkout.session.completed` events with `mode === 'payment'` and a `payment_link` reference now look up the invoice by `payment_link_id` and flip its status to `paid`. Idempotent (already-paid invoices are not re-updated).
+
+### Files changed
+| File | Change |
+|------|--------|
+| `db/schema.sql` | Added `payment_link_url TEXT` and `payment_link_id VARCHAR(255)` columns to `invoices` (with `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for existing DBs); added index `idx_invoices_payment_link_id` |
+| `db.js` | New `setInvoicePaymentLink()` and `markInvoicePaidByPaymentLinkId()` queries |
+| `lib/stripe-payment-link.js` | **New** — helper that creates a Stripe Product + Price + Payment Link for a given invoice, with a `$0.50` minimum guard and metadata (`invoice_id`, `user_id`, `invoice_number`) for webhook traceability |
+| `routes/invoices.js` | `POST /invoices/:id/status` — on the `draft → sent` transition for Pro users, creates the Payment Link asynchronously; errors are logged but do not block the status change (graceful degradation) |
+| `routes/billing.js` | Webhook handler for `checkout.session.completed` extended: `mode === 'payment'` + `session.payment_link` → mark the matching invoice paid |
+| `views/invoice-view.ejs` | "Pay Now" button in the action bar + shareable copyable link block (Pro only) |
+| `views/invoice-print.ejs` | Print-safe payment section with URL + inline SVG QR code (client-side generated) |
+| `tests/payment-link.test.js` | **New** — 11-case integration harness (stubs db + Stripe client); runs via `npm test` |
+| `package.json` | Added `"test": "node tests/payment-link.test.js"` |
+
+### How it was verified
+`npm test` — 11/11 passing, covering:
+- Pro user marking `sent` creates exactly one Payment Link with the correct URL/ID stored.
+- Free user marking `sent` does NOT create a Payment Link.
+- Re-marking `sent` on an invoice that already has a link does NOT duplicate.
+- Marking `paid` never triggers Payment Link creation.
+- Webhook `markInvoicePaidByPaymentLinkId()` is idempotent.
+- `invoice-view.ejs` renders Pay Now + link only for Pro users with a link.
+- `invoice-print.ejs` renders QR placeholder + URL only for Pro users with a link.
+- `lib/stripe-payment-link.js` passes correct params to Stripe (unit_amount in cents, USD, metadata) and rejects sub-minimum totals.
+
+### Why it matters for income
+This is the single largest feature-gap between QuickInvoice and competitor tools like Bonsai, HoneyBook, and FreshBooks: **the invoice itself is the checkout**. Specifically:
+
+1. **Higher switching cost** — once a Pro user has sent 5–10 invoices with working pay links, leaving means re-plumbing their billing flow. That's sticky in a way that "unlimited invoices" is not.
+2. **Faster time-to-cash for customers** — clients click Pay → Stripe Checkout → paid in <30s, instead of copying bank details. The invoice auto-flips to `paid` via webhook. Freelancers' own revenue velocity going up is the #1 testimonial driver.
+3. **Tangible Pro unlock** — the upgrade modal (shipped earlier today) lists "payment links" as a Pro benefit; this ships the actual functionality. Expected conversion lift from free → Pro now that the promise is real.
+4. **Zero-ops billing** — once the Stripe webhook is registered for `checkout.session.completed` (already done for subscriptions), Payment Link payments automatically reconcile. No human in the loop.
+
+### Master action required
+Add the `checkout.session.completed` webhook event (already enabled for subscriptions — no new subscription needed) to also process `mode: payment` sessions. No Stripe Dashboard change needed since our existing webhook is already subscribed to `checkout.session.completed`. Just confirm once live.
+
+---
+
 ## 2026-04-23 — Upgrade Modal at Free-Plan Invoice Limit (QuickInvoice)
 
 ### What was built

@@ -94,6 +94,12 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
               stripe_subscription_id: session.subscription
             });
           }
+        } else if (session.mode === 'payment' && session.payment_link) {
+          // Invoice Payment Link was paid — mark the invoice as paid.
+          const updated = await db.markInvoicePaidByPaymentLinkId(session.payment_link);
+          if (!updated) {
+            console.warn(`No invoice found for payment_link ${session.payment_link}`);
+          }
         }
         break;
       }
