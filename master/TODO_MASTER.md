@@ -1,5 +1,9 @@
 # Actions Required from Master
 
+> **Audited:** 2026-04-23 — All items reviewed against CHANGELOG. Items 1–8 are human deployment/configuration actions; none are resolved by code commits. No items tagged [LIKELY DONE - verify]. Fixed numbering (item 8 was listed before item 7). Code for all P1–P10 features is complete; deployment is the only remaining blocker to revenue.
+
+---
+
 ## 1. Provision PostgreSQL database (~2 min)
 Create a PostgreSQL 15 database named `invoiceflow`. Then set env vars:
 ```
@@ -53,14 +57,14 @@ java -jar target/invoiceflow-0.0.1-SNAPSHOT.jar
 ```
 Or deploy the fat JAR to Heroku/Railway/Render with the env vars above.
 
+## 7. Register the Stripe webhook endpoint
+In Stripe Dashboard → Webhooks → Add endpoint:
+- URL: `https://yourdomain.com/api/stripe/webhook`
+- Events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `payment_link.payment_completed`
+
 ## 8. Set logo uploads directory (added 2026-04-22)
 Logo uploads are stored on the local filesystem. Set a persistent path (e.g., an attached volume on Heroku/Railway):
 ```
 UPLOADS_DIR=/var/data/invoiceflow-uploads
 ```
 If unset, defaults to `./uploads` relative to the working directory (not persistent across Heroku dyno restarts — use an attached volume or swap this for S3 in production).
-
-## 7. Register the Stripe webhook endpoint
-In Stripe Dashboard → Webhooks → Add endpoint:
-- URL: `https://yourdomain.com/api/stripe/webhook`
-- Events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `payment_link.payment_completed`
