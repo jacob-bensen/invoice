@@ -2,6 +2,69 @@
 
 ---
 
+## 2026-04-23 — Zapier Outbound Webhook on Invoice Paid (QuickInvoice Pro) [GROWTH]
+
+### What was built
+Implemented INTERNAL_TODO #7. Pro and Agency users can now paste any catch-hook URL (Zapier, Make, n8n, a custom Slack webhook, anything that accepts an HTTPS POST) into a new **Zapier / Webhook** section of `/billing/settings`. Every time an invoice is marked `paid` — whether manually from the invoice view or automatically by the Stripe Payment Link webhook — QuickInvoice fires an async JSON POST to that URL with a stable payload:
+
+```
+{
+  "event": "invoice.paid",
+  "invoice_id": 123,
+  "invoice_number": "INV-2026-0123",
+  "amount": 500,
+  "currency": "usd",
+  "client_name": "Acme Corp",
+  "client_email": "billing@acme.com",
+  "paid_at": "2026-04-23T14:30:00.000Z"
+}
+```
+
+The outbound POST is fire-and-forget: the user's redirect happens immediately, and any HTTP error (timeout, 5xx, DNS) is logged but never blocks the core status-change flow.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `db/schema.sql` | New `webhook_url TEXT` column on `users` (inline + idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`). |
+| `lib/outbound-webhook.js` | **New.** Thin module: `isValidWebhookUrl()` accepts only `http://` / `https://` (blocks `javascript:`, `ftp:`, etc.), `buildPaidPayload(invoice)` produces the documented JSON shape, `firePaidWebhook(url, payload, opts)` POSTs with a 5 s timeout and a `User-Agent: QuickInvoice-Webhook/1.0` header. `opts.httpClient` is injectable for tests. Never throws — returns `{ok, status}` or `{ok:false, reason}`. |
+| `routes/billing.js` | New `POST /billing/webhook-url` — Pro/Agency-gated. Validates the URL, persists via `db.updateUser`, or clears to NULL on empty submission. Webhook handler's `session.mode === 'payment'` branch now also fires the outbound webhook for the invoice's owner (so Stripe-paid invoices trigger the Zap just like manual status changes). |
+| `routes/invoices.js` | `POST /:id/status` — when `status='paid'` and the owner has a `webhook_url`, calls `firePaidWebhook()` asynchronously. Pro/Agency-gated at fire time (defence in depth: a downgraded user's saved URL does not fire). |
+| `views/settings.ejs` | New **Zapier / Webhook** card. Pro/Agency users see a live editable URL input with "✓ Webhook configured" confirmation and a collapsible `<details>` showing the exact payload shape. Free users see a locked placeholder with an "Upgrade to Pro →" CTA — turning the feature into yet another tangible Pro upgrade driver. |
+| `tests/webhook-outbound.test.js` | **New — 15 tests.** |
+| `package.json` | `test` script appends `tests/webhook-outbound.test.js` as the twelfth suite. |
+
+### How it was verified
+`npm test` — **97/97 passing** (was 82; +15). The new suite covers:
+- `isValidWebhookUrl`: accepts http/https, rejects `ftp:`, `javascript:alert(1)` (XSS guard), malformed strings, null/undefined.
+- `buildPaidPayload`: returns the documented event/invoice_id/amount/currency(defaults to `usd`)/client_name/client_email/paid_at shape.
+- `firePaidWebhook`: real-module test using an injected fake httpClient — verifies POST method, hostname, path, `Content-Type: application/json`, `User-Agent` header, and exact JSON body.
+- `firePaidWebhook`: returns `{ok:false, reason:'invalid_url'}` on a garbage URL, never throws.
+- `POST /billing/webhook-url`: Pro user persists the URL via `db.updateUser({webhook_url})`.
+- `POST /billing/webhook-url`: empty submission clears `webhook_url` to `null`.
+- `POST /billing/webhook-url`: malformed URL → NOT saved + error flash.
+- `POST /billing/webhook-url`: **Free user blocked** — no DB write, error flash redirects to /billing/settings.
+- `POST /invoices/:id/status=paid` (Pro + webhook_url): outbound fire triggered with exactly one call, correct URL, payload matches invoice data.
+- `POST /invoices/:id/status=paid` (Pro, no webhook_url): zero fires.
+- `POST /invoices/:id/status=paid` (Free with stale webhook_url on the row): **zero fires** — Pro gate enforced at fire time, not just at save time.
+- `POST /invoices/:id/status=sent`: zero paid-webhook fires (fire happens on `paid` transition only).
+- **Graceful-on-error:** outbound HTTP rejection does NOT block the redirect — invoice status still transitions to `paid`.
+- `settings.ejs` (Pro): renders editable form with existing URL prefilled.
+- `settings.ejs` (Free): renders upgrade-CTA placeholder; no form, no input.
+
+All 82 pre-existing tests still pass — in particular `payment-link.test.js` (status-transition flow) and `dunning.test.js` / `billing-webhook.test.js` (webhook routing). The outbound-webhook fire in the Stripe-payment-link branch is new but additive — the existing `markInvoicePaidByPaymentLinkId` path still runs unchanged.
+
+### Why it matters for income
+1. **High switching cost once integrated.** Zapier users typically wire a webhook into 2–5 downstream Zaps (accounting, Slack, spreadsheet, Trello, CRM). Once those Zaps are live, leaving QuickInvoice means reconfiguring all of them — the same "sticky" property as Payment Links, applied to a different surface.
+2. **Zero ongoing ops.** Fire-and-forget with a 5 s timeout; no retry queue, no worker process, no Redis. Ships with the next push; no new infra.
+3. **Delivers the "unblocks more tools" promise.** Pro users consistently ask "can I connect this to [X]?" The answer is now yes for any tool on Earth, because a generic outbound POST to the user's URL is the lowest-common-denominator integration.
+4. **Defence in depth on plan gating.** We gate at *save* (can't set the URL as Free) AND at *fire* (even if a row has one from a downgrade, Free plans never fire). Prevents a churned user from keeping the integration alive by side-loading a URL through some other path.
+5. **Zero trust risk.** URLs are validated through `new URL()` + protocol whitelist (http/https only) before persistence; `javascript:` and other dangerous schemes are explicitly rejected. User-Agent is identified. Payload contains no secrets.
+
+### Master action required
+**One-time idempotent migration on next deploy.** `db/schema.sql` adds `webhook_url TEXT` via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, so a fresh `psql $DATABASE_URL -f db/schema.sql` run against production is safe and a no-op on already-migrated DBs. No env var, no Stripe config, no third-party account required. See `TODO_MASTER.md` item 14.
+
+---
+
 ## 2026-04-23 — InvoiceFlow: Recurring-Invoice Auto-Generation (P12) [GROWTH]
 
 ### What was built

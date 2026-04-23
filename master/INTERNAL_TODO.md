@@ -106,7 +106,7 @@ Replace the dead-end at the 3-invoice limit with a full-screen Alpine.js modal i
 
 ---
 
-### 7. [GROWTH] Zapier Outbound Webhook on Invoice Paid (Pro Feature) [M]
+### 7. [DONE 2026-04-23] [GROWTH] Zapier Outbound Webhook on Invoice Paid (Pro Feature) [M]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** MEDIUM — high switching cost once a user has integrated with Zapier or Make

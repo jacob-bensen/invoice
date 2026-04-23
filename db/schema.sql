@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
   stripe_customer_id VARCHAR(255),
   stripe_subscription_id VARCHAR(255),
   subscription_status VARCHAR(20),
+  webhook_url TEXT,
   invoice_count INTEGER DEFAULT 0,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
@@ -44,6 +45,7 @@ CREATE TABLE IF NOT EXISTS invoices (
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_link_url TEXT;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_link_id VARCHAR(255);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status VARCHAR(20);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS webhook_url TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_invoices_user_id ON invoices(user_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);

@@ -2,6 +2,7 @@ const express = require('express');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { db, pool } = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { isValidWebhookUrl, firePaidWebhook, buildPaidPayload } = require('../lib/outbound-webhook');
 
 const router = express.Router();
 
@@ -116,6 +117,14 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           const updated = await db.markInvoicePaidByPaymentLinkId(session.payment_link);
           if (!updated) {
             console.warn(`No invoice found for payment_link ${session.payment_link}`);
+          } else {
+            // Fire the outbound Zapier-style webhook for Pro/Agency users.
+            const owner = await db.getUserById(updated.user_id);
+            if (owner && (owner.plan === 'pro' || owner.plan === 'agency') && owner.webhook_url) {
+              firePaidWebhook(owner.webhook_url, buildPaidPayload(updated))
+                .then(r => { if (!r.ok) console.warn(`webhook ${owner.webhook_url} failed:`, r.reason || r.status); })
+                .catch(e => console.error('Outbound webhook error:', e && e.message));
+            }
           }
         }
         break;
@@ -153,6 +162,34 @@ router.get('/settings', requireAuth, async (req, res) => {
   const flash = req.session.flash;
   delete req.session.flash;
   res.render('settings', { title: 'Account Settings', user, flash });
+});
+
+router.post('/webhook-url', requireAuth, async (req, res) => {
+  try {
+    const user = await db.getUserById(req.session.user.id);
+    if (!user || (user.plan !== 'pro' && user.plan !== 'agency')) {
+      req.session.flash = { type: 'error', message: 'Webhooks are a Pro feature. Upgrade to enable.' };
+      return res.redirect('/billing/settings');
+    }
+    const raw = (req.body && req.body.webhook_url) || '';
+    const trimmed = String(raw).trim();
+    if (trimmed.length === 0) {
+      await db.updateUser(user.id, { webhook_url: null });
+      req.session.flash = { type: 'success', message: 'Webhook removed.' };
+      return res.redirect('/billing/settings');
+    }
+    if (!isValidWebhookUrl(trimmed)) {
+      req.session.flash = { type: 'error', message: 'Webhook URL must be http:// or https://.' };
+      return res.redirect('/billing/settings');
+    }
+    await db.updateUser(user.id, { webhook_url: trimmed });
+    req.session.flash = { type: 'success', message: 'Webhook saved. We\'ll POST an event to this URL when any invoice is marked paid.' };
+    res.redirect('/billing/settings');
+  } catch (err) {
+    console.error('Webhook URL save error:', err);
+    req.session.flash = { type: 'error', message: 'Could not save webhook URL.' };
+    res.redirect('/billing/settings');
+  }
 });
 
 router.post('/settings', requireAuth, async (req, res) => {

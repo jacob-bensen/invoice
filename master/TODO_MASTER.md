@@ -98,6 +98,19 @@ psql $DATABASE_URL -f db/schema.sql
 
 **Verification:** create a test subscription, use Stripe's test card `4000 0000 0000 0341` (successful for subscription creation, fails on first renewal) to simulate a past_due state, and confirm the dashboard renders the red banner with an "Update payment method →" button that opens the Stripe Customer Portal.
 
+## 14. QuickInvoice: idempotent migration for `webhook_url` column (added 2026-04-23)
+The new Zapier outbound-webhook feature (INTERNAL_TODO #7) adds a single nullable `webhook_url TEXT` column to `users`. `db/schema.sql` includes an idempotent `ALTER TABLE users ADD COLUMN IF NOT EXISTS webhook_url TEXT;` statement, so:
+
+```bash
+psql $DATABASE_URL -f db/schema.sql
+```
+
+is safe to run against production (no-op on already-migrated DBs). No env var, no Stripe config, no Zapier/Make account required — this is a pure code feature. Users paste their own catch-hook URL into `/billing/settings`.
+
+**Verify after deploy (1 min):** log in as a Pro user, paste a test URL from https://webhook.site into the **Zapier / Webhook** section of `/billing/settings`, mark any invoice as paid, and confirm a POST with `event: "invoice.paid"` arrives at the webhook.site endpoint.
+
+---
+
 ## 13. InvoiceFlow: deploy V3 Flyway migration for recurring invoices (added 2026-04-23)
 The InvoiceFlow recurring-invoice feature (INTERNAL_TODO #6) adds migration `V3__recurring_invoices.sql`. On the **next deploy**, Flyway picks it up automatically — no manual action required. The migration adds four additive columns to the `invoices` table (`recurrence_frequency`, `recurrence_next_run`, `recurrence_active DEFAULT FALSE`, `recurrence_source_id`) plus two indexes. No data backfill, no downtime, and existing invoices behave exactly as before (`recurrence_active` defaults to FALSE).
 
