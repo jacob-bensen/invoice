@@ -3,19 +3,34 @@ const { body, validationResult } = require('express-validator');
 const { db } = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const { createInvoicePaymentLink } = require('../lib/stripe-payment-link');
+const { firePaidWebhook, buildPaidPayload } = require('../lib/outbound-webhook');
 
 const router = express.Router();
 const FREE_LIMIT = 3;
 
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const invoices = await db.getInvoicesByUser(req.session.user.id);
+    const [invoices, user] = await Promise.all([
+      db.getInvoicesByUser(req.session.user.id),
+      db.getUserById(req.session.user.id)
+    ]);
     const flash = req.session.flash;
     delete req.session.flash;
-    res.render('dashboard', { title: 'My Invoices', invoices, flash });
+    // Refresh session plan + subscription_status so the dashboard reflects
+    // any webhook-driven changes (e.g. Stripe flipping the user to past_due)
+    // without forcing the user to log out and back in.
+    if (user) {
+      req.session.user = {
+        ...req.session.user,
+        plan: user.plan,
+        subscription_status: user.subscription_status || null,
+        invoice_count: user.invoice_count
+      };
+    }
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash });
   } catch (err) {
     console.error(err);
-    res.render('dashboard', { title: 'My Invoices', invoices: [], flash: null });
+    res.render('dashboard', { title: 'My Invoices', invoices: [], user: req.session.user || null, flash: null });
   }
 });
 
@@ -166,6 +181,16 @@ router.post('/:id/status', requireAuth, async (req, res) => {
         } catch (e) {
           console.error('Payment Link creation failed:', e.message);
         }
+      }
+    }
+
+    if (updated && newStatus === 'paid') {
+      const user = await db.getUserById(req.session.user.id);
+      if (user && (user.plan === 'pro' || user.plan === 'agency') && user.webhook_url) {
+        // Fire and forget — do not block the response on the outbound HTTP call.
+        firePaidWebhook(user.webhook_url, buildPaidPayload(updated))
+          .then(r => { if (!r.ok) console.warn(`webhook ${user.webhook_url} failed:`, r.reason || r.status); })
+          .catch(e => console.error('Outbound webhook error:', e && e.message));
       }
     }
 

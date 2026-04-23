@@ -52,6 +52,19 @@ public class Invoice {
     @Column(name = "last_reminder_sent")
     private Instant lastReminderSent;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "recurrence_frequency", length = 20)
+    private RecurrenceFrequency recurrenceFrequency;
+
+    @Column(name = "recurrence_next_run")
+    private Instant recurrenceNextRun;
+
+    @Column(name = "recurrence_active", nullable = false)
+    private boolean recurrenceActive = false;
+
+    @Column(name = "recurrence_source_id")
+    private Long recurrenceSourceId;
+
     @OneToMany(mappedBy = "invoice", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("sortOrder ASC")
     private List<LineItem> lineItems = new ArrayList<>();
@@ -90,6 +103,14 @@ public class Invoice {
     public void setStripePaymentLink(String stripePaymentLink) { this.stripePaymentLink = stripePaymentLink; }
     public Instant getLastReminderSent() { return lastReminderSent; }
     public void setLastReminderSent(Instant lastReminderSent) { this.lastReminderSent = lastReminderSent; }
+    public RecurrenceFrequency getRecurrenceFrequency() { return recurrenceFrequency; }
+    public void setRecurrenceFrequency(RecurrenceFrequency recurrenceFrequency) { this.recurrenceFrequency = recurrenceFrequency; }
+    public Instant getRecurrenceNextRun() { return recurrenceNextRun; }
+    public void setRecurrenceNextRun(Instant recurrenceNextRun) { this.recurrenceNextRun = recurrenceNextRun; }
+    public boolean isRecurrenceActive() { return recurrenceActive; }
+    public void setRecurrenceActive(boolean recurrenceActive) { this.recurrenceActive = recurrenceActive; }
+    public Long getRecurrenceSourceId() { return recurrenceSourceId; }
+    public void setRecurrenceSourceId(Long recurrenceSourceId) { this.recurrenceSourceId = recurrenceSourceId; }
     public List<LineItem> getLineItems() { return lineItems; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

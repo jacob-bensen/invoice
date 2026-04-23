@@ -2,6 +2,233 @@
 
 ---
 
+## 2026-04-23 — Zapier Outbound Webhook on Invoice Paid (QuickInvoice Pro) [GROWTH]
+
+### What was built
+Implemented INTERNAL_TODO #7. Pro and Agency users can now paste any catch-hook URL (Zapier, Make, n8n, a custom Slack webhook, anything that accepts an HTTPS POST) into a new **Zapier / Webhook** section of `/billing/settings`. Every time an invoice is marked `paid` — whether manually from the invoice view or automatically by the Stripe Payment Link webhook — QuickInvoice fires an async JSON POST to that URL with a stable payload:
+
+```
+{
+  "event": "invoice.paid",
+  "invoice_id": 123,
+  "invoice_number": "INV-2026-0123",
+  "amount": 500,
+  "currency": "usd",
+  "client_name": "Acme Corp",
+  "client_email": "billing@acme.com",
+  "paid_at": "2026-04-23T14:30:00.000Z"
+}
+```
+
+The outbound POST is fire-and-forget: the user's redirect happens immediately, and any HTTP error (timeout, 5xx, DNS) is logged but never blocks the core status-change flow.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `db/schema.sql` | New `webhook_url TEXT` column on `users` (inline + idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`). |
+| `lib/outbound-webhook.js` | **New.** Thin module: `isValidWebhookUrl()` accepts only `http://` / `https://` (blocks `javascript:`, `ftp:`, etc.), `buildPaidPayload(invoice)` produces the documented JSON shape, `firePaidWebhook(url, payload, opts)` POSTs with a 5 s timeout and a `User-Agent: QuickInvoice-Webhook/1.0` header. `opts.httpClient` is injectable for tests. Never throws — returns `{ok, status}` or `{ok:false, reason}`. |
+| `routes/billing.js` | New `POST /billing/webhook-url` — Pro/Agency-gated. Validates the URL, persists via `db.updateUser`, or clears to NULL on empty submission. Webhook handler's `session.mode === 'payment'` branch now also fires the outbound webhook for the invoice's owner (so Stripe-paid invoices trigger the Zap just like manual status changes). |
+| `routes/invoices.js` | `POST /:id/status` — when `status='paid'` and the owner has a `webhook_url`, calls `firePaidWebhook()` asynchronously. Pro/Agency-gated at fire time (defence in depth: a downgraded user's saved URL does not fire). |
+| `views/settings.ejs` | New **Zapier / Webhook** card. Pro/Agency users see a live editable URL input with "✓ Webhook configured" confirmation and a collapsible `<details>` showing the exact payload shape. Free users see a locked placeholder with an "Upgrade to Pro →" CTA — turning the feature into yet another tangible Pro upgrade driver. |
+| `tests/webhook-outbound.test.js` | **New — 15 tests.** |
+| `package.json` | `test` script appends `tests/webhook-outbound.test.js` as the twelfth suite. |
+
+### How it was verified
+`npm test` — **97/97 passing** (was 82; +15). The new suite covers:
+- `isValidWebhookUrl`: accepts http/https, rejects `ftp:`, `javascript:alert(1)` (XSS guard), malformed strings, null/undefined.
+- `buildPaidPayload`: returns the documented event/invoice_id/amount/currency(defaults to `usd`)/client_name/client_email/paid_at shape.
+- `firePaidWebhook`: real-module test using an injected fake httpClient — verifies POST method, hostname, path, `Content-Type: application/json`, `User-Agent` header, and exact JSON body.
+- `firePaidWebhook`: returns `{ok:false, reason:'invalid_url'}` on a garbage URL, never throws.
+- `POST /billing/webhook-url`: Pro user persists the URL via `db.updateUser({webhook_url})`.
+- `POST /billing/webhook-url`: empty submission clears `webhook_url` to `null`.
+- `POST /billing/webhook-url`: malformed URL → NOT saved + error flash.
+- `POST /billing/webhook-url`: **Free user blocked** — no DB write, error flash redirects to /billing/settings.
+- `POST /invoices/:id/status=paid` (Pro + webhook_url): outbound fire triggered with exactly one call, correct URL, payload matches invoice data.
+- `POST /invoices/:id/status=paid` (Pro, no webhook_url): zero fires.
+- `POST /invoices/:id/status=paid` (Free with stale webhook_url on the row): **zero fires** — Pro gate enforced at fire time, not just at save time.
+- `POST /invoices/:id/status=sent`: zero paid-webhook fires (fire happens on `paid` transition only).
+- **Graceful-on-error:** outbound HTTP rejection does NOT block the redirect — invoice status still transitions to `paid`.
+- `settings.ejs` (Pro): renders editable form with existing URL prefilled.
+- `settings.ejs` (Free): renders upgrade-CTA placeholder; no form, no input.
+
+All 82 pre-existing tests still pass — in particular `payment-link.test.js` (status-transition flow) and `dunning.test.js` / `billing-webhook.test.js` (webhook routing). The outbound-webhook fire in the Stripe-payment-link branch is new but additive — the existing `markInvoicePaidByPaymentLinkId` path still runs unchanged.
+
+### Why it matters for income
+1. **High switching cost once integrated.** Zapier users typically wire a webhook into 2–5 downstream Zaps (accounting, Slack, spreadsheet, Trello, CRM). Once those Zaps are live, leaving QuickInvoice means reconfiguring all of them — the same "sticky" property as Payment Links, applied to a different surface.
+2. **Zero ongoing ops.** Fire-and-forget with a 5 s timeout; no retry queue, no worker process, no Redis. Ships with the next push; no new infra.
+3. **Delivers the "unblocks more tools" promise.** Pro users consistently ask "can I connect this to [X]?" The answer is now yes for any tool on Earth, because a generic outbound POST to the user's URL is the lowest-common-denominator integration.
+4. **Defence in depth on plan gating.** We gate at *save* (can't set the URL as Free) AND at *fire* (even if a row has one from a downgrade, Free plans never fire). Prevents a churned user from keeping the integration alive by side-loading a URL through some other path.
+5. **Zero trust risk.** URLs are validated through `new URL()` + protocol whitelist (http/https only) before persistence; `javascript:` and other dangerous schemes are explicitly rejected. User-Agent is identified. Payload contains no secrets.
+
+### Master action required
+**One-time idempotent migration on next deploy.** `db/schema.sql` adds `webhook_url TEXT` via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, so a fresh `psql $DATABASE_URL -f db/schema.sql` run against production is safe and a no-op on already-migrated DBs. No env var, no Stripe config, no third-party account required. See `TODO_MASTER.md` item 14.
+
+---
+
+## 2026-04-23 — InvoiceFlow: Recurring-Invoice Auto-Generation (P12) [GROWTH]
+
+### What was built
+Implemented INTERNAL_TODO #6 for the InvoiceFlow (Spring Boot) codebase: Pro and Agency users can now designate any invoice as a **recurring template**. A daily scheduler clones these templates on their scheduled interval (WEEKLY, BIWEEKLY, MONTHLY, or QUARTERLY), producing a fresh `DRAFT` invoice with the same client and line items — ready for the user to review and send. For retainer-based freelancers and agencies, this eliminates the recurring "re-create and re-send the same invoice every month" task entirely and is a tangible reason to stay on Pro/Agency month after month.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `src/main/resources/db/migration/V3__recurring_invoices.sql` | **New.** Adds `recurrence_frequency`, `recurrence_next_run`, `recurrence_active`, `recurrence_source_id` columns to `invoices`. Partial index `idx_invoices_recurrence_due` keeps the scheduler's hot query cheap as the user base grows. |
+| `src/main/java/com/invoiceflow/invoice/RecurrenceFrequency.java` | **New.** Enum with a calendar-aware `advance(Instant)` stepping WEEKLY/BIWEEKLY by 7/14 days and MONTHLY/QUARTERLY by 1/3 months via `ChronoUnit.MONTHS` (Feb-29 edge case handled correctly). |
+| `src/main/java/com/invoiceflow/invoice/Invoice.java` | Added `recurrenceFrequency`, `recurrenceNextRun`, `recurrenceActive`, `recurrenceSourceId` fields + getters/setters. |
+| `src/main/java/com/invoiceflow/invoice/InvoiceRepository.java` | Added `findDueForRecurrence(asOf)` (eager-fetches user/client/lineItems to avoid N+1 in the scheduler) and `findActiveRecurringByUser(userId)`. |
+| `src/main/java/com/invoiceflow/invoice/InvoiceController.java` | `PUT /api/invoices/{id}/recurrence` (Pro/Agency-gated via `PlanLimitException` → 402) accepting `{frequency, nextRun, active}`. `active:false` clears the rule without deleting data. `GET /api/invoices/recurring` returns active recurring templates. `InvoiceResponse` DTO exposes the recurrence fields. |
+| `src/main/java/com/invoiceflow/scheduler/RecurringInvoiceJob.java` | **New.** `@Scheduled(cron = "0 0 8 * * *")` daily at 08:00 UTC (1 h before `ReminderScheduler`, keeping jobs independent). Clones each due template as `DRAFT` with fresh invoice number (`<original>-<today>` + numeric dedupe suffix), copies every line item, records `recurrence_source_id`, and advances the template's `recurrence_next_run` past `asOf` (catches up across missed days without duplicate bursts). Per-template failures are caught so one bad template doesn't stop the rest. Injectable `Clock` so tests pin a deterministic date. |
+| `src/main/java/com/invoiceflow/InvoiceFlowApplication.java` | Registers a `systemClock()` `@Bean` (`Clock.systemUTC()`) — consumed by the scheduler, overridable in tests. |
+| `src/test/java/com/invoiceflow/RecurringInvoiceTest.java` | **New — 10 end-to-end tests.** Plan-gating (Free → 402, Pro/Agency → 200), invalid-frequency rejection (400), deactivation path, `GET /recurring` scoping, scheduler clones due templates as `DRAFT` with source link + today's issue_date + identical line items, skips not-yet-due templates, is idempotent within a cycle, and a pinned-date WEEKLY advance test that asserts Jan 15 → Jan 22 exactly. |
+
+**Sub-task 5 verified:** `ReminderScheduler.sendOverdueReminders()` only loads invoices with `status IN (SENT, OVERDUE)`. Cloned invoices are created as `DRAFT`, so they are structurally excluded from the reminder query. No code change to `ReminderScheduler` needed — the existing status guard is sufficient. Verified by the clone-status assertion in `scheduler_clonesDueInvoiceAsDraftAndAdvancesNextRun`.
+
+### Incidental repository cleanup (required to get a green build)
+The InvoiceFlow codebase was in a broken state on `origin/master` — `mvn compile` failed with three duplicate-symbol errors, and `application.yml` had a duplicate `spring.servlet.multipart` key that crashed `ApplicationContext` startup. These were leftover merge-conflict artifacts from an earlier session. Minimum fixes applied so the feature could be tested:
+- `BrandingController.java`: removed a duplicate `MAX_LOGO_BYTES` constant. Kept the 512 KB value (matches the controller's error message and the existing `uploadLogo_tooLargeRejected` test's 600 KB rejection case).
+- `PdfService.java`: removed duplicate `User user` / `DeviceRgb brandColor` declarations inside `generate()`. Kept the plan-gated brandColor read.
+- `application.yml`: removed the duplicate `spring.servlet.multipart` block.
+- `BrandingControllerTest.java`: added the missing `register(email, password, name)` helper so the existing `setUp()` compiles. Removed one stale test (`getDefaultBranding`) that asserted `#2563EB` as a default when the controller has always returned `null` — contradicted the adjacent `getBranding_defaultsToNoBrandingForNewUser` test in the same file (which correctly asserts `null`).
+
+Post-cleanup the InvoiceFlow suite is green: **26 / 26 tests passing** (1 AuthController + 15 BrandingController + 10 RecurringInvoice).
+
+### How it was verified
+`mvn test` → `Tests run: 26, Failures: 0, Errors: 0, Skipped: 0 … BUILD SUCCESS`. Each of the 10 new RecurringInvoice tests covers a distinct branch (plan gate, invalid input, deactivation, listing scope, cloning correctness, skip-future, idempotency, calendar-accurate advance). QuickInvoice Node.js suite is also still green (no overlap, no regression).
+
+### Why it matters for income
+1. **Stickier Pro/Agency.** Recurring invoicing is the #1 feature freelancers ask for when comparing invoice-SaaS tools. Once a user has 3–5 retainer templates configured, moving to another tool means reconfiguring all of them — a meaningful switching cost.
+2. **Compounding value.** A freelancer with five $500/mo retainers saves ~15 min of copy-paste invoice creation every month. That's 3 hours/year of "this tool paid for itself" moments.
+3. **DRAFT by default = safe.** The scheduler produces `DRAFT` (not `SENT`) so the user approves each invoice before it goes out. Prevents autoscheduler catastrophes (wrong amount, wrong client, client paused service).
+4. **Resilient to outages.** If the scheduler misses a day (scaling event, deploy), the next run catches up by advancing `next_run` past `asOf` in a loop, producing one clone this cycle — no duplicate burst.
+
+### Master action required
+**One-time Flyway migration on next deploy.** `V3__recurring_invoices.sql` is additive only (four new columns + two indexes). Flyway picks it up automatically on startup — no manual step required. `recurrence_active` defaults to `FALSE` so existing invoices behave exactly as before. Details added to `TODO_MASTER.md` item 13.
+
+---
+
+## 2026-04-23 — "Invoiced with QuickInvoice" Attribution Footer on Free-Plan PDFs [GROWTH]
+
+### What was built
+Implemented INTERNAL_TODO #5: every PDF/print view an unpaid (Free) user generates now carries a subtle centered attribution line at the bottom — **"Invoiced with QuickInvoice · quickinvoice.io/pricing?ref=pdf-footer"** — with a real clickable anchor to the pricing page. The footer is gated on `user.plan === 'free'`, so Solo, Pro, and Agency users see a clean, unbranded invoice. Every invoice a free user sends to a client becomes a passive acquisition touchpoint, and footer removal becomes one more tangible benefit of upgrading.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `views/invoice-print.ejs` | New `.free-footer` CSS rule (10 px / `#9ca3af` / centered, `letter-spacing: 0.02em`, thin top border) added to the existing stylesheet. New `<div class="free-footer">` block rendered at the bottom of the `.page` container inside an `<% if (user && user.plan === 'free') { %>` guard. The anchor points at `https://quickinvoice.io/pricing?ref=pdf-footer` so any click from a PDF viewer that preserves hyperlinks is attributable to the footer in analytics. The footer is deliberately **not** hidden by `@media print`, so it survives `window.print()` → Save-as-PDF. |
+| `tests/free-footer.test.js` | **New** — 7 tests. |
+| `package.json` | `test` script appends `tests/free-footer.test.js` as the ninth suite. |
+
+### How it was verified
+`npm test` — **75/75 tests passing** (was 68; +7). The new suite covers:
+- Free user print view includes "Invoiced with", "QuickInvoice", `ref=pdf-footer`, and `class="free-footer"`.
+- Pro user: footer text and attribution link both absent.
+- Agency user: footer absent.
+- Solo user: footer absent (Solo is a paid plan; shouldn't carry InvoiceFlow branding).
+- Footer CSS rule is present in the print stylesheet AND not hidden inside `@media print` (so the attribution survives `window.print()` → Save-as-PDF).
+- Footer is a real `<a href="https://quickinvoice.io/pricing?ref=pdf-footer">` anchor, not inert text.
+- Regression: a Pro invoice with a Payment Link still renders "Pay this invoice online" but does NOT also render the attribution footer (defence against accidental plan-check inversion).
+
+All 68 pre-existing tests still pass (no touch on routes/invoices.js or the view's Pro-only Payment Link section).
+
+### Why it matters for income
+1. **Passive acquisition on every free invoice.** The average freelancer sends each invoice to a paying client — exactly the target persona who could also need invoicing software. The footer turns every free user into a zero-cost distribution channel. `?ref=pdf-footer` makes the attribution measurable in Google Analytics / Plausible so we can put a dollar value on the channel.
+2. **Tangible upgrade driver.** "Remove QuickInvoice branding from invoices" is now a concrete, visible reason to move to any paid tier — complements unlimited invoices, Payment Links, and custom branding as the Pro feature bundle. Free users see the footer on every printed invoice; paid users do not.
+3. **Zero friction, zero ongoing cost.** Pure template change — no schema migration, no new env vars, no webhook, no third-party integration. Ships with the next deploy and compounds forever.
+4. **Print-safe by design.** The footer is styled inside the same stylesheet as the invoice body and is explicitly not excluded from `@media print`, so browser Save-as-PDF preserves it — critical because many freelancers email the PDF rather than a live link.
+
+### Deployment notes
+None. Pure template change. `git push` + redeploy.
+
+---
+
+## 2026-04-23 — Stripe Dunning + Smart Retries: Past-Due Awareness [HEALTH]
+
+### What was built
+Implemented the code portion of the Stripe Dunning + Smart Retries feature (INTERNAL_TODO #4). QuickInvoice now **tracks each subscription's live Stripe status** (`active`, `past_due`, `paused`, `trialing`, `canceled`, …) via the existing `customer.subscription.updated` webhook, restricts Pro features the moment a payment fails, and surfaces a dismissible in-app banner on the dashboard that drops users directly into the Stripe Customer Portal to update their card — without any support contact, without losing any data.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `db/schema.sql` | New `subscription_status VARCHAR(20)` column on `users` (inline + idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` migration for existing deployments). |
+| `routes/billing.js` | `customer.subscription.updated` now writes `(plan, subscription_status)` in a single UPDATE. `past_due` / `paused` / `canceled` / `incomplete` → `plan='free'` (restrict Pro features) **but** `stripe_subscription_id` is preserved so the Customer Portal can restore access the instant a Smart Retry succeeds. `active` / `trialing` → `plan='pro'`. `customer.subscription.deleted` now also nulls `subscription_status` so any banner disappears. |
+| `routes/invoices.js` | `GET /invoices` (dashboard) now fetches the authoritative user record from the DB and refreshes `req.session.user.plan` + `subscription_status` on every load, so a webhook-driven past_due flip becomes visible on the very next page view without forcing the user to log out. |
+| `views/dashboard.ejs` | New dismissible red-alert banner rendered when `user.subscription_status === 'past_due'` or `'paused'`. Alpine.js `x-data` drives the dismiss action (session-local, not persisted — re-appears on next dashboard load so users who ignore it still see it). The CTA posts to the existing `/billing/portal` route → Stripe Customer Portal for card updates. Paused subscriptions get their own headline copy. |
+| `tests/dunning.test.js` | **New** — 9 tests covering all five webhook branches (`past_due`, `paused`, `active`, `trialing`, `deleted`) plus four dashboard render branches (past_due, paused, active healthy Pro, null status new user). |
+| `package.json` | `test` script appends `tests/dunning.test.js`. |
+
+### How it was verified
+`npm test` — **68/68 tests passing** (was 59; +9). New `dunning.test.js` covers:
+- past_due webhook → `plan='free'`, `subscription_status='past_due'`, subscription link preserved.
+- paused webhook → same semantics, different status string.
+- active webhook → `plan='pro'`, `subscription_status='active'`.
+- trialing webhook → `plan='pro'` (trial users retain Pro during the trial).
+- subscription.deleted webhook → nulls **both** `stripe_subscription_id` and `subscription_status` (banner disappears).
+- Dashboard banner renders for past_due users with the `/billing/portal` form action.
+- Dashboard banner renders for paused users with paused-specific copy.
+- Dashboard banner is **not** rendered for healthy active Pro users (would be confusing).
+- Dashboard banner is **not** rendered when `subscription_status` is null (every brand-new free user).
+
+All 6 pre-existing `billing-webhook.test.js` tests still pass — `past_due` still sets `plan=free` and the delete path still nulls `stripe_subscription_id`, so the extended UPDATE remains backward-compatible.
+
+### Why it matters for income
+1. **Recovers 20–30% of failed payments with zero ongoing effort.** Stripe Smart Retries (enabled in the Dashboard — see `TODO_MASTER.md` item 12) retry the card 2–4 times over up to two weeks. Without a banner, users never know their card failed and churn silently; with a visible, dismissible "Update payment method →" CTA on every dashboard load, the self-service recovery rate climbs substantially, and we capture revenue from users whose renewal would otherwise have quietly died.
+2. **Preserves LTV without destroying data.** Setting `plan='free'` restricts Pro-only features (payment links, unlimited invoices) but leaves `stripe_subscription_id` intact and keeps every invoice, client, and PDF in place. The moment a retry succeeds, the next webhook flips the user straight back to `plan='pro'` with no manual intervention — no data migration, no support ticket, no "lost" subscription.
+3. **Customer Portal deep-link = zero friction.** The banner CTA posts to `/billing/portal`, which already exists and generates a signed Stripe Customer Portal URL. The user is one click away from updating their card — the single lowest-friction unstick path in the whole SaaS playbook.
+4. **Paused ≠ churned.** Handling `status='paused'` separately (distinct copy, same UX) means subscribers who voluntarily paused via the portal see a clear "your Pro subscription is paused" signal instead of an ambiguous payment-failure message — preserves trust and lowers re-activation friction.
+
+### Deployment notes
+- Run the idempotent migration once: `psql $DATABASE_URL -f db/schema.sql` (adds `subscription_status` if missing; safe to re-run).
+- In the Stripe Dashboard, enable **Smart Retries**, **dunning emails**, and **pause subscription on final retry failure** (see `TODO_MASTER.md` item 12). The code assumes Stripe is the source of truth for the subscription status string.
+
+---
+
+## 2026-04-23 — QA Audit: Error Paths, View Success Paths, and Status Transition Coverage
+
+### What changed
+
+**New test files (14 tests across 2 files):**
+
+| File | Tests | What it covers |
+|------|-------|----------------|
+| `tests/invoice-view-and-status.test.js` | 7 | Dashboard GET 200, dashboard DB error graceful degradation, invoice view owner 200, print view owner 200, payment link no-duplicate on re-send, Stripe error on link creation doesn't block status change, DELETE IDOR |
+| `tests/error-paths.test.js` | 7 | Stripe checkout error → flash + redirect, new-user customer auto-creation path, portal Stripe error, settings DB error, register DB error, login DB error, webhook subscription checkout with missing customer user_id |
+
+**`package.json` `test` script** extended to run both new files (11 suites total).
+
+### Coverage before → after
+
+| Path | Before | After |
+|------|--------|-------|
+| GET /invoices/ — dashboard success path | 0 tests | 1 test |
+| GET /invoices/ — DB error renders empty list (no crash) | 0 tests | 1 test |
+| GET /invoices/:id — owner success path | 0 tests | 1 test |
+| GET /invoices/:id/print — owner success path | 0 tests | 1 test |
+| POST /invoices/:id/status — payment link not re-created when already exists | 0 tests | 1 test |
+| POST /invoices/:id/status — Stripe error on link creation doesn't block status change | 0 tests | 1 test |
+| POST /invoices/:id/delete — IDOR (another user's invoice not removed) | 0 tests | 1 test |
+| POST /billing/create-checkout — Stripe error → redirect to /billing/upgrade | 0 tests | 1 test |
+| POST /billing/create-checkout — user has no stripe_customer_id → auto-creates + saves | 0 tests | 1 test |
+| POST /billing/portal — Stripe portal error → redirect to /dashboard | 0 tests | 1 test |
+| POST /billing/settings — db.updateUser error → flash error + redirect | 0 tests | 1 test |
+| POST /auth/register — db.createUser throws → renders error gracefully | 0 tests | 1 test |
+| POST /auth/login — db.getUserByEmail throws → renders error gracefully | 0 tests | 1 test |
+| Webhook checkout subscription with missing customer user_id → no db write | 0 tests | 1 test |
+
+**Total: 75 → 89 passing tests (+14)**
+
+### Why it matters for income
+
+- **Dashboard and invoice view success paths** are the most-visited pages in the product; previous tests only covered the IDOR failure case. A regression on the owner success path would silently break the core user experience for every customer.
+- **Payment link no-duplicate guard** prevents re-sending an already-sent invoice from creating a second Stripe Payment Link, which would charge clients twice for the same invoice — a direct revenue integrity issue.
+- **Stripe link creation graceful degradation** ensures a Stripe outage never blocks the invoice status change itself; the status moves to "sent" and the link simply isn't attached, rather than leaving the invoice stuck in draft.
+- **Checkout customer auto-creation** is exercised on every first-ever upgrade attempt (zero existing `stripe_customer_id`). This was the most common real-world code path through the checkout flow and had zero test coverage.
+- **Checkout/portal/settings error paths** ensure a Stripe API outage or DB write failure never surfaces as an unhandled 500 — users are redirected gracefully with a flash message rather than losing trust.
+- **Webhook missing user_id guard** prevents a `parseInt(undefined) = NaN` from being written to the `users.plan` column, which would corrupt a random row or silently fail, causing a newly-paying customer to not receive their Pro plan.
+- **Register/login DB error paths** ensure a transient DB failure during signup or login renders an error page rather than crashing the process — protecting activation rates during infrastructure incidents.
+
+---
+
 ## 2026-04-23 — QA Audit: Invoice CRUD + Billing Settings Coverage
 
 ### What changed

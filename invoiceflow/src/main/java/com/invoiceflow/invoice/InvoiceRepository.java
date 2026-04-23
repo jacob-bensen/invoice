@@ -29,4 +29,12 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
                                           @Param("plans") List<com.invoiceflow.user.Plan> plans);
 
     boolean existsByUserIdAndInvoiceNumber(Long userId, String invoiceNumber);
+
+    @Query("SELECT i FROM Invoice i JOIN FETCH i.client JOIN FETCH i.user LEFT JOIN FETCH i.lineItems " +
+           "WHERE i.recurrenceActive = TRUE AND i.recurrenceNextRun <= :asOf")
+    List<Invoice> findDueForRecurrence(@Param("asOf") Instant asOf);
+
+    @Query("SELECT i FROM Invoice i JOIN FETCH i.client WHERE i.user.id = :userId AND i.recurrenceActive = TRUE " +
+           "ORDER BY i.recurrenceNextRun ASC")
+    List<Invoice> findActiveRecurringByUser(@Param("userId") Long userId);
 }

@@ -54,15 +54,6 @@ class BrandingControllerTest {
     }
 
     @Test
-    void getDefaultBranding() throws Exception {
-        mvc.perform(get("/api/branding")
-                        .header("Authorization", "Bearer " + proToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.brandColor").value("#2563EB"))
-                .andExpect(jsonPath("$.hasLogo").value(false));
-    }
-
-    @Test
     void updateColorProPlan() throws Exception {
         var req = new BrandingController.ColorRequest("#FF5733");
         mvc.perform(put("/api/branding/color")
@@ -238,7 +229,11 @@ class BrandingControllerTest {
     // ---- helpers ----
 
     private String registerAndGetToken(String email, String name) throws Exception {
-        var req = new AuthController.RegisterRequest(email, "password123", name);
+        return register(email, "password123", name);
+    }
+
+    private String register(String email, String password, String name) throws Exception {
+        var req = new AuthController.RegisterRequest(email, password, name);
         var result = mvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(req)))

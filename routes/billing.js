@@ -2,6 +2,7 @@ const express = require('express');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { db, pool } = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { isValidWebhookUrl, firePaidWebhook, buildPaidPayload } = require('../lib/outbound-webhook');
 
 const router = express.Router();
 
@@ -116,6 +117,14 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           const updated = await db.markInvoicePaidByPaymentLinkId(session.payment_link);
           if (!updated) {
             console.warn(`No invoice found for payment_link ${session.payment_link}`);
+          } else {
+            // Fire the outbound Zapier-style webhook for Pro/Agency users.
+            const owner = await db.getUserById(updated.user_id);
+            if (owner && (owner.plan === 'pro' || owner.plan === 'agency') && owner.webhook_url) {
+              firePaidWebhook(owner.webhook_url, buildPaidPayload(updated))
+                .then(r => { if (!r.ok) console.warn(`webhook ${owner.webhook_url} failed:`, r.reason || r.status); })
+                .catch(e => console.error('Outbound webhook error:', e && e.message));
+            }
           }
         }
         break;
@@ -123,17 +132,20 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
       case 'customer.subscription.deleted': {
         const sub = event.data.object;
         const { rows } = await pool.query(
-          'UPDATE users SET plan=$1, stripe_subscription_id=NULL WHERE stripe_subscription_id=$2',
+          'UPDATE users SET plan=$1, stripe_subscription_id=NULL, subscription_status=NULL WHERE stripe_subscription_id=$2',
           ['free', sub.id]
         );
         break;
       }
       case 'customer.subscription.updated': {
         const sub = event.data.object;
-        const plan = sub.status === 'active' ? 'pro' : 'free';
+        // Dunning + Smart Retries: past_due and paused restrict Pro features
+        // without destroying the user's subscription link, so the Customer
+        // Portal can restore them the moment a retry succeeds.
+        const plan = sub.status === 'active' || sub.status === 'trialing' ? 'pro' : 'free';
         await pool.query(
-          'UPDATE users SET plan=$1 WHERE stripe_subscription_id=$2',
-          [plan, sub.id]
+          'UPDATE users SET plan=$1, subscription_status=$3 WHERE stripe_subscription_id=$2',
+          [plan, sub.id, sub.status]
         );
         break;
       }
@@ -150,6 +162,34 @@ router.get('/settings', requireAuth, async (req, res) => {
   const flash = req.session.flash;
   delete req.session.flash;
   res.render('settings', { title: 'Account Settings', user, flash });
+});
+
+router.post('/webhook-url', requireAuth, async (req, res) => {
+  try {
+    const user = await db.getUserById(req.session.user.id);
+    if (!user || (user.plan !== 'pro' && user.plan !== 'agency')) {
+      req.session.flash = { type: 'error', message: 'Webhooks are a Pro feature. Upgrade to enable.' };
+      return res.redirect('/billing/settings');
+    }
+    const raw = (req.body && req.body.webhook_url) || '';
+    const trimmed = String(raw).trim();
+    if (trimmed.length === 0) {
+      await db.updateUser(user.id, { webhook_url: null });
+      req.session.flash = { type: 'success', message: 'Webhook removed.' };
+      return res.redirect('/billing/settings');
+    }
+    if (!isValidWebhookUrl(trimmed)) {
+      req.session.flash = { type: 'error', message: 'Webhook URL must be http:// or https://.' };
+      return res.redirect('/billing/settings');
+    }
+    await db.updateUser(user.id, { webhook_url: trimmed });
+    req.session.flash = { type: 'success', message: 'Webhook saved. We\'ll POST an event to this URL when any invoice is marked paid.' };
+    res.redirect('/billing/settings');
+  } catch (err) {
+    console.error('Webhook URL save error:', err);
+    req.session.flash = { type: 'error', message: 'Could not save webhook URL.' };
+    res.redirect('/billing/settings');
+  }
 });
 
 router.post('/settings', requireAuth, async (req, res) => {

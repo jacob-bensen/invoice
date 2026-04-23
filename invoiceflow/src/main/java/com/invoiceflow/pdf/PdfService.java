@@ -35,17 +35,14 @@ public class PdfService {
 
     public byte[] generate(Invoice invoice) {
         User user = invoice.getUser();
-        DeviceRgb brandColor = parseBrandColor(user.getBrandColor());
         boolean hasBranding = user.getPlan() == Plan.PRO || user.getPlan() == Plan.AGENCY;
+        DeviceRgb brandColor = parseBrandColor(
+                user.getPlan().customBranding ? user.getBrandColor() : null);
 
         try (var baos = new ByteArrayOutputStream()) {
             var writer = new PdfWriter(baos);
             var pdf   = new PdfDocument(writer);
             var doc   = new Document(pdf);
-
-            User user = invoice.getUser();
-            DeviceRgb brandColor = parseBrandColor(
-                    user.getPlan().customBranding ? user.getBrandColor() : null);
 
             var boldFont    = PdfFontFactory.createFont(
                     com.itextpdf.io.font.constants.StandardFonts.HELVETICA_BOLD);
