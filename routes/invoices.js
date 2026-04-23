@@ -157,7 +157,7 @@ router.post('/:id/status', requireAuth, async (req, res) => {
 
     if (updated && newStatus === 'sent' && !updated.payment_link_url) {
       const user = await db.getUserById(req.session.user.id);
-      if (user && user.plan === 'pro') {
+      if (user && (user.plan === 'pro' || user.plan === 'agency')) {
         try {
           const link = await createInvoicePaymentLink(updated, user);
           if (link && link.url) {

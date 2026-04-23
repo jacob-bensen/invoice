@@ -2,6 +2,44 @@
 
 ---
 
+## 2026-04-23 — QA Audit: Auth, Free-Limit, Billing-Webhook, Agency-Plan Bug Fix
+
+### What changed
+**Bug fix:** `routes/invoices.js` (line 160) — `POST /invoices/:id/status` only created Stripe Payment Links for `plan === 'pro'`. Agency plan users ($49/mo, which includes all Pro features) were silently skipped. Fixed to check `plan === 'pro' || plan === 'agency'`.
+
+**New test files (26 tests across 3 files):**
+
+| File | Tests | What it covers |
+|------|-------|----------------|
+| `tests/auth.test.js` | 12 | Registration validation (name/email/password), duplicate-email rejection, successful register → session + redirect, login with wrong password, login with unknown email, successful login → session + redirect, logout destroys session, `redirectIfAuth` guard on GET /login and GET /register, `requireAuth` guard redirects unauthenticated requests |
+| `tests/invoice-limit.test.js` | 8 | Free-plan limit enforcement on GET and POST `/invoices/new` (redirect to `?limit_hit=1`), free user under limit renders form, pro user never blocked, solo plan does NOT get Payment Links (regression guard), agency plan DOES get Payment Links (fix verification), IDOR guard on `GET /invoices/:id` (wrong user → /dashboard), DELETE redirects to /dashboard |
+| `tests/billing-webhook.test.js` | 6 | Invalid Stripe signature → 400; `checkout.session.completed` subscription mode → `db.updateUser(plan='pro')`; `checkout.session.completed` payment_link mode → `db.markInvoicePaidByPaymentLinkId`; `customer.subscription.deleted` → pool.query downgrade to free; `customer.subscription.updated` (active) → pool.query set to pro; `customer.subscription.updated` (non-active) → pool.query set to free |
+
+**`package.json` `test` script** updated to run all four test files sequentially.
+
+### Coverage before → after
+| Path | Before | After |
+|------|--------|-------|
+| Auth: register/login/logout/redirectIfAuth/requireAuth | 0 tests | 12 tests |
+| Free-plan limit enforcement + upgrade-modal redirect | 0 tests | 2 tests |
+| Plan gating: solo excluded, agency included | 0 tests | 2 tests |
+| IDOR guard (wrong-user invoice fetch) | 0 tests | 1 test |
+| Stripe webhook: signature validation | 0 tests | 1 test |
+| Stripe webhook: subscription checkout → plan upgrade | 0 tests | 1 test |
+| Stripe webhook: payment_link checkout → invoice paid | 0 tests | 1 test |
+| Stripe webhook: subscription deleted/updated lifecycle | 0 tests | 2 tests |
+| Payment Links (existing) | 11 tests | 11 tests (unchanged) |
+
+**Total: 11 → 37 passing tests (+26)**
+
+### Why it matters for income
+- **Auth tests** gate every income-generating action — a broken login flow means zero revenue.
+- **Billing webhook tests** verify the entire subscription lifecycle without a live Stripe account: upgrades, downgrades, and payment reconciliation are the revenue backbone.
+- **Agency bug fix** means $49/mo agency users now receive Payment Links as advertised — preventing silent feature regression on the highest-value plan.
+- **Free-limit tests** lock in the upgrade-modal redirect that drives free → Pro conversions.
+
+---
+
 ## 2026-04-23 — Stripe Payment Links on Invoices (QuickInvoice, Pro feature)
 
 ### What was built
