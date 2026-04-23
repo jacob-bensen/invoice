@@ -120,6 +120,52 @@ All 6 pre-existing `billing-webhook.test.js` tests still pass — `past_due` sti
 
 ---
 
+## 2026-04-23 — QA Audit: Error Paths, View Success Paths, and Status Transition Coverage
+
+### What changed
+
+**New test files (14 tests across 2 files):**
+
+| File | Tests | What it covers |
+|------|-------|----------------|
+| `tests/invoice-view-and-status.test.js` | 7 | Dashboard GET 200, dashboard DB error graceful degradation, invoice view owner 200, print view owner 200, payment link no-duplicate on re-send, Stripe error on link creation doesn't block status change, DELETE IDOR |
+| `tests/error-paths.test.js` | 7 | Stripe checkout error → flash + redirect, new-user customer auto-creation path, portal Stripe error, settings DB error, register DB error, login DB error, webhook subscription checkout with missing customer user_id |
+
+**`package.json` `test` script** extended to run both new files (11 suites total).
+
+### Coverage before → after
+
+| Path | Before | After |
+|------|--------|-------|
+| GET /invoices/ — dashboard success path | 0 tests | 1 test |
+| GET /invoices/ — DB error renders empty list (no crash) | 0 tests | 1 test |
+| GET /invoices/:id — owner success path | 0 tests | 1 test |
+| GET /invoices/:id/print — owner success path | 0 tests | 1 test |
+| POST /invoices/:id/status — payment link not re-created when already exists | 0 tests | 1 test |
+| POST /invoices/:id/status — Stripe error on link creation doesn't block status change | 0 tests | 1 test |
+| POST /invoices/:id/delete — IDOR (another user's invoice not removed) | 0 tests | 1 test |
+| POST /billing/create-checkout — Stripe error → redirect to /billing/upgrade | 0 tests | 1 test |
+| POST /billing/create-checkout — user has no stripe_customer_id → auto-creates + saves | 0 tests | 1 test |
+| POST /billing/portal — Stripe portal error → redirect to /dashboard | 0 tests | 1 test |
+| POST /billing/settings — db.updateUser error → flash error + redirect | 0 tests | 1 test |
+| POST /auth/register — db.createUser throws → renders error gracefully | 0 tests | 1 test |
+| POST /auth/login — db.getUserByEmail throws → renders error gracefully | 0 tests | 1 test |
+| Webhook checkout subscription with missing customer user_id → no db write | 0 tests | 1 test |
+
+**Total: 75 → 89 passing tests (+14)**
+
+### Why it matters for income
+
+- **Dashboard and invoice view success paths** are the most-visited pages in the product; previous tests only covered the IDOR failure case. A regression on the owner success path would silently break the core user experience for every customer.
+- **Payment link no-duplicate guard** prevents re-sending an already-sent invoice from creating a second Stripe Payment Link, which would charge clients twice for the same invoice — a direct revenue integrity issue.
+- **Stripe link creation graceful degradation** ensures a Stripe outage never blocks the invoice status change itself; the status moves to "sent" and the link simply isn't attached, rather than leaving the invoice stuck in draft.
+- **Checkout customer auto-creation** is exercised on every first-ever upgrade attempt (zero existing `stripe_customer_id`). This was the most common real-world code path through the checkout flow and had zero test coverage.
+- **Checkout/portal/settings error paths** ensure a Stripe API outage or DB write failure never surfaces as an unhandled 500 — users are redirected gracefully with a flash message rather than losing trust.
+- **Webhook missing user_id guard** prevents a `parseInt(undefined) = NaN` from being written to the `users.plan` column, which would corrupt a random row or silently fail, causing a newly-paying customer to not receive their Pro plan.
+- **Register/login DB error paths** ensure a transient DB failure during signup or login renders an error page rather than crashing the process — protecting activation rates during infrastructure incidents.
+
+---
+
 ## 2026-04-23 — QA Audit: Invoice CRUD + Billing Settings Coverage
 
 ### What changed
