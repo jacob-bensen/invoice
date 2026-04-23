@@ -246,6 +246,70 @@ A new daily scheduler runs at **08:00 UTC** (`@Scheduled(cron = "0 0 8 * * *")`)
 
 ---
 
+### 18. [MARKETING] Launch an Affiliate / Partner Program
+
+**Impact:** HIGH — referred users convert at 3–5× the rate of cold traffic and churn at half the rate; a 20–30% recurring commission offer is extremely attractive to freelancer bloggers, YouTubers, and newsletter authors who already have the target audience; this is a compounding, zero-upfront-cost acquisition channel
+**Action:**
+1. Sign up for **Rewardful** (rewardful.com, $49/mo Starter — free 14-day trial). It integrates directly with Stripe and tracks affiliate-referred checkouts automatically via a UTM parameter.
+2. Set commission to **25% recurring** (this is the standard for SaaS affiliate programs at this price point; at $12/mo Pro, an affiliate earns $3/mo per referral indefinitely — a strong enough incentive for micro-influencers).
+3. Create a public affiliate landing page at `/affiliates` on the site (or use Rewardful's hosted page). Copy: "Earn 25% recurring revenue for every freelancer you refer to QuickInvoice. Most affiliates earn $50–$500/mo."
+4. Reach out directly to 10 target affiliates with a templated email. Prioritize:
+   - **Freelancer newsletters:** Freelance Weekly (freelanceweekly.email), Swipe Files, The Freelance Folder, Elna Cain's freelance writing community
+   - **YouTube channels:** search "freelance invoicing tutorial" — any channel with 5k+ views per video is worth a pitch
+   - **Indie Hacker / maker blogs:** writers who review SaaS tools in the productivity / freelance space
+   - **Template marketplaces:** Notion template creators who serve freelancers — they can add a "recommended tools" section
+5. Pitch email subject: "Earn recurring revenue recommending QuickInvoice to your audience — 25% lifetime commission."
+6. Share the affiliate dashboard link in the email so they can see real-time conversions from day one.
+
+---
+
+### 19. [MARKETING] Submit "Show HN" to Hacker News
+
+**Impact:** HIGH — a well-timed Show HN post for a useful indie tool typically drives 200–2,000 targeted visitors in 24 hours; HN readers are developers who freelance, CTOs who hire contractors, and power users who spread tools; a successful post can generate 20–100 signups in a single day at zero cost
+**Action:**
+1. Wait until the product is fully deployed and the 7-day free trial (#19 in INTERNAL_TODO) is live — the trial dramatically reduces the bounce rate from HN visitors.
+2. Write the HN post:
+   - **Title:** `Show HN: QuickInvoice – freelancer invoicing with Stripe payment links and auto-reminders`
+   - **Body (first comment, posted immediately after submission):** 2–3 short paragraphs. Explain the pain (freelancers spend hours chasing payments), what makes it different (the invoice IS the payment page — clients click Pay and it's done via Stripe), and the pricing model (free to start, $12/mo for Pro, 7-day free trial). End with: "Happy to answer questions about the tech stack (Node.js + Stripe + PostgreSQL) or the product decisions."
+3. Post on a **Tuesday or Wednesday** between **6 AM and 9 AM EST** — this is the HN sweet spot for visibility before the US workday rush.
+4. Do NOT ask friends to upvote (HN penalizes coordinated voting). Do respond to every comment within the first 2 hours — engagement velocity matters for ranking.
+5. Cross-post the milestone to Indie Hackers and r/SideProject the same day.
+
+---
+
+### 20. [MARKETING] Freelancer Newsletter Outreach (Pitch for Feature Mentions)
+
+**Impact:** MEDIUM-HIGH — a single mention in a freelancer newsletter with 10,000+ subscribers can drive 100–500 targeted signups; unlike ads, editorial mentions are trusted; offering free Pro accounts in exchange for a mention is a $12/mo cost that acquires users with $100+ LTV
+**Action:** Draft a short outreach email (under 100 words) and send to each of the following. Use a personal, non-promotional tone — you're a maker sharing a tool, not pitching an ad.
+
+**Email template:**
+> Subject: Tool you might want to share with your readers — QuickInvoice
+>
+> Hi [Name], I built QuickInvoice (quickinvoice.io) for freelancers who are tired of chasing payments. When you mark an invoice as Sent, it automatically creates a Stripe Payment Link so clients pay in one click — no login required. Free to start, $12/mo for Pro features. Thought your readers might find it useful. Happy to give you a free Pro account to try it out. No strings attached.
+
+**Target publications (send one at a time, track opens):**
+- **Freelance Weekly** (freelanceweekly.email) — 15,000+ subscribers, freelancer tool roundups every issue
+- **Swipe Files** (swipefiles.com) — marketing/freelance audience, regularly features SaaS tools
+- **The Freelancer's Year** newsletter — UK-based, strong design freelancer audience
+- **Hiten Shah's Product Habits** — SaaS-focused, often highlights indie tools
+- **Remote Tools Weekly** (remotetools.com) — features productivity tools for remote workers, large freelancer overlap
+- **Dense Discovery** (densediscovery.com) — design/creative community; ideal for the designer/photographer niche pages
+
+Track replies in a spreadsheet. Follow up once if no reply after 7 days.
+
+---
+
+### 21. [MARKETING] Add Real Testimonials to Landing and Pricing Pages
+
+**Impact:** MEDIUM-HIGH — the social proof section (dev task #20 in INTERNAL_TODO) is built with placeholder testimonials; replacing them with real quotes from actual users drives a 10–20% conversion lift; this is a pure copy task
+**Action:**
+1. After the first 10 Pro signups, email each user: "We'd love to feature your experience on our site — would you share one sentence about how QuickInvoice has helped you? We'll credit you by first name and role."
+2. Collect 3 quotes. Requirements for each: specific (mentions a concrete outcome like "paid on time", "stopped chasing payments"), short (1–2 sentences), authentic (no marketing buzzwords).
+3. Replace the placeholder testimonials in `views/index.ejs` (marked with `<!-- MASTER: update the count and replace placeholder testimonials -->`) with the real quotes, names, and roles.
+4. Update the user count number (currently `500+` placeholder) to match actual signups rounded down to the nearest 50. Keep updating this number monthly — social proof compounds as the number grows.
+
+---
+
 ## 8. Set logo uploads directory (added 2026-04-22)
 Logo uploads are stored on the local filesystem. Set a persistent path (e.g., an attached volume on Heroku/Railway):
 ```
