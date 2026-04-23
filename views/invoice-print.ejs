@@ -47,6 +47,8 @@
     .paylink .info a { font-size: 11px; color: #4f46e5; word-break: break-all; text-decoration: underline; font-family: 'Menlo', 'Courier New', monospace; }
     .paylink .qr { width: 120px; height: 120px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border: 1px solid #e5e7eb; border-radius: 6px; background: white; }
     .paylink .qr svg { width: 110px; height: 110px; }
+    .free-footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid #f3f4f6; text-align: center; font-size: 10px; color: #9ca3af; letter-spacing: 0.02em; }
+    .free-footer a { color: #9ca3af; text-decoration: none; }
     .print-actions { background: #f8fafc; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e5e7eb; }
     .print-actions button { background: #4f46e5; color: white; border: none; padding: 10px 24px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
     .print-actions button:hover { background: #4338ca; }
@@ -182,6 +184,13 @@
     <div class="notes">
       <div class="label">Notes</div>
       <p><%= invoice.notes %></p>
+    </div>
+  <% } %>
+
+  <!-- Free-plan attribution footer (passive acquisition; Pro removes it) -->
+  <% if (user && user.plan === 'free') { %>
+    <div class="free-footer">
+      Invoiced with <a href="https://quickinvoice.io/pricing?ref=pdf-footer">QuickInvoice</a> · quickinvoice.io/pricing?ref=pdf-footer
     </div>
   <% } %>
 </div>

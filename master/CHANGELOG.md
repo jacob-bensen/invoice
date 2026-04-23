@@ -2,6 +2,41 @@
 
 ---
 
+## 2026-04-23 — "Invoiced with QuickInvoice" Attribution Footer on Free-Plan PDFs [GROWTH]
+
+### What was built
+Implemented INTERNAL_TODO #5: every PDF/print view an unpaid (Free) user generates now carries a subtle centered attribution line at the bottom — **"Invoiced with QuickInvoice · quickinvoice.io/pricing?ref=pdf-footer"** — with a real clickable anchor to the pricing page. The footer is gated on `user.plan === 'free'`, so Solo, Pro, and Agency users see a clean, unbranded invoice. Every invoice a free user sends to a client becomes a passive acquisition touchpoint, and footer removal becomes one more tangible benefit of upgrading.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `views/invoice-print.ejs` | New `.free-footer` CSS rule (10 px / `#9ca3af` / centered, `letter-spacing: 0.02em`, thin top border) added to the existing stylesheet. New `<div class="free-footer">` block rendered at the bottom of the `.page` container inside an `<% if (user && user.plan === 'free') { %>` guard. The anchor points at `https://quickinvoice.io/pricing?ref=pdf-footer` so any click from a PDF viewer that preserves hyperlinks is attributable to the footer in analytics. The footer is deliberately **not** hidden by `@media print`, so it survives `window.print()` → Save-as-PDF. |
+| `tests/free-footer.test.js` | **New** — 7 tests. |
+| `package.json` | `test` script appends `tests/free-footer.test.js` as the ninth suite. |
+
+### How it was verified
+`npm test` — **75/75 tests passing** (was 68; +7). The new suite covers:
+- Free user print view includes "Invoiced with", "QuickInvoice", `ref=pdf-footer`, and `class="free-footer"`.
+- Pro user: footer text and attribution link both absent.
+- Agency user: footer absent.
+- Solo user: footer absent (Solo is a paid plan; shouldn't carry InvoiceFlow branding).
+- Footer CSS rule is present in the print stylesheet AND not hidden inside `@media print` (so the attribution survives `window.print()` → Save-as-PDF).
+- Footer is a real `<a href="https://quickinvoice.io/pricing?ref=pdf-footer">` anchor, not inert text.
+- Regression: a Pro invoice with a Payment Link still renders "Pay this invoice online" but does NOT also render the attribution footer (defence against accidental plan-check inversion).
+
+All 68 pre-existing tests still pass (no touch on routes/invoices.js or the view's Pro-only Payment Link section).
+
+### Why it matters for income
+1. **Passive acquisition on every free invoice.** The average freelancer sends each invoice to a paying client — exactly the target persona who could also need invoicing software. The footer turns every free user into a zero-cost distribution channel. `?ref=pdf-footer` makes the attribution measurable in Google Analytics / Plausible so we can put a dollar value on the channel.
+2. **Tangible upgrade driver.** "Remove QuickInvoice branding from invoices" is now a concrete, visible reason to move to any paid tier — complements unlimited invoices, Payment Links, and custom branding as the Pro feature bundle. Free users see the footer on every printed invoice; paid users do not.
+3. **Zero friction, zero ongoing cost.** Pure template change — no schema migration, no new env vars, no webhook, no third-party integration. Ships with the next deploy and compounds forever.
+4. **Print-safe by design.** The footer is styled inside the same stylesheet as the invoice body and is explicitly not excluded from `@media print`, so browser Save-as-PDF preserves it — critical because many freelancers email the PDF rather than a live link.
+
+### Deployment notes
+None. Pure template change. `git push` + redeploy.
+
+---
+
 ## 2026-04-23 — Stripe Dunning + Smart Retries: Past-Due Awareness [HEALTH]
 
 ### What was built

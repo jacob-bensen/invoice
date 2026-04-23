@@ -76,7 +76,7 @@ Replace the dead-end at the 3-invoice limit with a full-screen Alpine.js modal i
 
 ## [GROWTH]
 
-### 5. [GROWTH] "Created with QuickInvoice" Footer on Free Plan PDFs [S]
+### 5. [DONE 2026-04-23] [GROWTH] "Created with QuickInvoice" Footer on Free Plan PDFs [S]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** MEDIUM — every invoice a free user sends becomes a passive acquisition touchpoint; footer removal is a tangible Pro benefit
