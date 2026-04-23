@@ -58,12 +58,33 @@
         </li>
       </ul>
 
+      <!-- Billing-cycle selector (Monthly / Annual) -->
+      <div class="flex items-center justify-center gap-2 mb-4">
+        <button
+          type="button"
+          @click="cycle = 'monthly'"
+          :class="cycle === 'monthly' ? 'bg-brand-50 text-brand-700 border-brand-200' : 'bg-white text-gray-500 border-gray-200'"
+          class="px-3 py-1.5 rounded-lg text-xs font-semibold transition border"
+        >Monthly</button>
+        <button
+          type="button"
+          @click="cycle = 'annual'"
+          :class="cycle === 'annual' ? 'bg-brand-50 text-brand-700 border-brand-200' : 'bg-white text-gray-500 border-gray-200'"
+          class="px-3 py-1.5 rounded-lg text-xs font-semibold transition border flex items-center gap-1.5"
+        >
+          Annual
+          <span class="bg-green-100 text-green-700 text-[10px] font-bold px-1.5 py-0.5 rounded">Save 31%</span>
+        </button>
+      </div>
+
       <form action="/billing/create-checkout" method="POST" class="mb-3">
+        <input type="hidden" name="billing_cycle" :value="cycle">
         <button
           type="submit"
           class="w-full bg-brand-600 text-white font-bold py-3 rounded-xl hover:bg-brand-700 transition text-center"
         >
-          Upgrade to Pro — $12/month →
+          <span x-show="cycle === 'monthly'">Upgrade to Pro — $12/month →</span>
+          <span x-show="cycle === 'annual'" x-cloak>Upgrade to Pro — $99/year →</span>
         </button>
       </form>
 
@@ -92,6 +113,7 @@
   function upgradeModal() {
     return {
       open: false,
+      cycle: 'monthly',
       init() {
         try {
           const params = new URLSearchParams(window.location.search);

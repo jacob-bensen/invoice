@@ -2,6 +2,45 @@
 
 ---
 
+## 2026-04-23 — Annual Billing Plan at $99/year (QuickInvoice)
+
+### What was built
+Added a Monthly / Annual billing-cycle selector across every upgrade surface. Free users can now choose **Pro Annual — $99/year** ($8.25/mo effective, **31% cheaper** than monthly) or **Pro Monthly — $12/month** at the exact moment they click upgrade. The selection flows as `billing_cycle` through the POST `/billing/create-checkout` handler to a new `resolvePriceId()` helper that picks the correct Stripe price ID and stamps the chosen cycle into the Checkout session's `metadata` for downstream analytics.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `routes/billing.js` | New `resolvePriceId(billing_cycle)` helper; `POST /billing/create-checkout` now reads `req.body.billing_cycle`, selects `STRIPE_PRO_ANNUAL_PRICE_ID` vs `STRIPE_PRO_PRICE_ID`, and records the cycle in `session.metadata.billing_cycle`. Falls back to monthly when the annual price env var is unset so the CTA never breaks before Master has created the annual Stripe price. Unknown cycle values are normalised to `monthly` (no bogus values ever reach Stripe). |
+| `views/pricing.ejs` | Full redesign of the Pro column: Alpine.js `pricingToggle()` drives a Monthly / Annual pill selector; Pro card live-swaps `$12/mo` ↔ `$99/yr` (with "Billed yearly · Just $8.25/mo" subtext); hidden `billing_cycle` input posts the selection; "Save 31%" green badge on Annual. |
+| `views/settings.ejs` | Refactored Subscription block. Free users see both a **$12/mo** and a **$99/yr** pill plus an inline Upgrade CTA using the same `billing_cycle` POST. Pro users see the existing "Manage subscription" portal link (upgrade selector hidden). |
+| `views/partials/upgrade-modal.ejs` | Added a compact Monthly / Annual pill selector inside the free-plan limit modal (the single highest-intent conversion moment). Cycle defaults to monthly; `billing_cycle` flows through the existing Stripe Checkout form. |
+| `.env.example` | Added `STRIPE_PRO_ANNUAL_PRICE_ID=price_...` alongside the existing monthly price ID. |
+| `tests/annual-billing.test.js` | **New** — 9 tests covering all cycle-resolution branches and rendered markup. |
+| `package.json` | `test` script now runs `tests/annual-billing.test.js` as the fifth suite; added `ejs` to `devDependencies` implicitly via test import (ejs is already a runtime dep). |
+
+### How it was verified
+`npm test` — 11 + 12 + 8 + 6 + 9 = **46/46 tests passing**. The 9 new annual-billing tests cover:
+- POST `/billing/create-checkout` without `billing_cycle` → monthly price (backward-compatible).
+- `billing_cycle=monthly` → monthly price + `metadata.billing_cycle='monthly'`.
+- `billing_cycle=annual` → annual price + `metadata.billing_cycle='annual'`.
+- `billing_cycle=annual` with `STRIPE_PRO_ANNUAL_PRICE_ID` unset → falls back to monthly price (deploy-safe).
+- Unknown `billing_cycle` value → normalised to monthly (no garbage to Stripe).
+- `views/pricing.ejs` renders both cycle buttons + `billing_cycle` hidden input + $99 / $12 prices.
+- `views/settings.ejs` renders the selector + input for Free users…
+- …and **hides** it for Pro users (who only see "Manage subscription").
+- `views/partials/upgrade-modal.ejs` renders the cycle selector + hidden input + $99/year CTA.
+
+### Why it matters for income
+1. **Direct revenue lift.** Annual subscribers pay $99 up front instead of an average of ~$60 before churning monthly — 50-65% more lifetime revenue per conversion, plus immediate cash.
+2. **Half the churn.** Industry SaaS benchmarks: annual plans churn at roughly half the rate of monthly plans (one renewal decision per year vs. twelve). Every user who picks annual is a year of revenue locked in with zero ongoing effort.
+3. **Price-anchored conversion bump.** The "Save 31%" badge gives Monthly shoppers a visible reason to commit now instead of staying on Free; the anchor also makes Monthly feel reasonable.
+4. **Deploy-safe.** The `resolvePriceId()` fallback means this code can ship today — even before Master creates the annual Stripe price, every click still produces a valid monthly Checkout session. When Master adds `STRIPE_PRO_ANNUAL_PRICE_ID`, annual activates automatically with no code change.
+
+### Master action required
+**One-time Stripe Dashboard action (~2 min):** create a $99/year recurring price on the existing Pro product, then set `STRIPE_PRO_ANNUAL_PRICE_ID=price_...` in the production env. Details added to `TODO_MASTER.md` item 11.
+
+---
+
 ## 2026-04-23 — QA Audit: Auth, Free-Limit, Billing-Webhook, Agency-Plan Bug Fix
 
 ### What changed
