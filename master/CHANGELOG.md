@@ -2,6 +2,48 @@
 
 ---
 
+## 2026-04-23 — InvoiceFlow: Recurring-Invoice Auto-Generation (P12) [GROWTH]
+
+### What was built
+Implemented INTERNAL_TODO #6 for the InvoiceFlow (Spring Boot) codebase: Pro and Agency users can now designate any invoice as a **recurring template**. A daily scheduler clones these templates on their scheduled interval (WEEKLY, BIWEEKLY, MONTHLY, or QUARTERLY), producing a fresh `DRAFT` invoice with the same client and line items — ready for the user to review and send. For retainer-based freelancers and agencies, this eliminates the recurring "re-create and re-send the same invoice every month" task entirely and is a tangible reason to stay on Pro/Agency month after month.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `src/main/resources/db/migration/V3__recurring_invoices.sql` | **New.** Adds `recurrence_frequency`, `recurrence_next_run`, `recurrence_active`, `recurrence_source_id` columns to `invoices`. Partial index `idx_invoices_recurrence_due` keeps the scheduler's hot query cheap as the user base grows. |
+| `src/main/java/com/invoiceflow/invoice/RecurrenceFrequency.java` | **New.** Enum with a calendar-aware `advance(Instant)` stepping WEEKLY/BIWEEKLY by 7/14 days and MONTHLY/QUARTERLY by 1/3 months via `ChronoUnit.MONTHS` (Feb-29 edge case handled correctly). |
+| `src/main/java/com/invoiceflow/invoice/Invoice.java` | Added `recurrenceFrequency`, `recurrenceNextRun`, `recurrenceActive`, `recurrenceSourceId` fields + getters/setters. |
+| `src/main/java/com/invoiceflow/invoice/InvoiceRepository.java` | Added `findDueForRecurrence(asOf)` (eager-fetches user/client/lineItems to avoid N+1 in the scheduler) and `findActiveRecurringByUser(userId)`. |
+| `src/main/java/com/invoiceflow/invoice/InvoiceController.java` | `PUT /api/invoices/{id}/recurrence` (Pro/Agency-gated via `PlanLimitException` → 402) accepting `{frequency, nextRun, active}`. `active:false` clears the rule without deleting data. `GET /api/invoices/recurring` returns active recurring templates. `InvoiceResponse` DTO exposes the recurrence fields. |
+| `src/main/java/com/invoiceflow/scheduler/RecurringInvoiceJob.java` | **New.** `@Scheduled(cron = "0 0 8 * * *")` daily at 08:00 UTC (1 h before `ReminderScheduler`, keeping jobs independent). Clones each due template as `DRAFT` with fresh invoice number (`<original>-<today>` + numeric dedupe suffix), copies every line item, records `recurrence_source_id`, and advances the template's `recurrence_next_run` past `asOf` (catches up across missed days without duplicate bursts). Per-template failures are caught so one bad template doesn't stop the rest. Injectable `Clock` so tests pin a deterministic date. |
+| `src/main/java/com/invoiceflow/InvoiceFlowApplication.java` | Registers a `systemClock()` `@Bean` (`Clock.systemUTC()`) — consumed by the scheduler, overridable in tests. |
+| `src/test/java/com/invoiceflow/RecurringInvoiceTest.java` | **New — 10 end-to-end tests.** Plan-gating (Free → 402, Pro/Agency → 200), invalid-frequency rejection (400), deactivation path, `GET /recurring` scoping, scheduler clones due templates as `DRAFT` with source link + today's issue_date + identical line items, skips not-yet-due templates, is idempotent within a cycle, and a pinned-date WEEKLY advance test that asserts Jan 15 → Jan 22 exactly. |
+
+**Sub-task 5 verified:** `ReminderScheduler.sendOverdueReminders()` only loads invoices with `status IN (SENT, OVERDUE)`. Cloned invoices are created as `DRAFT`, so they are structurally excluded from the reminder query. No code change to `ReminderScheduler` needed — the existing status guard is sufficient. Verified by the clone-status assertion in `scheduler_clonesDueInvoiceAsDraftAndAdvancesNextRun`.
+
+### Incidental repository cleanup (required to get a green build)
+The InvoiceFlow codebase was in a broken state on `origin/master` — `mvn compile` failed with three duplicate-symbol errors, and `application.yml` had a duplicate `spring.servlet.multipart` key that crashed `ApplicationContext` startup. These were leftover merge-conflict artifacts from an earlier session. Minimum fixes applied so the feature could be tested:
+- `BrandingController.java`: removed a duplicate `MAX_LOGO_BYTES` constant. Kept the 512 KB value (matches the controller's error message and the existing `uploadLogo_tooLargeRejected` test's 600 KB rejection case).
+- `PdfService.java`: removed duplicate `User user` / `DeviceRgb brandColor` declarations inside `generate()`. Kept the plan-gated brandColor read.
+- `application.yml`: removed the duplicate `spring.servlet.multipart` block.
+- `BrandingControllerTest.java`: added the missing `register(email, password, name)` helper so the existing `setUp()` compiles. Removed one stale test (`getDefaultBranding`) that asserted `#2563EB` as a default when the controller has always returned `null` — contradicted the adjacent `getBranding_defaultsToNoBrandingForNewUser` test in the same file (which correctly asserts `null`).
+
+Post-cleanup the InvoiceFlow suite is green: **26 / 26 tests passing** (1 AuthController + 15 BrandingController + 10 RecurringInvoice).
+
+### How it was verified
+`mvn test` → `Tests run: 26, Failures: 0, Errors: 0, Skipped: 0 … BUILD SUCCESS`. Each of the 10 new RecurringInvoice tests covers a distinct branch (plan gate, invalid input, deactivation, listing scope, cloning correctness, skip-future, idempotency, calendar-accurate advance). QuickInvoice Node.js suite is also still green (no overlap, no regression).
+
+### Why it matters for income
+1. **Stickier Pro/Agency.** Recurring invoicing is the #1 feature freelancers ask for when comparing invoice-SaaS tools. Once a user has 3–5 retainer templates configured, moving to another tool means reconfiguring all of them — a meaningful switching cost.
+2. **Compounding value.** A freelancer with five $500/mo retainers saves ~15 min of copy-paste invoice creation every month. That's 3 hours/year of "this tool paid for itself" moments.
+3. **DRAFT by default = safe.** The scheduler produces `DRAFT` (not `SENT`) so the user approves each invoice before it goes out. Prevents autoscheduler catastrophes (wrong amount, wrong client, client paused service).
+4. **Resilient to outages.** If the scheduler misses a day (scaling event, deploy), the next run catches up by advancing `next_run` past `asOf` in a loop, producing one clone this cycle — no duplicate burst.
+
+### Master action required
+**One-time Flyway migration on next deploy.** `V3__recurring_invoices.sql` is additive only (four new columns + two indexes). Flyway picks it up automatically on startup — no manual step required. `recurrence_active` defaults to `FALSE` so existing invoices behave exactly as before. Details added to `TODO_MASTER.md` item 13.
+
+---
+
 ## 2026-04-23 — "Invoiced with QuickInvoice" Attribution Footer on Free-Plan PDFs [GROWTH]
 
 ### What was built

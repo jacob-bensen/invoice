@@ -65,7 +65,15 @@ public class InvoiceController {
     public record InvoiceResponse(Long id, Long clientId, String clientName, String invoiceNumber,
                                   String status, LocalDate issueDate, LocalDate dueDate,
                                   String currency, String notes, BigDecimal total,
-                                  String stripePaymentLink, List<LineItemResponse> lineItems) {}
+                                  String stripePaymentLink, List<LineItemResponse> lineItems,
+                                  String recurrenceFrequency, Instant recurrenceNextRun,
+                                  boolean recurrenceActive) {}
+
+    public record RecurrenceRequest(String frequency, LocalDate nextRun, Boolean active) {}
+
+    public record RecurringInvoiceResponse(Long id, String invoiceNumber, String clientName,
+                                            String recurrenceFrequency, Instant recurrenceNextRun,
+                                            BigDecimal total) {}
 
     private LineItemResponse toDto(LineItem li) {
         return new LineItemResponse(li.getId(), li.getDescription(), li.getQuantity(),
@@ -78,7 +86,10 @@ public class InvoiceController {
                 inv.getInvoiceNumber(), inv.getStatus().name(),
                 inv.getIssueDate(), inv.getDueDate(), inv.getCurrency(),
                 inv.getNotes(), inv.total(), inv.getStripePaymentLink(),
-                inv.getLineItems().stream().map(this::toDto).toList());
+                inv.getLineItems().stream().map(this::toDto).toList(),
+                inv.getRecurrenceFrequency() != null ? inv.getRecurrenceFrequency().name() : null,
+                inv.getRecurrenceNextRun(),
+                inv.isRecurrenceActive());
     }
 
     // ---- Endpoints ----
@@ -196,6 +207,56 @@ public class InvoiceController {
                             .body(pdf);
                 })
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    // ---- Recurring invoices (Pro/Agency) ----
+
+    @GetMapping("/recurring")
+    public List<RecurringInvoiceResponse> listRecurring(@AuthenticationPrincipal User user) {
+        return invoiceRepository.findActiveRecurringByUser(user.getId()).stream()
+                .map(inv -> new RecurringInvoiceResponse(
+                        inv.getId(), inv.getInvoiceNumber(), inv.getClient().getName(),
+                        inv.getRecurrenceFrequency() != null ? inv.getRecurrenceFrequency().name() : null,
+                        inv.getRecurrenceNextRun(),
+                        inv.total()))
+                .toList();
+    }
+
+    @PutMapping("/{id}/recurrence")
+    public ResponseEntity<?> setRecurrence(@AuthenticationPrincipal User user,
+                                            @PathVariable Long id,
+                                            @RequestBody RecurrenceRequest req) {
+        // Plan gate: recurring-invoice auto-generation is a Pro/Agency feature.
+        if (user.getPlan() != com.invoiceflow.user.Plan.PRO
+                && user.getPlan() != com.invoiceflow.user.Plan.AGENCY) {
+            throw new PlanLimitException("Recurring invoices require the Pro or Agency plan.");
+        }
+
+        return invoiceRepository.findByIdAndUserId(id, user.getId())
+                .map(inv -> {
+                    boolean active = req.active() == null ? true : req.active();
+                    if (!active) {
+                        inv.setRecurrenceActive(false);
+                        invoiceRepository.save(inv);
+                        return ResponseEntity.ok(toDto(inv));
+                    }
+
+                    RecurrenceFrequency frequency;
+                    try {
+                        frequency = RecurrenceFrequency.valueOf(
+                                req.frequency() == null ? "" : req.frequency().toUpperCase());
+                    } catch (IllegalArgumentException ex) {
+                        return ResponseEntity.badRequest()
+                                .body("frequency must be one of: WEEKLY, BIWEEKLY, MONTHLY, QUARTERLY");
+                    }
+                    LocalDate next = req.nextRun() != null ? req.nextRun() : LocalDate.now().plusDays(1);
+                    inv.setRecurrenceFrequency(frequency);
+                    inv.setRecurrenceNextRun(next.atStartOfDay().toInstant(ZoneOffset.UTC));
+                    inv.setRecurrenceActive(true);
+                    invoiceRepository.save(inv);
+                    return ResponseEntity.ok(toDto(inv));
+                })
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @DeleteMapping("/{id}")

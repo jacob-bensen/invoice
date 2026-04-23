@@ -22,7 +22,6 @@ public class BrandingController {
 
     private static final Set<String> ALLOWED_TYPES =
             Set.of("image/png", "image/jpeg", "image/gif", "image/webp");
-    private static final long MAX_LOGO_BYTES = 2L * 1024 * 1024; // 2 MB
     private static final long MAX_LOGO_BYTES = 512 * 1024L; // 512 KB
     private static final Set<String> ALLOWED_MIME = Set.of(
             "image/png", "image/jpeg", "image/gif", "image/webp");

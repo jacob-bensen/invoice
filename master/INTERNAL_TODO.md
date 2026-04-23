@@ -90,7 +90,7 @@ Replace the dead-end at the 3-invoice limit with a full-screen Alpine.js modal i
 
 ---
 
-### 6. [GROWTH] InvoiceFlow — Recurring Invoice Auto-Generation (P12) [M]
+### 6. [DONE 2026-04-23] [GROWTH] InvoiceFlow — Recurring Invoice Auto-Generation (P12) [M]
 
 **App:** InvoiceFlow (Spring Boot)
 **Impact:** MEDIUM — reduces manual work for repeat clients; increases retention
