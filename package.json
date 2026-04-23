@@ -15,6 +15,7 @@
     "bcrypt": "^5.1.1",
     "connect-pg-simple": "^9.0.1",
     "dotenv": "^16.3.1",
+    "ejs": "^5.0.2",
     "express": "^4.18.2",
     "express-session": "^1.17.3",
     "express-validator": "^7.0.1",
@@ -22,7 +23,6 @@
     "stripe": "^14.5.0"
   },
   "devDependencies": {
-    "ejs": "^5.0.2",
     "nodemon": "^3.0.2"
   }
 }

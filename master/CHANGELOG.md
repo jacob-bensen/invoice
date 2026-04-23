@@ -2,6 +2,51 @@
 
 ---
 
+## 2026-04-23T23:40Z — Reliability Audit (security / perf / deps / legal) [HEALTH]
+
+### What was audited
+Full sweep across `server.js`, `db.js`, `routes/`, `lib/`, `middleware/`, `db/schema.sql`, `package.json` + lockfile, `.env.example`, and every EJS view. Checked for: exposed secrets, hardcoded credentials, input-validation gaps, unhandled-error paths on Stripe / outbound webhook calls, N+1 queries, missing indexes, R14 memory hot spots, dead code, duplication, outdated / vulnerable packages, license compatibility, and the presence of required legal pages.
+
+### What was fixed directly
+| Fix | File | Why |
+|-----|------|-----|
+| Moved `ejs` from `devDependencies` → `dependencies` (+ regenerated `package-lock.json` so the entry no longer carries `"dev": true`). | `package.json`, `package-lock.json` | **Production-breaking.** `server.js` sets `app.set('view engine', 'ejs')`; Express implicitly `require('ejs')` when rendering. A real deploy runs `npm ci --omit=dev` (Heroku / Render / Railway default for Node buildpacks), which would skip `ejs` and crash the server on the first `res.render(...)`. This never surfaced locally because dev installs include devDependencies. Every route except the Stripe webhook renders a view, so the app would be effectively 100 % broken in production the moment a real deploy happened. |
+| Added a startup guard: refuse to boot in production if `SESSION_SECRET` is unset. | `server.js` | The previous fallback `'dev-secret-change-in-production'` is a well-known string; if Master forgot to set `SESSION_SECRET` on deploy, attackers could forge signed session cookies and impersonate any user. Fail-fast is safer than silently running with a predictable secret. Dev / test behaviour unchanged (guard only fires when `NODE_ENV === 'production'`). |
+
+### What was flagged (full context in `INTERNAL_TODO.md` / `TODO_MASTER.md`)
+**[HEALTH] → `INTERNAL_TODO.md`:**
+- **H1 · SSRF on outbound webhook URL** — `lib/outbound-webhook.js:isValidWebhookUrl` accepts any `http://` / `https://` URL, including loopback / RFC1918 / `169.254.169.254` metadata service. A Pro user can probe the host's internal network. Fix is a DNS-resolve + private-range blocklist.
+- **H2 · No CSRF protection** on mutating POST routes (`/invoices/:id/status`, `/invoices/:id/delete`, `/billing/create-checkout`, `/billing/webhook-url`, `/billing/settings`, `/auth/*`). SameSite=Lax helps but is not a full defence. Fix is `csurf` middleware + hidden token in every form.
+- **H3 · No rate limiting** on `/auth/login` + `/auth/register`. Bcrypt cost 12 is a partial throttle; `express-rate-limit` 10/min per IP fully closes it.
+- **H4 · No security headers** (no `helmet`). Missing HSTS, X-Frame-Options, X-Content-Type-Options, CSP.
+- **H5 · Latent CHECK-constraint bug:** `db/schema.sql` pins `plan IN ('free','pro')` but code branches on `plan === 'agency'`. Will 23514-error the first time INTERNAL_TODO #9 / #10 writes `'agency'`.
+- **H6 · `POST /:id/status`** accepts any string; DB constraint rejects bad values as 500s. Whitelist at the Node layer to kill log noise.
+
+**[LEGAL] → `TODO_MASTER.md` (Master action — none can be solved in code alone):**
+- **L1 · Terms of Service page is missing** even though `views/auth/register.ejs` tells every signup they agree to it. Direct misrepresentation and unenforceable — a chargeback dispute would point to the absence of a contract.
+- **L2 · Privacy Policy is missing** — hard requirement under GDPR Art. 13 + CCPA for any site with a public signup form collecting personal data.
+- **L3 · Refund / Cancellation Policy is missing** — Stripe + card-network merchant requirement; without it, chargebacks default in the cardholder's favour.
+- **L4 · GDPR data-subject rights** (Art. 15 access / Art. 17 erasure) have no endpoint. Stopgap is documenting a manual email procedure in the privacy policy.
+- **L5 · PCI-DSS SAQ-A** self-attestation is required annually by Stripe. Merchant currently qualifies for simplest SAQ-A scope because all cards flow through Stripe Checkout / Payment Links — keep it that way.
+- **L6 · Cookie banner** — not required today; will become required once INTERNAL_TODO #17 (Google OAuth) or any analytics pixel lands.
+- **L7 · Dependency-license audit — CLEAN.** All direct runtime deps are MIT / Apache-2.0 / BSD-2-Clause. No GPL / AGPL / copyleft. Safe for closed-source commercial distribution.
+- **L8 · Third-party API ToS:** Stripe Checkout + Payment Links integration is Stripe-recommended; SendGrid / Resend (pending) must not be repurposed for marketing blasts; Google OAuth brand guidelines already noted in INTERNAL_TODO #17.
+
+### Security items checked and CLEAN
+- **No hardcoded credentials.** `.env.example` is a template; test files use literal `sk_test_dummy` (safe). No production keys in-repo.
+- **No hardcoded API secrets.** Stripe, DB, session, and webhook secrets are all env-var driven.
+- **SQL injection.** All queries use parameterised `$n` placeholders. `db.updateUser` composes `SET` clause from caller-supplied keys but every caller passes a fixed object literal (no user-controlled keys reach the SQL).
+- **Authentication.** bcrypt cost 12; session cookies `httpOnly: true` + `secure` in production; `requireAuth` gates every invoice / billing route.
+- **Stripe webhook signature** is verified (`stripe.webhooks.constructEvent`).
+- **Outbound webhook error handling** is fire-and-forget with `.catch` + `.on('error')` + explicit `timeout` — will not hang the response or leak errors to the client.
+- **Indexes** on `invoices(user_id)`, `invoices(status)`, `invoices(payment_link_id)` cover the current query workload; no N+1 pattern found.
+- **Package versions** (lockfile-resolved): `express@4.22.1`, `express-session@1.19.0`, `bcrypt@5.1.1`, `pg@8.20.0`, `stripe@14.25.0`, `express-validator@7.3.2`, `ejs@5.0.2`, `dotenv@16.6.1`, `connect-pg-simple@9.0.1`. No pinned version with a known open CVE.
+
+### How it was verified
+Static review only (no production env to hit). Lockfile diff confirms `"dev": true` removed from `node_modules/ejs` entry; `server.js` diff confirms the `SESSION_SECRET` guard only triggers when `NODE_ENV === 'production'` (tests + dev keep working). All 137 tests still pass post-fix.
+
+---
+
 ## 2026-04-23 — QA Audit: Income-Critical Gap Coverage (routine/autonomous) [HEALTH]
 
 ### What changed

@@ -316,3 +316,47 @@ Logo uploads are stored on the local filesystem. Set a persistent path (e.g., an
 UPLOADS_DIR=/var/data/invoiceflow-uploads
 ```
 If unset, defaults to `./uploads` relative to the working directory (not persistent across Heroku dyno restarts — use an attached volume or swap this for S3 in production).
+
+---
+
+## [LEGAL] Compliance & Required Legal Pages (added 2026-04-23 audit)
+
+> Findings from reliability/legal audit on routine/autonomous @ 2026-04-23. None of these block the app from running, but shipping a paid SaaS to real users without them is a meaningful commercial + regulatory risk — card-acquirer ToS, Stripe's own Services Agreement, EU/UK GDPR, California CCPA/CPRA, and app-store-style directory listings all assume these pages exist.
+
+### L1. [LEGAL] Publish Terms of Service — **hard requirement**
+`views/auth/register.ejs` already tells every signup "By signing up you agree to our terms of service," but there is no `/terms` route or page anywhere in the codebase. This is a direct misrepresentation and unenforceable — a user who disputes a subscription charge can (correctly) argue there was no contract to agree to.
+- **Action:** Commission / adapt a ToS for a US-incorporated SaaS that accepts Stripe payments. Minimum clauses: service description, acceptable-use, payment + refund terms, disclaimer of warranties, limitation of liability, governing law, termination.
+- **Code follow-up (can be done by the autonomous team once you supply the markdown):** add a `GET /terms` route rendering `views/legal/terms.ejs`, and link it from register, the footer of every landing page, and the footer of `views/index.ejs`.
+
+### L2. [LEGAL] Publish Privacy Policy — **hard requirement** (GDPR Art. 13 / CCPA §1798.100)
+QuickInvoice collects email, name, invoice / client data, Stripe customer IDs, session cookies, and (once INTERNAL_TODO #13 / #17 land) Resend and Google OAuth identifiers. Under GDPR and CCPA/CPRA a privacy policy is legally required whenever a site collects personal data from an EU/UK or California resident — which any public signup form does.
+- Minimum disclosures: categories of data collected, purposes, lawful basis (contract performance + legitimate interest), third-party sub-processors (**Stripe, SendGrid/Resend once live, Heroku or whichever host**), cookie disclosures (session cookie, Stripe fraud-detection cookies set by Checkout), data-subject rights (access, deletion, portability), contact email for requests, retention policy.
+- **Action:** Publish at `/privacy` and link it from the register form, every landing page footer, and the Stripe Checkout branding settings.
+
+### L3. [LEGAL] Publish Refund / Cancellation Policy — **Stripe + card-network requirement**
+Stripe's acceptable-use and every card network require a clearly stated refund policy on the merchant's site. Absent one, chargebacks default in the cardholder's favour and merchant-processor ToS allow Stripe to pause payouts.
+- Minimum disclosures: billing cycle, auto-renew behaviour, pro-rated vs. full-period refunds, cancellation mechanic ("cancel anytime via `/billing/settings` → Customer Portal"), who to contact for disputes.
+- **Action:** Publish at `/refund-policy` (or roll into the ToS). Must be linked from the pricing page and visible inside the Stripe Checkout "Terms & Privacy" footer (Stripe Dashboard → Settings → Public details).
+
+### L4. [LEGAL] GDPR data-subject rights plumbing — data export + deletion
+No endpoint exists for a user to (a) download their data or (b) request account deletion. Under GDPR Art. 15 (access) + Art. 17 (erasure) and CCPA §1798.105, this must be available without undue delay.
+- Minimum: a "Delete my account" button in `/billing/settings` that cancels the Stripe subscription, cascades to invoices (the `ON DELETE CASCADE` on `invoices.user_id` already handles this), and scrubs `users` to a tombstone row. Plus a "Download my data" action that dumps a JSON of the user's row + all invoices.
+- **Action:** Owner decision whether to ship this before enabling EU traffic. For US-only launch, document the manual email-a-request procedure in the privacy policy as a stopgap.
+
+### L5. [LEGAL] PCI-DSS SAQ-A scope confirmation (Stripe-hosted checkout)
+Because all card data flows through Stripe-hosted Checkout + Payment Links and never touches this server, the merchant qualifies for PCI-DSS SAQ-A (simplest scope). This is **good news** but Stripe still requires the merchant to file an annual SAQ-A self-attestation.
+- **Action:** Before the first real charge, log into Stripe Dashboard → Compliance → complete the SAQ-A wizard. 10-minute task. Keep the PDF on file. No code change required.
+- **Code note:** never add a route that accepts raw card numbers, even transiently — it would immediately push us into SAQ-D scope (~300-question attestation, annual ASV scans).
+
+### L6. [LEGAL] Cookie banner (EU/UK visitors only)
+The app sets one first-party session cookie (strictly necessary — no consent needed) and Stripe Checkout sets its own fraud-detection cookies on the Stripe domain. A full cookie banner is **not** legally required today, but once INTERNAL_TODO #17 (Google OAuth) lands we'll also be setting Google-originating cookies, and Product Hunt / marketing pages may add an analytics pixel.
+- **Action:** Note this as a prerequisite for adding any analytics / marketing tag (Plausible is cookie-less and avoids the requirement entirely — worth considering over GA4).
+
+### L7. [LEGAL] Dependency-license audit — **CLEAN**
+Reviewed all direct runtime dependencies: `express` (MIT), `express-session` (MIT), `express-validator` (MIT), `bcrypt` (MIT), `pg` (MIT), `stripe` (MIT), `ejs` (Apache-2.0), `dotenv` (BSD-2-Clause), `connect-pg-simple` (MIT). **No GPL, AGPL, or other copyleft licenses** in the production tree. Safe for closed-source commercial distribution. Re-run this audit whenever `package.json` gains a new dep (`npx license-checker --production --summary` is a 10-second check).
+
+### L8. [LEGAL] Third-party API ToS compliance spot-check
+- **Stripe:** compliant (Checkout + Payment Links are Stripe's recommended integration patterns).
+- **SendGrid / Resend (pending INTERNAL_TODO #13):** transactional email to the user's own clients is within normal ToS. Do not repurpose into marketing blasts without the recipient's explicit opt-in.
+- **Google Search Console / sitemap.xml:** compliant (no scraping, only exposing our own sitemap).
+- **Future Google OAuth (INTERNAL_TODO #17):** Google OAuth brand guidelines require the standard "G" icon rendered per `https://developers.google.com/identity/branding-guidelines` — already noted in that task.

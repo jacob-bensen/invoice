@@ -12,6 +12,10 @@ const landingRoutes = require('./routes/landing');
 
 const app = express();
 
+if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
+  throw new Error('SESSION_SECRET must be set in production. Refusing to start with a predictable default.');
+}
+
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
