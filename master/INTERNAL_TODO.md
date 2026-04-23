@@ -181,6 +181,110 @@ Replace the dead-end at the 3-invoice limit with a full-screen Alpine.js modal i
 
 ---
 
+### 13. [GROWTH] Email Delivery for QuickInvoice (Resend) [M]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** HIGH — prerequisite for invoice email sending, automated reminders, churn win-back (#11), and monthly summaries (#12); currently the single largest capability gap between QuickInvoice and InvoiceFlow
+**Effort:** Medium
+**Prerequisites:** None (Resend free tier is sufficient to start)
+
+**Sub-tasks:**
+1. `npm install resend` and add `RESEND_API_KEY=re_...` to `.env.example`.
+2. Create `lib/email.js` — thin wrapper: `sendEmail({ to, subject, html })` calls `resend.emails.send()`; returns promise; logs errors without throwing (graceful degradation pattern already used elsewhere in the codebase).
+3. `routes/invoices.js` `POST /invoices/:id/status` (`draft → sent` transition for Pro users): call `sendEmail()` with the client's email, a subject of "Invoice [INV-YYYY-XXXX] from [business_name]", and an HTML body with invoice summary + payment link URL (if present). Do not block the redirect on the email — fire and forget.
+4. `views/settings.ejs`: add a "Reply-to email" field (stored as `reply_to_email` on the user row via `db.updateUser`). Fallback to the registered account email.
+5. `db/schema.sql`: `ALTER TABLE users ADD COLUMN IF NOT EXISTS reply_to_email VARCHAR(255);`
+6. Manual smoke test: mark a test invoice as sent → verify email arrives with correct invoice number, amount, and payment link.
+
+---
+
+### 14. [GROWTH] In-App Onboarding Checklist (Activation Flow) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** HIGH — users who reach "first invoice sent" have 5–10× lower churn; the dashboard currently drops new users with no guidance
+**Effort:** Very Low
+**Prerequisites:** None
+
+**Sub-tasks:**
+1. `db/schema.sql`: `ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_dismissed BOOLEAN DEFAULT false;`; `db.js`: add `dismissOnboarding(userId)` update + include `onboarding_dismissed` in the `getUser` query result.
+2. In `routes/invoices.js` (or a dedicated route), add `POST /onboarding/dismiss` → set `onboarding_dismissed = true` for the session user and redirect back.
+3. `views/dashboard.ejs`: render a checklist card at the top for users where `!user.onboarding_dismissed`. Four steps, each links to the relevant page:
+   - ✅ **Add your business info** → `/settings` (check: `user.business_name` is non-null)
+   - ✅ **Create your first invoice** → `/invoices/new` (check: `stats.total_invoices >= 1`)
+   - ✅ **Send an invoice to a client** (check: any invoice has `status = 'sent'`)
+   - ✅ **Get paid** (check: any invoice has `status = 'paid'`)
+   Mark each completed step with a green checkmark (Alpine.js toggled by initial render state); show a "Dismiss" link that POSTs to `/onboarding/dismiss`.
+4. Style the card as a light blue banner (Tailwind `bg-blue-50 border border-blue-200`); keep it out of the print stylesheet.
+
+---
+
+### 15. [GROWTH] Contextual Pro Upsell Prompts on Locked Features [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM-HIGH — the upgrade modal only fires at the invoice limit; free users who discover Pro features organically (branding page, invoice view) have high purchase intent but currently see no CTA at that moment
+**Effort:** Very Low
+**Prerequisites:** None
+
+**Sub-tasks:**
+1. `views/settings.ejs` — Branding section (currently rendered for all users): wrap the logo/color inputs in `<% if (user.plan !== 'free') { %> … <% } else { %>` and render a locked placeholder with text "Custom branding is a Pro feature. [Upgrade to Pro →](/billing/upgrade)" styled with a gray overlay and a lock icon (Unicode 🔒, or inline SVG).
+2. `views/invoice-view.ejs` — For free-plan users, render a grayed-out "Payment Link" card with a lock icon and copy: "Pro users get a Stripe payment link on every invoice. [Upgrade →]". Only show if `!user.is_pro` (the card is already hidden for Pro-without-link; add the locked version for free users).
+3. `views/dashboard.ejs` — Add a one-line Pro feature callout below the stats bar for free users: "✨ **Pro:** Email invoices directly to clients, collect payment in one click. [See plans →](/billing/upgrade)". Wrap in `<% if (user.plan === 'free') { %>`.
+4. Verify none of the new conditional blocks appear in print view (`@media print { .upgrade-callout { display: none; } }` in `views/partials/head.ejs`).
+
+---
+
+### 16. [GROWTH] Automated Payment Reminders for QuickInvoice (Pro Feature) [M]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM-HIGH — InvoiceFlow already has this; QuickInvoice Pro users currently have to manually follow up on overdue invoices, which is the #1 pain point the product is supposed to solve
+**Effort:** Low-Medium
+**Prerequisites:** Email delivery (#13 above) must be live first
+
+**Sub-tasks:**
+1. `npm install node-cron` (add to `package.json` dependencies).
+2. `db/schema.sql`: `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_reminder_sent_at TIMESTAMP;` on `invoices` (not users) — `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_reminder_sent_at TIMESTAMP;`
+3. `jobs/reminders.js` — export a `startReminderJob()` function using `node-cron` schedule `'0 9 * * *'` (daily 09:00 UTC):
+   - Query: `SELECT i.*, u.email AS owner_email, u.business_name, u.plan FROM invoices i JOIN users u ON i.user_id = u.id WHERE i.status = 'sent' AND i.due_date < NOW() AND (i.last_reminder_sent_at IS NULL OR i.last_reminder_sent_at < NOW() - INTERVAL '3 days') AND u.plan IN ('pro', 'business')`.
+   - For each row: call `sendEmail()` to the client email with subject "Friendly reminder: Invoice [number] is overdue" and a body including invoice total, due date, and payment link URL (if set).
+   - Update `invoices.last_reminder_sent_at = NOW()` after sending.
+4. `server.js`: `require('./jobs/reminders').startReminderJob();` after the DB pool is confirmed ready.
+5. Write a unit test in `tests/reminders.test.js` (stub `node-cron` and `lib/email.js`) verifying: overdue Pro invoice → email sent; free-plan invoice → skipped; already-reminded-within-3-days → skipped.
+
+---
+
+### 17. [GROWTH] Google OAuth One-Click Signup [M]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM — every extra form field at registration costs ~5–10% of signups; Google OAuth removes 4 fields and eliminates password anxiety; most freelancer SaaS tools see 30–50% of registrations switch to OAuth within 30 days of adding it
+**Effort:** Medium
+**Prerequisites:** Custom domain live (OAuth redirect URI must be a real domain); Google Cloud project with OAuth 2.0 credentials
+
+**Sub-tasks:**
+1. `npm install passport passport-google-oauth20 express-session` (session already in use — just add passport packages).
+2. `routes/auth.js`: add `GET /auth/google` (initiates flow with `scope: ['profile', 'email']`) and `GET /auth/google/callback` (handles code exchange). On success: look up or create user by `google_id` OR email match; set `req.session.user` identically to the existing login flow; redirect to `/dashboard`.
+3. `db/schema.sql`: `ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(64) UNIQUE;` — `db.js`: add `findUserByGoogleId(googleId)` and `upsertGoogleUser({ googleId, name, email })` helpers.
+4. `views/auth/login.ejs` and `views/auth/register.ejs`: add a "Continue with Google" button above the existing form (styled with the standard Google G icon inline SVG from Google Brand Guidelines; white button, border, shadow). Separate with a centered "or" divider.
+5. `middleware/auth.js`: `requireAuth` already checks `req.session.user` — no changes needed (OAuth sets the same session key).
+6. **[Human action]** Create a Google Cloud project → enable Google+ API → create OAuth 2.0 Client ID with redirect URI `https://yourdomain.com/auth/google/callback`. Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to `.env.example` and `TODO_MASTER.md`.
+
+---
+
+### 18. [GROWTH] Referral Program with Stripe Coupon Rewards [M]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM — referred users convert at 3–5× the rate of cold traffic and churn at half the rate; a one-month-free reward for the referrer costs $12 and acquires a user with estimated $60–$120 LTV
+**Effort:** Medium
+**Prerequisites:** Email delivery (#13) recommended so referral invite links can be emailed; Stripe already integrated
+
+**Sub-tasks:**
+1. `db/schema.sql`: `ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR(12) UNIQUE;` and `ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by_code VARCHAR(12);`. Generate code on user creation (`Math.random().toString(36).slice(2, 8).toUpperCase()` is sufficient).
+2. `db.js`: add `getUserByReferralCode(code)`, update `createUser()` to generate and store `referral_code`, and accept optional `referred_by_code` on insert.
+3. `routes/auth.js` `POST /register`: read `req.body.ref` (from landing page URL `?ref=XXXXXX`); store as `referred_by_code`; persist `?ref=` in the register link via `views/auth/register.ejs` hidden input.
+4. `routes/billing.js` `customer.subscription.updated` handler (when `status === 'active'` and newly upgraded): look up `user.referred_by_code`; if set and referrer is a Pro user, call `stripe.coupons.create({ percent_off: 100, duration: 'once' })` and `stripe.subscriptionItems.update(referrerSubItemId, { coupon })` to apply one free month. Mark `referred_by_code` as redeemed (add `referral_redeemed BOOLEAN DEFAULT false` to users) to prevent double-apply.
+5. `views/settings.ejs`: add a "Refer a friend" card showing the user's unique referral URL (`APP_URL/register?ref=XXXXXX`) with a copy button (Alpine.js clipboard); copy reads "Get 1 free month for every friend who upgrades to Pro."
+
+---
+
 ## BLOCKED — Do Not Start Until Prerequisites Are Met
 
 ### 11. [GROWTH] [BLOCKED] Churn Win-Back Email Sequence [L]

@@ -105,6 +105,103 @@ A new daily scheduler runs at **08:00 UTC** (`@Scheduled(cron = "0 0 8 * * *")`)
 
 **Verify after deploy (2 min):** log in as a Pro/Agency account, `PUT /api/invoices/{id}/recurrence` with `{"frequency":"MONTHLY","active":true}`, confirm `GET /api/invoices/recurring` lists it, then wait for 08:00 UTC (or invoke the job via a test harness) and confirm a new `DRAFT` invoice appears with `recurrence_source_id` pointing at the template.
 
+---
+
+## [MARKETING] Growth & Distribution Actions
+
+> These require Master action — no code needed. Execute in order of income impact.
+
+### 12. [MARKETING] Launch on Product Hunt
+
+**Impact:** HIGH — a well-executed Product Hunt launch drives 500–2,000 targeted visitors in 24 hours, many of whom are freelancers or makers actively looking for tools
+**Action:**
+1. Create a hunter account at producthunt.com (if not already done).
+2. Prepare the listing:
+   - **Name:** QuickInvoice
+   - **Tagline:** "Professional invoices with Stripe payment links — in under a minute"
+   - **Description:** 2–3 sentences about the pain (chasing payments), the solution (one-click invoice → client pays via Stripe), and the price (free to start, $12/mo for Pro).
+   - **Gallery:** 3–5 screenshots: landing page, invoice editor, invoice with Pay Now button, dashboard stats, pricing page.
+   - **First comment:** Write a "maker comment" explaining why you built it and linking to a special Product Hunt discount (create a Stripe coupon for 50% off first month with code `PH50`).
+3. Launch on a Tuesday or Wednesday between 12:01 AM PST and 6 AM PST (maximizes upvote window).
+4. Post in r/SideProject and Indie Hackers the same day announcing the launch.
+
+---
+
+### 13. [MARKETING] List on Freelancer Tool Directories
+
+**Impact:** MEDIUM-HIGH — directory listings drive passive, evergreen organic traffic and backlinks that improve SEO; each listing takes 15–30 minutes
+**Action:** Create consistent listings on each of the following. Use the same description, screenshots, and feature list for each. Category: "Invoicing Software" or "Freelancer Tools."
+- **G2.com** (g2.com/products/new) — highest domain authority; reviews from real users will appear in Google search results for "QuickInvoice reviews"
+- **Capterra** (capterra.com/vendors) — strong for B2B SaaS discovery
+- **AlternativeTo** (alternativeto.net/add-software) — lists QuickInvoice as an alternative to FreshBooks, Wave, Bonsai; captures high-intent comparison traffic
+- **GetApp** (getapp.com — same vendor portal as Capterra)
+- **SaaSHub** (saashub.com/add) — frequented by developers and indie makers
+- **Indie Hackers Products** (indiehackers.com/products/new) — maker community with high conversion intent
+
+**For each listing include:** URL, tagline, 3–5 screenshots, feature list (unlimited invoices, Stripe payment links, custom branding, PDF export, automated reminders), pricing ($0 free / $12 mo / $99 yr), and a link to the pricing page.
+
+---
+
+### 14. [MARKETING] Reddit & Community Launch Posts
+
+**Impact:** MEDIUM — targeted posts in high-traffic freelancer communities generate signups with no ad spend; subreddits with 100k+ freelancers are a direct audience match
+**Action:** Post in the following communities within the same week. Titles should focus on the pain/solution, not the product name. Do NOT post the same text verbatim (Reddit detects this). Write each post naturally.
+- **r/freelance** (300k+ members): "I got tired of chasing payments so I built a tool that auto-sends Stripe payment links when you mark an invoice sent — free to try"
+- **r/webdev**: "Built a no-nonsense invoicing tool for developers doing freelance work — payment links, PDF export, reminders"
+- **r/Entrepreneur**: "Zero to $X MRR in N weeks building an invoicing SaaS — here's what's working"
+- **r/SideProject**: "Show HN-style: QuickInvoice — freelancer invoicing with built-in Stripe payment collection"
+- **Facebook group: Freelancers Union** — community post with a screenshot of a paid invoice notification
+- **Indie Hackers** — post a "Milestone" update once you hit first paid subscriber, linking to the product
+
+---
+
+### 15. [MARKETING] Create a 60-Second Demo Video
+
+**Impact:** MEDIUM — video on the landing page increases conversion by 20–30% on average; a screen recording showing "invoice created → client pays → dashboard updates" is the fastest way to communicate value
+**Action:**
+1. Use Loom (loom.com, free tier) to record a 60-second screen walkthrough:
+   - 0–10s: Landing page intro ("Here's how QuickInvoice works")
+   - 10–30s: Create a new invoice with one line item, set due date, mark as Sent
+   - 30–45s: Show the auto-generated Stripe Payment Link; open it as the "client" in an incognito window
+   - 45–60s: Return to dashboard — show invoice flipped to Paid and the revenue stat updated
+2. Download the MP4 from Loom.
+3. Host it on the landing page (`views/index.ejs`) above the feature grid — embed as `<video autoplay muted loop playsinline>` (silent autoplay) with a "▶ Watch demo" click-to-unmute overlay.
+4. Share the same video on Twitter/X, LinkedIn, and as a YouTube short titled "Get paid in 30 seconds — QuickInvoice."
+
+---
+
+### 16. [MARKETING] Set Up Google / GitHub OAuth Credentials
+
+**Impact:** MEDIUM — required prerequisite for dev task #17 (Google OAuth signup); without the OAuth client credentials the code cannot be activated
+**Action:**
+1. Go to console.cloud.google.com → Create a new project named "QuickInvoice".
+2. Enable "Google+ API" (or "People API").
+3. Credentials → Create OAuth 2.0 Client ID:
+   - Application type: Web
+   - Authorized redirect URI: `https://yourdomain.com/auth/google/callback`
+4. Copy the **Client ID** and **Client Secret**.
+5. Set on the deployed app:
+   ```
+   GOOGLE_CLIENT_ID=...apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=...
+   ```
+6. Update the Stripe webhook redirect URI allowlist if required.
+
+---
+
+### 17. [MARKETING] Tweet / LinkedIn Content Series (Invoicing Tips)
+
+**Impact:** MEDIUM — consistent content in the freelancer space builds an audience that converts to users over 4–8 weeks; positions QuickInvoice as a knowledgeable resource, not just an ad
+**Action:** Post one piece of content per week for 6 weeks. Examples:
+- "5 invoicing mistakes that delay your payment (and how to fix them)" — thread, end with a link to QuickInvoice
+- "How to write an invoice payment terms clause that actually gets paid" — tip thread
+- "I analyzed 1,000 freelancer invoices. Here's what separates those paid on time vs. 30 days late."
+- "Free invoice template for [web designers / photographers / consultants]" — link to the niche landing page (after SEO pages are live, dev task #8)
+- Share the demo video (item 15 above) as a native Twitter video upload (not a link)
+- Post a milestone ("First 10 paying users!") to build transparency/trust
+
+---
+
 ## 8. Set logo uploads directory (added 2026-04-22)
 Logo uploads are stored on the local filesystem. Set a persistent path (e.g., an attached volume on Heroku/Railway):
 ```
