@@ -2,6 +2,42 @@
 <%- include('partials/nav') %>
 
 <div class="max-w-5xl mx-auto px-4 py-10">
+  <% if (user && (user.subscription_status === 'past_due' || user.subscription_status === 'paused')) { %>
+    <div
+      x-data="{ dismissed: false }"
+      x-show="!dismissed"
+      x-cloak
+      data-testid="past-due-banner"
+      class="mb-6 rounded-xl border border-red-200 bg-red-50 px-5 py-4 flex items-start gap-3"
+      role="alert"
+    >
+      <div class="text-red-500 text-xl leading-none mt-0.5">&#9888;</div>
+      <div class="flex-1 text-sm">
+        <p class="font-semibold text-red-800">
+          <% if (user.subscription_status === 'paused') { %>
+            Your Pro subscription is paused.
+          <% } else { %>
+            Your payment didn't go through.
+          <% } %>
+        </p>
+        <p class="text-red-700 mt-0.5">
+          Pro features are temporarily restricted while Stripe retries your card. Update your card to restore unlimited invoices immediately — your data is safe.
+        </p>
+        <form action="/billing/portal" method="POST" class="mt-3">
+          <button type="submit" class="inline-flex items-center gap-1.5 bg-red-600 text-white font-semibold text-xs px-3 py-2 rounded-lg hover:bg-red-700 transition">
+            Update payment method &rarr;
+          </button>
+        </form>
+      </div>
+      <button
+        type="button"
+        @click="dismissed = true"
+        class="text-red-400 hover:text-red-600 text-2xl leading-none"
+        aria-label="Dismiss"
+      >&times;</button>
+    </div>
+  <% } %>
+
   <!-- Header -->
   <div class="flex items-center justify-between mb-8">
     <div>

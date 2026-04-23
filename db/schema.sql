@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   plan VARCHAR(20) DEFAULT 'free' CHECK (plan IN ('free', 'pro')),
   stripe_customer_id VARCHAR(255),
   stripe_subscription_id VARCHAR(255),
+  subscription_status VARCHAR(20),
   invoice_count INTEGER DEFAULT 0,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
@@ -42,6 +43,7 @@ CREATE TABLE IF NOT EXISTS invoices (
 -- Idempotent migration for existing deployments
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_link_url TEXT;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_link_id VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status VARCHAR(20);
 
 CREATE INDEX IF NOT EXISTS idx_invoices_user_id ON invoices(user_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);

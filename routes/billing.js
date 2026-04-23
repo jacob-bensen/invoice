@@ -123,17 +123,20 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
       case 'customer.subscription.deleted': {
         const sub = event.data.object;
         const { rows } = await pool.query(
-          'UPDATE users SET plan=$1, stripe_subscription_id=NULL WHERE stripe_subscription_id=$2',
+          'UPDATE users SET plan=$1, stripe_subscription_id=NULL, subscription_status=NULL WHERE stripe_subscription_id=$2',
           ['free', sub.id]
         );
         break;
       }
       case 'customer.subscription.updated': {
         const sub = event.data.object;
-        const plan = sub.status === 'active' ? 'pro' : 'free';
+        // Dunning + Smart Retries: past_due and paused restrict Pro features
+        // without destroying the user's subscription link, so the Customer
+        // Portal can restore them the moment a retry succeeds.
+        const plan = sub.status === 'active' || sub.status === 'trialing' ? 'pro' : 'free';
         await pool.query(
-          'UPDATE users SET plan=$1 WHERE stripe_subscription_id=$2',
-          [plan, sub.id]
+          'UPDATE users SET plan=$1, subscription_status=$3 WHERE stripe_subscription_id=$2',
+          [plan, sub.id, sub.status]
         );
         break;
       }

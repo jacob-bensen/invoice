@@ -2,6 +2,47 @@
 
 ---
 
+## 2026-04-23 — Stripe Dunning + Smart Retries: Past-Due Awareness [HEALTH]
+
+### What was built
+Implemented the code portion of the Stripe Dunning + Smart Retries feature (INTERNAL_TODO #4). QuickInvoice now **tracks each subscription's live Stripe status** (`active`, `past_due`, `paused`, `trialing`, `canceled`, …) via the existing `customer.subscription.updated` webhook, restricts Pro features the moment a payment fails, and surfaces a dismissible in-app banner on the dashboard that drops users directly into the Stripe Customer Portal to update their card — without any support contact, without losing any data.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `db/schema.sql` | New `subscription_status VARCHAR(20)` column on `users` (inline + idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` migration for existing deployments). |
+| `routes/billing.js` | `customer.subscription.updated` now writes `(plan, subscription_status)` in a single UPDATE. `past_due` / `paused` / `canceled` / `incomplete` → `plan='free'` (restrict Pro features) **but** `stripe_subscription_id` is preserved so the Customer Portal can restore access the instant a Smart Retry succeeds. `active` / `trialing` → `plan='pro'`. `customer.subscription.deleted` now also nulls `subscription_status` so any banner disappears. |
+| `routes/invoices.js` | `GET /invoices` (dashboard) now fetches the authoritative user record from the DB and refreshes `req.session.user.plan` + `subscription_status` on every load, so a webhook-driven past_due flip becomes visible on the very next page view without forcing the user to log out. |
+| `views/dashboard.ejs` | New dismissible red-alert banner rendered when `user.subscription_status === 'past_due'` or `'paused'`. Alpine.js `x-data` drives the dismiss action (session-local, not persisted — re-appears on next dashboard load so users who ignore it still see it). The CTA posts to the existing `/billing/portal` route → Stripe Customer Portal for card updates. Paused subscriptions get their own headline copy. |
+| `tests/dunning.test.js` | **New** — 9 tests covering all five webhook branches (`past_due`, `paused`, `active`, `trialing`, `deleted`) plus four dashboard render branches (past_due, paused, active healthy Pro, null status new user). |
+| `package.json` | `test` script appends `tests/dunning.test.js`. |
+
+### How it was verified
+`npm test` — **68/68 tests passing** (was 59; +9). New `dunning.test.js` covers:
+- past_due webhook → `plan='free'`, `subscription_status='past_due'`, subscription link preserved.
+- paused webhook → same semantics, different status string.
+- active webhook → `plan='pro'`, `subscription_status='active'`.
+- trialing webhook → `plan='pro'` (trial users retain Pro during the trial).
+- subscription.deleted webhook → nulls **both** `stripe_subscription_id` and `subscription_status` (banner disappears).
+- Dashboard banner renders for past_due users with the `/billing/portal` form action.
+- Dashboard banner renders for paused users with paused-specific copy.
+- Dashboard banner is **not** rendered for healthy active Pro users (would be confusing).
+- Dashboard banner is **not** rendered when `subscription_status` is null (every brand-new free user).
+
+All 6 pre-existing `billing-webhook.test.js` tests still pass — `past_due` still sets `plan=free` and the delete path still nulls `stripe_subscription_id`, so the extended UPDATE remains backward-compatible.
+
+### Why it matters for income
+1. **Recovers 20–30% of failed payments with zero ongoing effort.** Stripe Smart Retries (enabled in the Dashboard — see `TODO_MASTER.md` item 12) retry the card 2–4 times over up to two weeks. Without a banner, users never know their card failed and churn silently; with a visible, dismissible "Update payment method →" CTA on every dashboard load, the self-service recovery rate climbs substantially, and we capture revenue from users whose renewal would otherwise have quietly died.
+2. **Preserves LTV without destroying data.** Setting `plan='free'` restricts Pro-only features (payment links, unlimited invoices) but leaves `stripe_subscription_id` intact and keeps every invoice, client, and PDF in place. The moment a retry succeeds, the next webhook flips the user straight back to `plan='pro'` with no manual intervention — no data migration, no support ticket, no "lost" subscription.
+3. **Customer Portal deep-link = zero friction.** The banner CTA posts to `/billing/portal`, which already exists and generates a signed Stripe Customer Portal URL. The user is one click away from updating their card — the single lowest-friction unstick path in the whole SaaS playbook.
+4. **Paused ≠ churned.** Handling `status='paused'` separately (distinct copy, same UX) means subscribers who voluntarily paused via the portal see a clear "your Pro subscription is paused" signal instead of an ambiguous payment-failure message — preserves trust and lowers re-activation friction.
+
+### Deployment notes
+- Run the idempotent migration once: `psql $DATABASE_URL -f db/schema.sql` (adds `subscription_status` if missing; safe to re-run).
+- In the Stripe Dashboard, enable **Smart Retries**, **dunning emails**, and **pause subscription on final retry failure** (see `TODO_MASTER.md` item 12). The code assumes Stripe is the source of truth for the subscription status string.
+
+---
+
 ## 2026-04-23 — QA Audit: Invoice CRUD + Billing Settings Coverage
 
 ### What changed

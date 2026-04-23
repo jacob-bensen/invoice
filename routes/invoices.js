@@ -9,13 +9,27 @@ const FREE_LIMIT = 3;
 
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const invoices = await db.getInvoicesByUser(req.session.user.id);
+    const [invoices, user] = await Promise.all([
+      db.getInvoicesByUser(req.session.user.id),
+      db.getUserById(req.session.user.id)
+    ]);
     const flash = req.session.flash;
     delete req.session.flash;
-    res.render('dashboard', { title: 'My Invoices', invoices, flash });
+    // Refresh session plan + subscription_status so the dashboard reflects
+    // any webhook-driven changes (e.g. Stripe flipping the user to past_due)
+    // without forcing the user to log out and back in.
+    if (user) {
+      req.session.user = {
+        ...req.session.user,
+        plan: user.plan,
+        subscription_status: user.subscription_status || null,
+        invoice_count: user.invoice_count
+      };
+    }
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash });
   } catch (err) {
     console.error(err);
-    res.render('dashboard', { title: 'My Invoices', invoices: [], flash: null });
+    res.render('dashboard', { title: 'My Invoices', invoices: [], user: req.session.user || null, flash: null });
   }
 });
 

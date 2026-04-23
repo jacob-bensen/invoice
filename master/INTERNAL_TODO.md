@@ -59,7 +59,7 @@ Replace the dead-end at the 3-invoice limit with a full-screen Alpine.js modal i
 
 ## [HEALTH]
 
-### 4. [HEALTH] Stripe Dunning + Smart Retries — Code Portion [S]
+### 4. [DONE 2026-04-23] [HEALTH] Stripe Dunning + Smart Retries — Code Portion [S]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** MEDIUM — recovers an estimated 20–30% of failed payments with zero ongoing effort
