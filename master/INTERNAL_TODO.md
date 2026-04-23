@@ -8,7 +8,7 @@ Do not duplicate items already in `TODO.md`. App labels indicate which codebase 
 
 ## INCOME-CRITICAL
 
-### 1. [GROWTH] Upgrade Modal at Free-Plan Invoice Limit [S]
+### 1. [DONE 2026-04-23] [GROWTH] Upgrade Modal at Free-Plan Invoice Limit [S]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** HIGH — highest-intent conversion moment in the funnel

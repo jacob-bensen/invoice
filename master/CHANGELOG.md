@@ -2,6 +2,31 @@
 
 ---
 
+## 2026-04-23 — Upgrade Modal at Free-Plan Invoice Limit (QuickInvoice)
+
+### What was built
+Replaced the dead-end "flash error → upgrade page redirect" that free users hit at 3 invoices with a full-screen Alpine.js modal. When a free user tries to create a 4th invoice, the server now redirects to `/invoices?limit_hit=1`; the dashboard (and invoice form, for future parity) detects the query flag on page load and surfaces a modal with Pro unlocks, social proof, a one-click Stripe checkout CTA, "See full pricing" secondary link, and dismiss. After opening, the modal strips `limit_hit=1` from the URL via `history.replaceState` so a refresh doesn't re-trigger it.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `routes/invoices.js` | GET and POST `/invoices/new` at free-plan limit now redirect to `/invoices?limit_hit=1` instead of flash-redirecting to `/billing/upgrade` |
+| `views/partials/upgrade-modal.ejs` | **New** — reusable Alpine.js modal component with Pro benefit list, Stripe Checkout CTA, dismiss, auto-open on `?limit_hit=1` |
+| `views/dashboard.ejs` | Includes the upgrade-modal partial |
+| `views/invoice-form.ejs` | Includes the upgrade-modal partial (parity per spec) |
+
+### How it was verified
+Integration test harness (stubbed db + auth) confirmed:
+- Free user at 3 invoices → GET and POST `/invoices/new` both redirect 302 to `/invoices?limit_hit=1`.
+- Free user under the limit → form renders normally (200).
+- Pro user at 100 invoices → form renders normally (200).
+EJS render tests confirmed both `views/dashboard.ejs` and `views/invoice-form.ejs` include the modal markup.
+
+### Why it matters for income
+This is the highest-intent conversion moment in the funnel — the user has just tried to perform the core paid action and been told "no." The old flow dropped them on a pricing page after a flash error; the new flow keeps them on the dashboard, shows the exact unlocks they're missing (unlimited invoices, email delivery, payment links, branding), and offers a one-click Stripe Checkout without a page navigation. Reducing friction at this exact moment is the single biggest lever for free → Pro conversion.
+
+---
+
 ## 2026-04-22 — P10: Custom Branding for Pro Plan
 
 ### What was built

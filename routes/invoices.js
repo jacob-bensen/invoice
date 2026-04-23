@@ -21,11 +21,7 @@ router.get('/', requireAuth, async (req, res) => {
 router.get('/new', requireAuth, async (req, res) => {
   const user = await db.getUserById(req.session.user.id);
   if (user.plan === 'free' && user.invoice_count >= FREE_LIMIT) {
-    req.session.flash = {
-      type: 'error',
-      message: `You've reached the free plan limit of ${FREE_LIMIT} invoices. Upgrade to Pro for unlimited invoices.`
-    };
-    return res.redirect('/billing/upgrade');
+    return res.redirect('/invoices?limit_hit=1');
   }
   const invoiceNumber = await db.getNextInvoiceNumber(req.session.user.id);
   res.render('invoice-form', {
@@ -43,7 +39,7 @@ router.post('/new', requireAuth, [
 ], async (req, res) => {
   const user = await db.getUserById(req.session.user.id);
   if (user.plan === 'free' && user.invoice_count >= FREE_LIMIT) {
-    return res.redirect('/billing/upgrade');
+    return res.redirect('/invoices?limit_hit=1');
   }
 
   const errors = validationResult(req);
