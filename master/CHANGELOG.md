@@ -2,6 +2,50 @@
 
 ---
 
+## 2026-04-23 — QA Audit: Income-Critical Gap Coverage (routine/autonomous) [HEALTH]
+
+### What changed
+
+**New test file (10 tests):**
+
+| File | Tests | What it covers |
+|------|-------|----------------|
+| `tests/gap-coverage.test.js` | 10 | See below |
+
+**`package.json` `test` script** extended to run the new file (14 suites total).
+
+### Coverage before → after
+
+| Path | Before | After |
+|------|--------|-------|
+| `billing.js` `checkout.session.completed` (payment_link) → `firePaidWebhook` fires for Pro owner | 0 tests | 1 test |
+| Same billing.js path for Agency-plan owner (Agency includes all Pro features) | 0 tests | 1 test |
+| Same billing.js path — no outbound fire when owner has no `webhook_url` | 0 tests | 1 test |
+| `invoices.js` `POST /:id/status=paid` — Agency plan fires outbound webhook | 0 tests | 1 test |
+| `GET /invoices/` dashboard refreshes `session.user.plan` from DB (dunning visible without re-login) | 0 tests | 1 test |
+| `POST /invoices/new` — `db.createInvoice` throws → form re-rendered with error (no unhandled 500) | 0 tests | 1 test |
+| `GET /billing/upgrade` → 200 with pricing content (route existed, never hit in tests) | 0 tests | 1 test |
+| `GET /invoices/:id` — `db.getInvoiceById` throws → redirect to `/dashboard` (no 500) | 0 tests | 1 test |
+| `GET /invoices/:id/print` — `db.getInvoiceById` throws → redirect to `/dashboard` (no 500) | 0 tests | 1 test |
+| `POST /invoices/:id/status` — `db.updateInvoiceStatus` throws → redirect (no 500) | 0 tests | 1 test |
+
+**Total: 127 → 137 passing tests (+10)**
+
+### Why it matters for income
+
+- **Billing webhook + outbound fire** — the `checkout.session.completed` (payment_link) path in `billing.js` calls `firePaidWebhook` after marking an invoice paid. This path was exercised for `markInvoicePaidByPaymentLinkId` in `billing-webhook.test.js` but the downstream outbound webhook call was never exercised. A regression here would silently break Zapier integrations for customers who pay via Stripe Payment Links — the highest-friction path to Pro stickiness.
+- **Agency plan outbound webhook** — `billing.js` and `invoices.js` both gate the outbound fire on `plan === 'pro' || plan === 'agency'`. The agency branch was untested in both routes. Agency users pay $49/mo; silent breakage on the highest-value plan tier is the most costly regression possible.
+- **Dashboard session plan refresh** — `GET /invoices/` refreshes `session.user.plan` from the DB on every load (the mechanism that makes Stripe dunning webhooks take effect without re-login). Unverified previously; a regression here would mean a dunning webhook that downgrades a user's plan would never be reflected in the UI, so Pro features would continue working for users who've failed payment.
+- **Create invoice DB error path** — the route catches `db.createInvoice` errors and re-renders the form with a flash message. Untested; a regression here crashes the core product action with an unhandled 500.
+- **GET /billing/upgrade** — the upgrade page is the single most important conversion surface. The route existed but was never exercised through HTTP; only the template was rendered directly via EJS in other tests.
+- **Invoice view / print / status DB error paths** — error-path redirects in three high-traffic routes were untested. Unhandled 500s on these routes would break the core product experience for every user during a DB transient failure.
+
+### No flaky or redundant tests found
+
+All 127 pre-existing tests remain unmodified and passing. No test was found that only verifies a function exists or produces a trivially tautological assertion. No test was found to be order-dependent or timing-sensitive.
+
+---
+
 ## 2026-04-23 — SEO Niche Landing Pages + Sitemap (QuickInvoice) [GROWTH]
 
 ### What was built
