@@ -178,8 +178,8 @@ router.post('/webhook-url', requireAuth, async (req, res) => {
       req.session.flash = { type: 'success', message: 'Webhook removed.' };
       return res.redirect('/billing/settings');
     }
-    if (!isValidWebhookUrl(trimmed)) {
-      req.session.flash = { type: 'error', message: 'Webhook URL must be http:// or https://.' };
+    if (!(await isValidWebhookUrl(trimmed))) {
+      req.session.flash = { type: 'error', message: 'Webhook URL must be http(s) and point to a public host.' };
       return res.redirect('/billing/settings');
     }
     await db.updateUser(user.id, { webhook_url: trimmed });

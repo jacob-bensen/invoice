@@ -59,7 +59,7 @@ Replace the dead-end at the 3-invoice limit with a full-screen Alpine.js modal i
 
 ## [HEALTH]
 
-### H1. [HEALTH] SSRF hardening on outbound webhook URL (added 2026-04-23 audit) [S]
+### H1. [DONE 2026-04-24] [HEALTH] SSRF hardening on outbound webhook URL (added 2026-04-23 audit) [S]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** MEDIUM — authenticated Pro user can currently point `webhook_url` at a private / metadata / loopback IP. Any error response body is not returned to the user (fire-and-forget, `.on('data', () => {})`), which limits exfiltration, but the probe still reaches internal services. On a Heroku / Render / AWS host, `http://169.254.169.254/...` hits the cloud metadata endpoint; `http://10.x.x.x` and `http://localhost:<port>` reach sibling services.

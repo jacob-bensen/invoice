@@ -2,6 +2,31 @@
 
 ---
 
+## 2026-04-24T20:45Z — H1: SSRF hardening on outbound webhook validator [HEALTH]
+
+### What was built
+Hardened `lib/outbound-webhook.js:isValidWebhookUrl` against SSRF. The Pro "Zapier / webhook" feature previously accepted any `http://` or `https://` URL, so an authenticated Pro user could point it at a private service and cause the server to probe internal networks (e.g. `http://169.254.169.254/latest/meta-data` hits the AWS/GCP IMDS endpoint; `http://127.0.0.1:<port>`, `http://10.x.x.x`, etc. reach sibling services). Response bodies are discarded, so exfiltration is limited — but reachability alone is enough for host discovery and for exploiting metadata endpoints that happily return credentials in the initial response.
+
+### Changes
+- `lib/outbound-webhook.js`: `isValidWebhookUrl` is now `async`. After the protocol check it:
+  - Rejects the literal hostnames `localhost`, `metadata`, `metadata.google.internal`, `169.254.169.254`.
+  - If the hostname is an IP literal (v4 or v6), checks the literal directly.
+  - Otherwise resolves the hostname via `dns.lookup(…, { all: true })` and rejects if **any** resolved address falls in `0.0.0.0/8`, `10.0.0.0/8`, `127.0.0.0/8`, `169.254.0.0/16`, `172.16.0.0/12`, `192.168.0.0/16`, `::/128`, `::1`, `fc00::/7`, `fe80::/10`, or IPv4-mapped equivalents of any of the above (closes the DNS-rebinding escape hatch).
+  - Fails closed when DNS resolution throws (unresolvable hostnames are rejected rather than fired).
+- `firePaidWebhook` now awaits the validator before opening the outbound socket — even URLs that slip past the POST-time validator (e.g. a user that managed to stuff a bad value into the row directly) cannot fire.
+- `routes/billing.js` `POST /billing/webhook-url` awaits the validator; updated the error-flash copy to explain the new "public host" requirement.
+- Module exports a `setHostnameResolver(fn)` test hook so the test suite can stub DNS deterministically.
+
+### Tests
+- Existing `tests/webhook-outbound.test.js` updated: `isValidWebhookUrl` is exercised with `await`, the `localhost` fixture now expects `false` (the spec explicitly blocks it), and all route-layer tests run against an injected canned resolver so behaviour is stable regardless of the sandbox's DNS state.
+- New test `isValidWebhookUrl rejects SSRF targets (metadata, loopback, private IPs, rebind)` exercises: `http://169.254.169.254/…`, `metadata.google.internal`, `127.0.0.1`, `10.0.0.1`, `172.16.5.4`, `192.168.1.1`, `http://[::1]/`, literal `localhost`, a DNS-rebinding hostname that resolves to `10.0.0.5`, and an unresolvable host — every case must return `false`.
+- Full suite: 115+ tests across 14 files, all green.
+
+### Income relevance
+INDIRECT but material. The outbound webhook is a Pro ($9–$19 /mo) feature; an exploitable SSRF in it would be an immediate churn + trust event the first time a security-conscious freelancer or any external auditor probed it. On any cloud host (Heroku/Render/AWS/GCP), the metadata endpoint can return temporary IAM credentials — one-line exploit, full-account compromise, almost certainly fatal for a small SaaS. Ship this before revenue scales, not after.
+
+---
+
 ## 2026-04-23T23:40Z — Reliability Audit (security / perf / deps / legal) [HEALTH]
 
 ### What was audited

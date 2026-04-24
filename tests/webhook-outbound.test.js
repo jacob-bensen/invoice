@@ -114,11 +114,28 @@ require.cache[require.resolve('../lib/stripe-payment-link')] = {
 // Track outbound-webhook fires by replacing the module in the cache.
 const outboundFires = [];
 let outboundFireImpl = async () => ({ ok: true, status: 200 });
-const { buildPaidPayload: realBuildPaidPayload, isValidWebhookUrl: realIsValidWebhookUrl } =
-  require('../lib/outbound-webhook');
+const realOutbound = require('../lib/outbound-webhook');
+const { buildPaidPayload: realBuildPaidPayload, isValidWebhookUrl: realIsValidWebhookUrl } = realOutbound;
+
+// Deterministic DNS: route-layer and validator tests must not depend on
+// real DNS resolution in the sandbox. Public test hostnames resolve to a
+// benign public IP; rebinding-style hostnames resolve to a private IP
+// so the SSRF guard rejects them.
+realOutbound.setHostnameResolver(async (hostname) => {
+  const canned = {
+    'hooks.zapier.com':   [{ address: '52.1.2.3',    family: 4 }],
+    'old.example.com':    [{ address: '52.9.9.9',    family: 4 }],
+    'rebind.example.com': [{ address: '10.0.0.5',    family: 4 }],
+    'public.example.com': [{ address: '93.184.216.34', family: 4 }]
+  };
+  if (canned[hostname]) return canned[hostname];
+  throw new Error('ENOTFOUND ' + hostname);
+});
+
 const outboundStub = {
   isValidWebhookUrl: realIsValidWebhookUrl,
   buildPaidPayload: realBuildPaidPayload,
+  setHostnameResolver: realOutbound.setHostnameResolver,
   firePaidWebhook: async (url, payload) => {
     outboundFires.push({ url, payload });
     return outboundFireImpl(url, payload);
@@ -182,16 +199,47 @@ function request(app, method, url, body) {
 
 async function testIsValidWebhookUrl() {
   const { isValidWebhookUrl } = require('../lib/outbound-webhook');
-  assert.strictEqual(isValidWebhookUrl('https://hooks.zapier.com/hooks/catch/123/abc'), true);
-  assert.strictEqual(isValidWebhookUrl('http://localhost:3000/hook'), true);
-  assert.strictEqual(isValidWebhookUrl('ftp://example.com/x'), false,
+  // Public hostnames (resolved via the injected stub) pass.
+  assert.strictEqual(await isValidWebhookUrl('https://hooks.zapier.com/hooks/catch/123/abc'), true);
+  assert.strictEqual(await isValidWebhookUrl('http://public.example.com/hook'), true);
+  // Non http(s) schemes.
+  assert.strictEqual(await isValidWebhookUrl('ftp://example.com/x'), false,
     'non-http(s) protocols must be rejected');
-  assert.strictEqual(isValidWebhookUrl('javascript:alert(1)'), false,
+  assert.strictEqual(await isValidWebhookUrl('javascript:alert(1)'), false,
     'javascript: URLs must be rejected — XSS guard');
-  assert.strictEqual(isValidWebhookUrl('not a url'), false);
-  assert.strictEqual(isValidWebhookUrl(''), false);
-  assert.strictEqual(isValidWebhookUrl(null), false);
-  assert.strictEqual(isValidWebhookUrl(undefined), false);
+  assert.strictEqual(await isValidWebhookUrl('not a url'), false);
+  assert.strictEqual(await isValidWebhookUrl(''), false);
+  assert.strictEqual(await isValidWebhookUrl(null), false);
+  assert.strictEqual(await isValidWebhookUrl(undefined), false);
+}
+
+async function testIsValidWebhookUrlSsrfGuards() {
+  const { isValidWebhookUrl } = require('../lib/outbound-webhook');
+  // Cloud metadata endpoint — the canonical SSRF target.
+  assert.strictEqual(await isValidWebhookUrl('http://169.254.169.254/latest/meta-data'), false,
+    'AWS/GCP metadata IP must be blocked');
+  assert.strictEqual(await isValidWebhookUrl('http://metadata.google.internal/'), false,
+    'GCP metadata hostname must be blocked');
+  // Loopback / private ranges by literal IP.
+  assert.strictEqual(await isValidWebhookUrl('http://127.0.0.1/hook'), false,
+    '127.0.0.0/8 must be blocked');
+  assert.strictEqual(await isValidWebhookUrl('http://10.0.0.1/hook'), false,
+    '10.0.0.0/8 must be blocked');
+  assert.strictEqual(await isValidWebhookUrl('http://172.16.5.4/hook'), false,
+    '172.16.0.0/12 must be blocked');
+  assert.strictEqual(await isValidWebhookUrl('http://192.168.1.1/hook'), false,
+    '192.168.0.0/16 must be blocked');
+  assert.strictEqual(await isValidWebhookUrl('http://[::1]/hook'), false,
+    'IPv6 ::1 loopback must be blocked');
+  // Blocked literal hostnames.
+  assert.strictEqual(await isValidWebhookUrl('http://localhost:3000/hook'), false,
+    'literal "localhost" must be blocked');
+  // DNS-rebinding: public hostname that resolves to a private IP.
+  assert.strictEqual(await isValidWebhookUrl('http://rebind.example.com/hook'), false,
+    'hostname resolving to a private IP must be blocked (DNS rebinding guard)');
+  // Hostname that fails to resolve — fail closed.
+  assert.strictEqual(await isValidWebhookUrl('http://nonexistent-host-xyz.invalid/hook'), false,
+    'unresolvable hostnames must be rejected (fail closed)');
 }
 
 async function testBuildPaidPayload() {
@@ -221,6 +269,10 @@ async function testFirePaidWebhookPostsJson() {
   // Load the real module (bypass the route-facing stub).
   clearReq('../lib/outbound-webhook');
   const real = require('../lib/outbound-webhook');
+  real.setHostnameResolver(async (hostname) => {
+    if (hostname === 'hooks.zapier.com') return [{ address: '52.1.2.3', family: 4 }];
+    throw new Error('ENOTFOUND ' + hostname);
+  });
 
   const receivedHeaders = {};
   let receivedBody = '';
@@ -513,6 +565,7 @@ async function testSettingsShowsLockedPlaceholderForFree() {
 async function run() {
   const tests = [
     ['isValidWebhookUrl accepts http/https, rejects others', testIsValidWebhookUrl],
+    ['isValidWebhookUrl rejects SSRF targets (metadata, loopback, private IPs, rebind)', testIsValidWebhookUrlSsrfGuards],
     ['buildPaidPayload returns documented shape', testBuildPaidPayload],
     ['firePaidWebhook POSTs JSON with headers', testFirePaidWebhookPostsJson],
     ['firePaidWebhook graceful on invalid URL', testFirePaidWebhookGracefulOnInvalidUrl],
