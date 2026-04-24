@@ -111,6 +111,37 @@ is safe to run against production (no-op on already-migrated DBs). No env var, n
 
 ---
 
+## 15. QuickInvoice: submit sitemap to Google Search Console (added 2026-04-23)
+The SEO niche landing pages feature (INTERNAL_TODO #8) is now live at:
+- `/invoice-template/freelance-designer`
+- `/invoice-template/freelance-developer`
+- `/invoice-template/freelance-writer`
+- `/invoice-template/freelance-photographer`
+- `/invoice-template/consultant`
+- `/invoice-generator`
+
+plus a machine-readable `/sitemap.xml`. To unlock organic search traffic:
+
+1. **Set `APP_URL` env var** on the deployed app so sitemap entries carry the canonical production hostname:
+   ```
+   APP_URL=https://yourdomain.com
+   ```
+   If unset, the sitemap falls back to the `Host` header from the incoming request (works but non-canonical if the app is behind a proxy).
+
+2. **Submit the sitemap to Google Search Console** (~5 min):
+   - Sign in at https://search.google.com/search-console
+   - Add and verify your domain property (DNS TXT record or HTML file)
+   - Left nav → **Sitemaps** → enter `sitemap.xml` → Submit
+   - Google typically indexes the listed URLs within 3–14 days
+
+3. **(Optional) Submit to Bing Webmaster Tools** at https://www.bing.com/webmasters — same process, covers ~5% of US search.
+
+4. **Verify before submitting:** open `https://yourdomain.com/sitemap.xml` in a browser — it should return XML with 9 `<url>` entries (6 niche + 3 core: `/`, `/auth/register`, `/auth/login`).
+
+No code change, no env var dependency for the pages themselves to work — only the sitemap's hostname benefits from `APP_URL`. Indexing is asynchronous; expect measurable long-tail traffic within 30–60 days of submission.
+
+---
+
 ## 13. InvoiceFlow: deploy V3 Flyway migration for recurring invoices (added 2026-04-23)
 The InvoiceFlow recurring-invoice feature (INTERNAL_TODO #6) adds migration `V3__recurring_invoices.sql`. On the **next deploy**, Flyway picks it up automatically — no manual action required. The migration adds four additive columns to the `invoices` table (`recurrence_frequency`, `recurrence_next_run`, `recurrence_active DEFAULT FALSE`, `recurrence_source_id`) plus two indexes. No data backfill, no downtime, and existing invoices behave exactly as before (`recurrence_active` defaults to FALSE).
 
@@ -215,9 +246,117 @@ A new daily scheduler runs at **08:00 UTC** (`@Scheduled(cron = "0 0 8 * * *")`)
 
 ---
 
+### 18. [MARKETING] Launch an Affiliate / Partner Program
+
+**Impact:** HIGH — referred users convert at 3–5× the rate of cold traffic and churn at half the rate; a 20–30% recurring commission offer is extremely attractive to freelancer bloggers, YouTubers, and newsletter authors who already have the target audience; this is a compounding, zero-upfront-cost acquisition channel
+**Action:**
+1. Sign up for **Rewardful** (rewardful.com, $49/mo Starter — free 14-day trial). It integrates directly with Stripe and tracks affiliate-referred checkouts automatically via a UTM parameter.
+2. Set commission to **25% recurring** (this is the standard for SaaS affiliate programs at this price point; at $12/mo Pro, an affiliate earns $3/mo per referral indefinitely — a strong enough incentive for micro-influencers).
+3. Create a public affiliate landing page at `/affiliates` on the site (or use Rewardful's hosted page). Copy: "Earn 25% recurring revenue for every freelancer you refer to QuickInvoice. Most affiliates earn $50–$500/mo."
+4. Reach out directly to 10 target affiliates with a templated email. Prioritize:
+   - **Freelancer newsletters:** Freelance Weekly (freelanceweekly.email), Swipe Files, The Freelance Folder, Elna Cain's freelance writing community
+   - **YouTube channels:** search "freelance invoicing tutorial" — any channel with 5k+ views per video is worth a pitch
+   - **Indie Hacker / maker blogs:** writers who review SaaS tools in the productivity / freelance space
+   - **Template marketplaces:** Notion template creators who serve freelancers — they can add a "recommended tools" section
+5. Pitch email subject: "Earn recurring revenue recommending QuickInvoice to your audience — 25% lifetime commission."
+6. Share the affiliate dashboard link in the email so they can see real-time conversions from day one.
+
+---
+
+### 19. [MARKETING] Submit "Show HN" to Hacker News
+
+**Impact:** HIGH — a well-timed Show HN post for a useful indie tool typically drives 200–2,000 targeted visitors in 24 hours; HN readers are developers who freelance, CTOs who hire contractors, and power users who spread tools; a successful post can generate 20–100 signups in a single day at zero cost
+**Action:**
+1. Wait until the product is fully deployed and the 7-day free trial (#19 in INTERNAL_TODO) is live — the trial dramatically reduces the bounce rate from HN visitors.
+2. Write the HN post:
+   - **Title:** `Show HN: QuickInvoice – freelancer invoicing with Stripe payment links and auto-reminders`
+   - **Body (first comment, posted immediately after submission):** 2–3 short paragraphs. Explain the pain (freelancers spend hours chasing payments), what makes it different (the invoice IS the payment page — clients click Pay and it's done via Stripe), and the pricing model (free to start, $12/mo for Pro, 7-day free trial). End with: "Happy to answer questions about the tech stack (Node.js + Stripe + PostgreSQL) or the product decisions."
+3. Post on a **Tuesday or Wednesday** between **6 AM and 9 AM EST** — this is the HN sweet spot for visibility before the US workday rush.
+4. Do NOT ask friends to upvote (HN penalizes coordinated voting). Do respond to every comment within the first 2 hours — engagement velocity matters for ranking.
+5. Cross-post the milestone to Indie Hackers and r/SideProject the same day.
+
+---
+
+### 20. [MARKETING] Freelancer Newsletter Outreach (Pitch for Feature Mentions)
+
+**Impact:** MEDIUM-HIGH — a single mention in a freelancer newsletter with 10,000+ subscribers can drive 100–500 targeted signups; unlike ads, editorial mentions are trusted; offering free Pro accounts in exchange for a mention is a $12/mo cost that acquires users with $100+ LTV
+**Action:** Draft a short outreach email (under 100 words) and send to each of the following. Use a personal, non-promotional tone — you're a maker sharing a tool, not pitching an ad.
+
+**Email template:**
+> Subject: Tool you might want to share with your readers — QuickInvoice
+>
+> Hi [Name], I built QuickInvoice (quickinvoice.io) for freelancers who are tired of chasing payments. When you mark an invoice as Sent, it automatically creates a Stripe Payment Link so clients pay in one click — no login required. Free to start, $12/mo for Pro features. Thought your readers might find it useful. Happy to give you a free Pro account to try it out. No strings attached.
+
+**Target publications (send one at a time, track opens):**
+- **Freelance Weekly** (freelanceweekly.email) — 15,000+ subscribers, freelancer tool roundups every issue
+- **Swipe Files** (swipefiles.com) — marketing/freelance audience, regularly features SaaS tools
+- **The Freelancer's Year** newsletter — UK-based, strong design freelancer audience
+- **Hiten Shah's Product Habits** — SaaS-focused, often highlights indie tools
+- **Remote Tools Weekly** (remotetools.com) — features productivity tools for remote workers, large freelancer overlap
+- **Dense Discovery** (densediscovery.com) — design/creative community; ideal for the designer/photographer niche pages
+
+Track replies in a spreadsheet. Follow up once if no reply after 7 days.
+
+---
+
+### 21. [MARKETING] Add Real Testimonials to Landing and Pricing Pages
+
+**Impact:** MEDIUM-HIGH — the social proof section (dev task #20 in INTERNAL_TODO) is built with placeholder testimonials; replacing them with real quotes from actual users drives a 10–20% conversion lift; this is a pure copy task
+**Action:**
+1. After the first 10 Pro signups, email each user: "We'd love to feature your experience on our site — would you share one sentence about how QuickInvoice has helped you? We'll credit you by first name and role."
+2. Collect 3 quotes. Requirements for each: specific (mentions a concrete outcome like "paid on time", "stopped chasing payments"), short (1–2 sentences), authentic (no marketing buzzwords).
+3. Replace the placeholder testimonials in `views/index.ejs` (marked with `<!-- MASTER: update the count and replace placeholder testimonials -->`) with the real quotes, names, and roles.
+4. Update the user count number (currently `500+` placeholder) to match actual signups rounded down to the nearest 50. Keep updating this number monthly — social proof compounds as the number grows.
+
+---
+
 ## 8. Set logo uploads directory (added 2026-04-22)
 Logo uploads are stored on the local filesystem. Set a persistent path (e.g., an attached volume on Heroku/Railway):
 ```
 UPLOADS_DIR=/var/data/invoiceflow-uploads
 ```
 If unset, defaults to `./uploads` relative to the working directory (not persistent across Heroku dyno restarts — use an attached volume or swap this for S3 in production).
+
+---
+
+## [LEGAL] Compliance & Required Legal Pages (added 2026-04-23 audit)
+
+> Findings from reliability/legal audit on routine/autonomous @ 2026-04-23. None of these block the app from running, but shipping a paid SaaS to real users without them is a meaningful commercial + regulatory risk — card-acquirer ToS, Stripe's own Services Agreement, EU/UK GDPR, California CCPA/CPRA, and app-store-style directory listings all assume these pages exist.
+
+### L1. [LEGAL] Publish Terms of Service — **hard requirement**
+`views/auth/register.ejs` already tells every signup "By signing up you agree to our terms of service," but there is no `/terms` route or page anywhere in the codebase. This is a direct misrepresentation and unenforceable — a user who disputes a subscription charge can (correctly) argue there was no contract to agree to.
+- **Action:** Commission / adapt a ToS for a US-incorporated SaaS that accepts Stripe payments. Minimum clauses: service description, acceptable-use, payment + refund terms, disclaimer of warranties, limitation of liability, governing law, termination.
+- **Code follow-up (can be done by the autonomous team once you supply the markdown):** add a `GET /terms` route rendering `views/legal/terms.ejs`, and link it from register, the footer of every landing page, and the footer of `views/index.ejs`.
+
+### L2. [LEGAL] Publish Privacy Policy — **hard requirement** (GDPR Art. 13 / CCPA §1798.100)
+QuickInvoice collects email, name, invoice / client data, Stripe customer IDs, session cookies, and (once INTERNAL_TODO #13 / #17 land) Resend and Google OAuth identifiers. Under GDPR and CCPA/CPRA a privacy policy is legally required whenever a site collects personal data from an EU/UK or California resident — which any public signup form does.
+- Minimum disclosures: categories of data collected, purposes, lawful basis (contract performance + legitimate interest), third-party sub-processors (**Stripe, SendGrid/Resend once live, Heroku or whichever host**), cookie disclosures (session cookie, Stripe fraud-detection cookies set by Checkout), data-subject rights (access, deletion, portability), contact email for requests, retention policy.
+- **Action:** Publish at `/privacy` and link it from the register form, every landing page footer, and the Stripe Checkout branding settings.
+
+### L3. [LEGAL] Publish Refund / Cancellation Policy — **Stripe + card-network requirement**
+Stripe's acceptable-use and every card network require a clearly stated refund policy on the merchant's site. Absent one, chargebacks default in the cardholder's favour and merchant-processor ToS allow Stripe to pause payouts.
+- Minimum disclosures: billing cycle, auto-renew behaviour, pro-rated vs. full-period refunds, cancellation mechanic ("cancel anytime via `/billing/settings` → Customer Portal"), who to contact for disputes.
+- **Action:** Publish at `/refund-policy` (or roll into the ToS). Must be linked from the pricing page and visible inside the Stripe Checkout "Terms & Privacy" footer (Stripe Dashboard → Settings → Public details).
+
+### L4. [LEGAL] GDPR data-subject rights plumbing — data export + deletion
+No endpoint exists for a user to (a) download their data or (b) request account deletion. Under GDPR Art. 15 (access) + Art. 17 (erasure) and CCPA §1798.105, this must be available without undue delay.
+- Minimum: a "Delete my account" button in `/billing/settings` that cancels the Stripe subscription, cascades to invoices (the `ON DELETE CASCADE` on `invoices.user_id` already handles this), and scrubs `users` to a tombstone row. Plus a "Download my data" action that dumps a JSON of the user's row + all invoices.
+- **Action:** Owner decision whether to ship this before enabling EU traffic. For US-only launch, document the manual email-a-request procedure in the privacy policy as a stopgap.
+
+### L5. [LEGAL] PCI-DSS SAQ-A scope confirmation (Stripe-hosted checkout)
+Because all card data flows through Stripe-hosted Checkout + Payment Links and never touches this server, the merchant qualifies for PCI-DSS SAQ-A (simplest scope). This is **good news** but Stripe still requires the merchant to file an annual SAQ-A self-attestation.
+- **Action:** Before the first real charge, log into Stripe Dashboard → Compliance → complete the SAQ-A wizard. 10-minute task. Keep the PDF on file. No code change required.
+- **Code note:** never add a route that accepts raw card numbers, even transiently — it would immediately push us into SAQ-D scope (~300-question attestation, annual ASV scans).
+
+### L6. [LEGAL] Cookie banner (EU/UK visitors only)
+The app sets one first-party session cookie (strictly necessary — no consent needed) and Stripe Checkout sets its own fraud-detection cookies on the Stripe domain. A full cookie banner is **not** legally required today, but once INTERNAL_TODO #17 (Google OAuth) lands we'll also be setting Google-originating cookies, and Product Hunt / marketing pages may add an analytics pixel.
+- **Action:** Note this as a prerequisite for adding any analytics / marketing tag (Plausible is cookie-less and avoids the requirement entirely — worth considering over GA4).
+
+### L7. [LEGAL] Dependency-license audit — **CLEAN**
+Reviewed all direct runtime dependencies: `express` (MIT), `express-session` (MIT), `express-validator` (MIT), `bcrypt` (MIT), `pg` (MIT), `stripe` (MIT), `ejs` (Apache-2.0), `dotenv` (BSD-2-Clause), `connect-pg-simple` (MIT). **No GPL, AGPL, or other copyleft licenses** in the production tree. Safe for closed-source commercial distribution. Re-run this audit whenever `package.json` gains a new dep (`npx license-checker --production --summary` is a 10-second check).
+
+### L8. [LEGAL] Third-party API ToS compliance spot-check
+- **Stripe:** compliant (Checkout + Payment Links are Stripe's recommended integration patterns).
+- **SendGrid / Resend (pending INTERNAL_TODO #13):** transactional email to the user's own clients is within normal ToS. Do not repurpose into marketing blasts without the recipient's explicit opt-in.
+- **Google Search Console / sitemap.xml:** compliant (no scraping, only exposing our own sitemap).
+- **Future Google OAuth (INTERNAL_TODO #17):** Google OAuth brand guidelines require the standard "G" icon rendered per `https://developers.google.com/identity/branding-guidelines` — already noted in that task.

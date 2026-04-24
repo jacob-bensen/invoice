@@ -1,0 +1,127 @@
+<%- include('./head') %>
+<%- include('./nav') %>
+
+<section class="bg-gradient-to-br from-brand-600 to-brand-800 text-white py-20 px-4">
+  <div class="max-w-4xl mx-auto text-center">
+    <div class="inline-block bg-white/20 text-white text-sm font-medium px-4 py-1.5 rounded-full mb-6">
+      Free · No credit card required · 60-second setup
+    </div>
+    <h1 class="text-4xl md:text-5xl font-extrabold mb-6 leading-tight">
+      <%= nicheHeadline %>
+    </h1>
+    <p class="text-xl text-brand-100 mb-10 max-w-2xl mx-auto">
+      <%= nicheDescription %>
+    </p>
+    <div class="flex flex-col sm:flex-row gap-4 justify-center">
+      <a href="/auth/register" class="bg-white text-brand-700 font-bold px-8 py-4 rounded-xl hover:bg-brand-50 transition text-lg shadow-lg">
+        Create your first invoice free →
+      </a>
+      <a href="/#pricing" class="border border-white/50 text-white font-semibold px-8 py-4 rounded-xl hover:bg-white/10 transition text-lg">
+        See pricing
+      </a>
+    </div>
+  </div>
+</section>
+
+<section class="py-20 px-4 bg-white">
+  <div class="max-w-5xl mx-auto">
+    <h2 class="text-3xl font-bold text-center text-gray-900 mb-4">Why <%= nicheAudience %> choose QuickInvoice</h2>
+    <p class="text-center text-gray-500 mb-14 max-w-2xl mx-auto"><%= nicheSubheadline %></p>
+    <div class="grid md:grid-cols-3 gap-8">
+      <% nicheBenefits.forEach(function (benefit) { %>
+        <div class="text-center p-6">
+          <div class="text-4xl mb-4"><%= benefit.icon %></div>
+          <h3 class="text-lg font-semibold mb-2"><%= benefit.title %></h3>
+          <p class="text-gray-500"><%= benefit.body %></p>
+        </div>
+      <% }); %>
+    </div>
+  </div>
+</section>
+
+<section class="py-16 px-4 bg-gray-50">
+  <div class="max-w-3xl mx-auto">
+    <h2 class="text-2xl font-bold text-gray-900 mb-8 text-center">What a <%= nicheSingular %> invoice looks like</h2>
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
+      <div class="flex items-start justify-between mb-8 border-b border-gray-100 pb-6">
+        <div>
+          <h3 class="text-2xl font-bold text-gray-900"><%= exampleInvoice.businessName %></h3>
+          <p class="text-sm text-gray-500 mt-1"><%= exampleInvoice.businessTagline %></p>
+        </div>
+        <div class="text-right">
+          <div class="text-xs text-gray-400 uppercase tracking-wider">Invoice</div>
+          <div class="font-mono text-sm text-gray-900">INV-2026-0042</div>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-6 text-sm mb-8">
+        <div>
+          <div class="text-xs text-gray-400 uppercase tracking-wider mb-1">Bill to</div>
+          <div class="font-medium text-gray-900"><%= exampleInvoice.clientName %></div>
+        </div>
+        <div>
+          <div class="text-xs text-gray-400 uppercase tracking-wider mb-1">Due</div>
+          <div class="font-medium text-gray-900">Net 14</div>
+        </div>
+      </div>
+      <table class="w-full text-sm mb-6">
+        <thead>
+          <tr class="text-xs text-gray-400 uppercase tracking-wider border-b border-gray-100">
+            <th class="text-left pb-3">Description</th>
+            <th class="text-right pb-3 w-20">Qty</th>
+            <th class="text-right pb-3 w-28">Rate</th>
+            <th class="text-right pb-3 w-28">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% exampleInvoice.lineItems.forEach(function (item) { %>
+            <tr class="border-b border-gray-50">
+              <td class="py-3 text-gray-800"><%= item.description %></td>
+              <td class="py-3 text-right text-gray-600"><%= item.quantity %></td>
+              <td class="py-3 text-right text-gray-600">$<%= item.rate %></td>
+              <td class="py-3 text-right font-medium text-gray-900">$<%= item.amount %></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+      <div class="flex justify-end">
+        <div class="w-56 text-sm">
+          <div class="flex justify-between py-2 border-t border-gray-200 font-bold text-gray-900">
+            <span>Total</span>
+            <span>$<%= exampleInvoice.total %></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="text-center text-sm text-gray-500 mt-6">
+      Every field is editable. Add taxes, notes, payment terms — or leave them off.
+    </p>
+  </div>
+</section>
+
+<section class="py-20 px-4 bg-white">
+  <div class="max-w-3xl mx-auto">
+    <h2 class="text-3xl font-bold text-center text-gray-900 mb-12">Questions <%= nicheAudience %> ask</h2>
+    <div class="space-y-6">
+      <% nicheFaq.forEach(function (item) { %>
+        <div>
+          <h3 class="font-semibold text-gray-900 mb-2"><%= item.q %></h3>
+          <p class="text-gray-600"><%= item.a %></p>
+        </div>
+      <% }); %>
+    </div>
+  </div>
+</section>
+
+<section class="py-20 px-4 bg-brand-600 text-white text-center">
+  <h2 class="text-3xl font-bold mb-4">Create your first invoice free</h2>
+  <p class="text-brand-200 mb-8 text-lg">Built for <%= nicheAudience %>. No credit card. No setup calls.</p>
+  <a href="/auth/register" class="bg-white text-brand-700 font-bold px-10 py-4 rounded-xl hover:bg-brand-50 transition text-lg inline-block shadow-lg">
+    Start invoicing now →
+  </a>
+</section>
+
+<footer class="bg-gray-900 text-gray-400 text-center py-8 text-sm">
+  <p>© <%= new Date().getFullYear() %> QuickInvoice. Built for freelancers.</p>
+</footer>
+</body>
+</html>

@@ -2,6 +2,154 @@
 
 ---
 
+## 2026-04-23T23:40Z — Reliability Audit (security / perf / deps / legal) [HEALTH]
+
+### What was audited
+Full sweep across `server.js`, `db.js`, `routes/`, `lib/`, `middleware/`, `db/schema.sql`, `package.json` + lockfile, `.env.example`, and every EJS view. Checked for: exposed secrets, hardcoded credentials, input-validation gaps, unhandled-error paths on Stripe / outbound webhook calls, N+1 queries, missing indexes, R14 memory hot spots, dead code, duplication, outdated / vulnerable packages, license compatibility, and the presence of required legal pages.
+
+### What was fixed directly
+| Fix | File | Why |
+|-----|------|-----|
+| Moved `ejs` from `devDependencies` → `dependencies` (+ regenerated `package-lock.json` so the entry no longer carries `"dev": true`). | `package.json`, `package-lock.json` | **Production-breaking.** `server.js` sets `app.set('view engine', 'ejs')`; Express implicitly `require('ejs')` when rendering. A real deploy runs `npm ci --omit=dev` (Heroku / Render / Railway default for Node buildpacks), which would skip `ejs` and crash the server on the first `res.render(...)`. This never surfaced locally because dev installs include devDependencies. Every route except the Stripe webhook renders a view, so the app would be effectively 100 % broken in production the moment a real deploy happened. |
+| Added a startup guard: refuse to boot in production if `SESSION_SECRET` is unset. | `server.js` | The previous fallback `'dev-secret-change-in-production'` is a well-known string; if Master forgot to set `SESSION_SECRET` on deploy, attackers could forge signed session cookies and impersonate any user. Fail-fast is safer than silently running with a predictable secret. Dev / test behaviour unchanged (guard only fires when `NODE_ENV === 'production'`). |
+
+### What was flagged (full context in `INTERNAL_TODO.md` / `TODO_MASTER.md`)
+**[HEALTH] → `INTERNAL_TODO.md`:**
+- **H1 · SSRF on outbound webhook URL** — `lib/outbound-webhook.js:isValidWebhookUrl` accepts any `http://` / `https://` URL, including loopback / RFC1918 / `169.254.169.254` metadata service. A Pro user can probe the host's internal network. Fix is a DNS-resolve + private-range blocklist.
+- **H2 · No CSRF protection** on mutating POST routes (`/invoices/:id/status`, `/invoices/:id/delete`, `/billing/create-checkout`, `/billing/webhook-url`, `/billing/settings`, `/auth/*`). SameSite=Lax helps but is not a full defence. Fix is `csurf` middleware + hidden token in every form.
+- **H3 · No rate limiting** on `/auth/login` + `/auth/register`. Bcrypt cost 12 is a partial throttle; `express-rate-limit` 10/min per IP fully closes it.
+- **H4 · No security headers** (no `helmet`). Missing HSTS, X-Frame-Options, X-Content-Type-Options, CSP.
+- **H5 · Latent CHECK-constraint bug:** `db/schema.sql` pins `plan IN ('free','pro')` but code branches on `plan === 'agency'`. Will 23514-error the first time INTERNAL_TODO #9 / #10 writes `'agency'`.
+- **H6 · `POST /:id/status`** accepts any string; DB constraint rejects bad values as 500s. Whitelist at the Node layer to kill log noise.
+
+**[LEGAL] → `TODO_MASTER.md` (Master action — none can be solved in code alone):**
+- **L1 · Terms of Service page is missing** even though `views/auth/register.ejs` tells every signup they agree to it. Direct misrepresentation and unenforceable — a chargeback dispute would point to the absence of a contract.
+- **L2 · Privacy Policy is missing** — hard requirement under GDPR Art. 13 + CCPA for any site with a public signup form collecting personal data.
+- **L3 · Refund / Cancellation Policy is missing** — Stripe + card-network merchant requirement; without it, chargebacks default in the cardholder's favour.
+- **L4 · GDPR data-subject rights** (Art. 15 access / Art. 17 erasure) have no endpoint. Stopgap is documenting a manual email procedure in the privacy policy.
+- **L5 · PCI-DSS SAQ-A** self-attestation is required annually by Stripe. Merchant currently qualifies for simplest SAQ-A scope because all cards flow through Stripe Checkout / Payment Links — keep it that way.
+- **L6 · Cookie banner** — not required today; will become required once INTERNAL_TODO #17 (Google OAuth) or any analytics pixel lands.
+- **L7 · Dependency-license audit — CLEAN.** All direct runtime deps are MIT / Apache-2.0 / BSD-2-Clause. No GPL / AGPL / copyleft. Safe for closed-source commercial distribution.
+- **L8 · Third-party API ToS:** Stripe Checkout + Payment Links integration is Stripe-recommended; SendGrid / Resend (pending) must not be repurposed for marketing blasts; Google OAuth brand guidelines already noted in INTERNAL_TODO #17.
+
+### Security items checked and CLEAN
+- **No hardcoded credentials.** `.env.example` is a template; test files use literal `sk_test_dummy` (safe). No production keys in-repo.
+- **No hardcoded API secrets.** Stripe, DB, session, and webhook secrets are all env-var driven.
+- **SQL injection.** All queries use parameterised `$n` placeholders. `db.updateUser` composes `SET` clause from caller-supplied keys but every caller passes a fixed object literal (no user-controlled keys reach the SQL).
+- **Authentication.** bcrypt cost 12; session cookies `httpOnly: true` + `secure` in production; `requireAuth` gates every invoice / billing route.
+- **Stripe webhook signature** is verified (`stripe.webhooks.constructEvent`).
+- **Outbound webhook error handling** is fire-and-forget with `.catch` + `.on('error')` + explicit `timeout` — will not hang the response or leak errors to the client.
+- **Indexes** on `invoices(user_id)`, `invoices(status)`, `invoices(payment_link_id)` cover the current query workload; no N+1 pattern found.
+- **Package versions** (lockfile-resolved): `express@4.22.1`, `express-session@1.19.0`, `bcrypt@5.1.1`, `pg@8.20.0`, `stripe@14.25.0`, `express-validator@7.3.2`, `ejs@5.0.2`, `dotenv@16.6.1`, `connect-pg-simple@9.0.1`. No pinned version with a known open CVE.
+
+### How it was verified
+Static review only (no production env to hit). Lockfile diff confirms `"dev": true` removed from `node_modules/ejs` entry; `server.js` diff confirms the `SESSION_SECRET` guard only triggers when `NODE_ENV === 'production'` (tests + dev keep working). All 137 tests still pass post-fix.
+
+---
+
+## 2026-04-23 — QA Audit: Income-Critical Gap Coverage (routine/autonomous) [HEALTH]
+
+### What changed
+
+**New test file (10 tests):**
+
+| File | Tests | What it covers |
+|------|-------|----------------|
+| `tests/gap-coverage.test.js` | 10 | See below |
+
+**`package.json` `test` script** extended to run the new file (14 suites total).
+
+### Coverage before → after
+
+| Path | Before | After |
+|------|--------|-------|
+| `billing.js` `checkout.session.completed` (payment_link) → `firePaidWebhook` fires for Pro owner | 0 tests | 1 test |
+| Same billing.js path for Agency-plan owner (Agency includes all Pro features) | 0 tests | 1 test |
+| Same billing.js path — no outbound fire when owner has no `webhook_url` | 0 tests | 1 test |
+| `invoices.js` `POST /:id/status=paid` — Agency plan fires outbound webhook | 0 tests | 1 test |
+| `GET /invoices/` dashboard refreshes `session.user.plan` from DB (dunning visible without re-login) | 0 tests | 1 test |
+| `POST /invoices/new` — `db.createInvoice` throws → form re-rendered with error (no unhandled 500) | 0 tests | 1 test |
+| `GET /billing/upgrade` → 200 with pricing content (route existed, never hit in tests) | 0 tests | 1 test |
+| `GET /invoices/:id` — `db.getInvoiceById` throws → redirect to `/dashboard` (no 500) | 0 tests | 1 test |
+| `GET /invoices/:id/print` — `db.getInvoiceById` throws → redirect to `/dashboard` (no 500) | 0 tests | 1 test |
+| `POST /invoices/:id/status` — `db.updateInvoiceStatus` throws → redirect (no 500) | 0 tests | 1 test |
+
+**Total: 127 → 137 passing tests (+10)**
+
+### Why it matters for income
+
+- **Billing webhook + outbound fire** — the `checkout.session.completed` (payment_link) path in `billing.js` calls `firePaidWebhook` after marking an invoice paid. This path was exercised for `markInvoicePaidByPaymentLinkId` in `billing-webhook.test.js` but the downstream outbound webhook call was never exercised. A regression here would silently break Zapier integrations for customers who pay via Stripe Payment Links — the highest-friction path to Pro stickiness.
+- **Agency plan outbound webhook** — `billing.js` and `invoices.js` both gate the outbound fire on `plan === 'pro' || plan === 'agency'`. The agency branch was untested in both routes. Agency users pay $49/mo; silent breakage on the highest-value plan tier is the most costly regression possible.
+- **Dashboard session plan refresh** — `GET /invoices/` refreshes `session.user.plan` from the DB on every load (the mechanism that makes Stripe dunning webhooks take effect without re-login). Unverified previously; a regression here would mean a dunning webhook that downgrades a user's plan would never be reflected in the UI, so Pro features would continue working for users who've failed payment.
+- **Create invoice DB error path** — the route catches `db.createInvoice` errors and re-renders the form with a flash message. Untested; a regression here crashes the core product action with an unhandled 500.
+- **GET /billing/upgrade** — the upgrade page is the single most important conversion surface. The route existed but was never exercised through HTTP; only the template was rendered directly via EJS in other tests.
+- **Invoice view / print / status DB error paths** — error-path redirects in three high-traffic routes were untested. Unhandled 500s on these routes would break the core product experience for every user during a DB transient failure.
+
+### No flaky or redundant tests found
+
+All 127 pre-existing tests remain unmodified and passing. No test was found that only verifies a function exists or produces a trivially tautological assertion. No test was found to be order-dependent or timing-sensitive.
+
+---
+
+## 2026-04-23 — SEO Niche Landing Pages + Sitemap (QuickInvoice) [GROWTH]
+
+### What was built
+Implemented INTERNAL_TODO #8. Six new public landing pages targeting high-intent long-tail search queries — each with vertical-specific headline, benefits, example invoice, and FAQ — plus a machine-readable `/sitemap.xml` for Google / Bing ingestion. All six pages are logged-out-friendly (primary CTA points at `/auth/register`) but also render cleanly for logged-in users (nav partial reflects their session state).
+
+| URL | Target query | Audience |
+|-----|--------------|----------|
+| `/invoice-template/freelance-designer` | "invoice template freelance designer" | Designers |
+| `/invoice-template/freelance-developer` | "freelance developer invoice" | Developers |
+| `/invoice-template/freelance-writer` | "freelance writer invoice template" | Writers |
+| `/invoice-template/freelance-photographer` | "photographer invoice template" | Photographers |
+| `/invoice-template/consultant` | "consultant invoice template" | Consultants |
+| `/invoice-generator` | "free online invoice generator" (highest-volume) | All freelancers |
+
+### Files changed
+| File | Change |
+|------|--------|
+| `views/partials/lp-niche.ejs` | **New.** Shared landing-page template driven by slot variables (`nicheHeadline`, `nicheDescription`, `nicheSubheadline`, `nicheAudience`, `nicheSingular`, `nicheBenefits`, `nicheFaq`, `exampleInvoice`). Rendered layout: gradient hero → benefits grid → realistic sample invoice with line items + total → niche FAQ → CTA footer. Includes `partials/head.ejs` and `partials/nav.ejs` so nav + brand styling stay centralised. |
+| `routes/landing.js` | **New.** Single `NICHES` map is the source of truth: slug → {title, audience, headline, description, subheadline, benefits[], faq[], exampleInvoice}. Each slug auto-registers a GET route (5 under `/invoice-template/*`, 1 top-level `/invoice-generator`). Also exports `listNiches()` for the sitemap generator — one source of truth, no duplication. |
+| `server.js` | Mount `landingRoutes` and add `GET /sitemap.xml`. Sitemap uses `APP_URL` env var (falls back to request `Host` header) for canonical URLs; 9 `<url>` entries (3 core + 6 niche) each with `<lastmod>` / `<changefreq>weekly</changefreq>` / `<priority>`. |
+| `tests/landing.test.js` | **New — 15 tests.** |
+| `package.json` | `test` script appends `tests/landing.test.js` as the thirteenth suite. |
+
+### How it was verified
+`npm test` — **127/127 passing** (was 112; +15). `landing.test.js` covers:
+- All 6 niche routes return 200 with substantive HTML (>500 bytes).
+- Each niche carries a `/auth/register` CTA + "Create your first invoice" copy.
+- Each niche renders nav + QuickInvoice brand (partial plumbing works).
+- Every niche has a **unique** `<h1>` headline — guards against copy-paste regression.
+- Designer / developer / consultant pages contain audience-specific keywords in copy (minimum SEO signal).
+- `/invoice-generator` lives at the top-level (no `/invoice-template` prefix) since it's the highest-volume search term.
+- `/sitemap.xml` returns `application/xml` Content-Type, starts with `<?xml` declaration, uses the sitemap.org schema.
+- Sitemap includes every niche URL + the register page.
+- Every `<url>` entry carries a `<lastmod>` with an ISO date.
+- Unknown niche slug (`/invoice-template/not-a-real-niche`) hits the existing 404 → `/` redirect.
+- `listNiches()` exposes exactly the 6 expected slugs.
+- Direct EJS render of `lp-niche.ejs` with supplied locals (regression guard against template crashes).
+- Landing pages render correctly for **logged-in users** — nav partial reflects the Pro badge + Invoices/Settings links instead of "Get started free."
+
+Live smoke test: `node server.js` + `curl /invoice-template/freelance-designer`, `/invoice-generator`, and `/sitemap.xml` all return 200 and render expected content.
+
+All 112 pre-existing tests still pass — no touches on existing routes or views.
+
+### Why it matters for income
+1. **Compounding, zero-ad-spend acquisition.** SEO traffic is the cheapest customer acquisition channel in SaaS — once a page ranks on page 1 for "invoice template freelance developer" or "free invoice generator", it drives steady signups for months with zero ongoing work. Each of the 6 pages targets a distinct long-tail query with lower competition than the generic "invoice software" head term.
+2. **Intent-matched copy = higher conversion.** A designer landing on `/invoice-template/freelance-designer` sees an example invoice with line items like "Logo design — 3 concepts + 2 revisions" instead of generic placeholder copy. Intent-matched examples convert better than generic landing pages because the prospect sees their own use case reflected in the product.
+3. **Niche landing pages unlock tier-1 content marketing.** TODO_MASTER item 17 ("Tweet/LinkedIn Content Series") can now link directly to the relevant niche page instead of the generic root — better click-through, better conversion per tweet.
+4. **Sitemap accelerates indexing.** Google typically indexes new pages 3–14 days after sitemap submission vs. weeks–months for organic discovery. Master submits the sitemap once to Search Console and all 6 pages enter the crawl queue on day one.
+5. **Zero ongoing ops, zero trust risk.** All 6 routes are pure read-only EJS renders — no DB reads, no auth, no Stripe calls. A spike in traffic from a good Hacker News ranking costs nothing. No new env var is strictly required (the sitemap falls back to `Host` header) — but setting `APP_URL=https://yourdomain.com` on deploy gives canonical URLs.
+6. **One source of truth for SEO copy.** The `NICHES` map in `routes/landing.js` is the only place to edit niche copy — no string duplication between routes, sitemap, and partial. Adding a 7th niche is ~15 lines of map entry.
+
+### Master action required
+1. **Set `APP_URL` env var** on the deployed app (e.g. `APP_URL=https://yourdomain.com`) so sitemap entries carry the canonical production hostname. The feature works without it (falls back to request `Host` header), but a canonical `APP_URL` produces more reliable sitemap URLs behind proxies.
+2. **Submit `https://yourdomain.com/sitemap.xml` to Google Search Console** (and optionally Bing Webmaster Tools). Detailed instructions added to `TODO_MASTER.md` item 15. Indexing is asynchronous — expect measurable long-tail traffic within 30–60 days of submission.
+
+No DB migration, no Stripe change, no third-party account beyond Google Search Console (free).
+
+---
+
 ## 2026-04-23 — Zapier Outbound Webhook on Invoice Paid (QuickInvoice Pro) [GROWTH]
 
 ### What was built
