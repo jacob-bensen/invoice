@@ -122,6 +122,15 @@ Replace the dead-end at the 3-invoice limit with a full-screen Alpine.js modal i
 
 ---
 
+### H7. [HEALTH] Null user dereference in billing.js authenticated routes (added 2026-04-24) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** LOW (latent) — `routes/billing.js` calls `db.getUserById(req.session.user.id)` in `POST /create-checkout`, `GET /success`, `POST /portal`, `GET /settings`, `POST /settings`, and `POST /webhook-url`, then immediately dereferences fields (`user.stripe_customer_id`, `user.plan`, etc.) without a null guard. If a session references a deleted account, all six of these routes produce an unhandled 500 instead of a graceful redirect. The same bug existed in `routes/invoices.js` for `GET /new` and `POST /new` and was fixed on 2026-04-24 with `if (!user) return res.redirect('/auth/login')`. The billing routes need the same treatment.
+**Effort:** Very Low
+**Sub-tasks:** In each of the six billing route handlers listed above, add `if (!user) return res.redirect('/auth/login');` immediately after `const user = await db.getUserById(...)`. Add regression tests analogous to `tests/edge-cases.test.js` tests 6–7.
+
+---
+
 ### 4. [DONE 2026-04-23] [HEALTH] Stripe Dunning + Smart Retries — Code Portion [S]
 
 **App:** QuickInvoice (Node.js)

@@ -36,6 +36,7 @@ router.get('/', requireAuth, async (req, res) => {
 
 router.get('/new', requireAuth, async (req, res) => {
   const user = await db.getUserById(req.session.user.id);
+  if (!user) return res.redirect('/auth/login');
   if (user.plan === 'free' && user.invoice_count >= FREE_LIMIT) {
     return res.redirect('/invoices?limit_hit=1');
   }
@@ -54,6 +55,7 @@ router.post('/new', requireAuth, [
   body('items').notEmpty().withMessage('At least one line item is required')
 ], async (req, res) => {
   const user = await db.getUserById(req.session.user.id);
+  if (!user) return res.redirect('/auth/login');
   if (user.plan === 'free' && user.invoice_count >= FREE_LIMIT) {
     return res.redirect('/invoices?limit_hit=1');
   }

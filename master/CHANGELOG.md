@@ -2,6 +2,57 @@
 
 ---
 
+## 2026-04-24T22:00Z — QA Audit: Edge-Case Coverage + Null-User Bug Fix [HEALTH]
+
+### What changed
+
+**Bug fix — `routes/invoices.js`:**
+
+`GET /invoices/new` and `POST /invoices/new` both called `db.getUserById(req.session.user.id)` and immediately dereferenced `user.plan` without a null guard. If a session referenced a deleted or missing account row, both handlers crashed with `TypeError: Cannot read properties of null (reading 'plan')` before reaching any try/catch, producing an unhandled 500. Fixed with `if (!user) return res.redirect('/auth/login');` in both handlers — consistent with the graceful-degradation pattern used throughout the rest of the codebase.
+
+**New test file — `tests/edge-cases.test.js` (7 tests):**
+
+| Test | Path | What it verifies |
+|------|------|-----------------|
+| 1 | `POST /invoices/:id/edit` | DB error in `db.updateInvoice` → redirect back to edit page, no 500 |
+| 2 | `POST /billing/webhook-url` (Agency plan) | Agency plan users ($49/mo) can save a webhook URL — parity with Pro |
+| 3 | `POST /billing/webhook-url` (DB error) | `db.updateUser` throws → flash error + redirect to `/billing/settings`, no 500 |
+| 4 | `POST /auth/register` (authenticated) | `redirectIfAuth` middleware redirects authenticated POST to `/dashboard` |
+| 5 | `POST /auth/login` (authenticated) | Same redirectIfAuth guard on POST — only GET was previously tested |
+| 6 | `GET /invoices/new` (null DB user) | Regression guard for the null.plan bug fix — must redirect, not 500 |
+| 7 | `POST /invoices/new` (null DB user) | Regression guard for the null.plan bug fix — must redirect, not 500 |
+
+**`package.json`:** `test` script extended to run `tests/edge-cases.test.js` as the 16th suite.
+
+**`master/INTERNAL_TODO.md`:** Added H7 — null user dereference in `routes/billing.js` authenticated routes (`POST /create-checkout`, `GET /success`, `POST /portal`, `GET /settings`, `POST /settings`, `POST /webhook-url`); same latent bug pattern as the invoices.js fix, flagged for the next health pass.
+
+### Coverage before → after
+
+| Path | Before | After |
+|------|--------|-------|
+| `POST /invoices/:id/edit` DB error → redirect | 0 tests | 1 test |
+| `POST /billing/webhook-url` Agency plan → allowed | 0 tests | 1 test |
+| `POST /billing/webhook-url` DB error → flash + redirect | 0 tests | 1 test |
+| `POST /auth/register` authenticated user → redirectIfAuth | 0 tests | 1 test |
+| `POST /auth/login` authenticated user → redirectIfAuth | 0 tests | 1 test |
+| `GET /invoices/new` null DB user → redirect (bug fix) | 0 tests | 1 test |
+| `POST /invoices/new` null DB user → redirect (bug fix) | 0 tests | 1 test |
+
+**Total: 124 → 131 passing tests (+7)**
+
+### Why it matters for income
+
+- **Agency plan webhook parity (test 2)** — Agency users pay $49/mo, the highest revenue tier. The webhook-url route correctly allowed Agency plan but was never tested; a future refactor could silently break it, disconnecting $49/mo customers' Zapier integrations. This is now locked in.
+- **Null user redirects (tests 6–7)** — `GET /invoices/new` and `POST /invoices/new` are the core product entry point. A session pointing at a deleted row (e.g., after an admin purge or a DB restore) would produce an unhandled 500 at the exact moment a user tries to create an invoice — the highest-frequency action. Fixed and regression-tested.
+- **edit / webhook-url error paths (tests 1, 3)** — Unhandled 500s on invoice edit or webhook save erode user trust on two high-value surfaces (active editing, Pro integration setup). The existing catch blocks work; now they're verified.
+- **redirectIfAuth on POST (tests 4–5)** — Confirms that an authenticated user can't accidentally re-register or re-trigger a login flow via a cross-site POST, which (pre-CSRF) was a potential session-confusion vector.
+
+### No tests deleted; no previously passing tests broken
+
+All 124 pre-existing tests remain unmodified and passing. The two invoices.js changes are purely additive (null guard before an existing dereference) and do not alter any other code path.
+
+---
+
 ## 2026-04-24T21:00Z — H2: CSRF protection on state-changing POST routes [HEALTH]
 
 ### What was built
