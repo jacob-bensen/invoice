@@ -9,6 +9,7 @@ const authRoutes = require('./routes/auth');
 const invoiceRoutes = require('./routes/invoices');
 const billingRoutes = require('./routes/billing');
 const landingRoutes = require('./routes/landing');
+const { csrfProtection } = require('./middleware/csrf');
 
 const app = express();
 
@@ -42,6 +43,8 @@ app.use((req, res, next) => {
   res.locals.user = req.session.user || null;
   next();
 });
+
+app.use(csrfProtection);
 
 app.get('/', (req, res) => {
   if (req.session.user) return res.redirect('/dashboard');

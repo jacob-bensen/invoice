@@ -15,6 +15,7 @@
   <% } %>
 
   <form action="/invoices/<%= invoice ? invoice.id + '/edit' : 'new' %>" method="POST">
+    <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
     <div class="grid md:grid-cols-2 gap-6">
 
       <!-- Invoice Details -->

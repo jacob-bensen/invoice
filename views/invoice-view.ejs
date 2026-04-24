@@ -44,6 +44,7 @@
     </a>
     <% if (invoice.status !== 'sent') { %>
       <form action="/invoices/<%= invoice.id %>/status" method="POST" class="inline">
+        <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
         <input type="hidden" name="status" value="sent">
         <button class="border border-gray-300 text-gray-700 font-semibold px-5 py-2.5 rounded-lg hover:bg-gray-50 transition">
           📤 Mark as Sent
@@ -52,6 +53,7 @@
     <% } %>
     <% if (invoice.status !== 'paid') { %>
       <form action="/invoices/<%= invoice.id %>/status" method="POST" class="inline">
+        <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
         <input type="hidden" name="status" value="paid">
         <button class="border border-green-300 text-green-700 font-semibold px-5 py-2.5 rounded-lg hover:bg-green-50 transition">
           ✅ Mark as Paid
@@ -60,6 +62,7 @@
     <% } %>
     <form action="/invoices/<%= invoice.id %>/delete" method="POST" class="inline"
       onsubmit="return confirm('Delete this invoice? This cannot be undone.')">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <button class="border border-red-200 text-red-600 font-semibold px-5 py-2.5 rounded-lg hover:bg-red-50 transition">
         🗑️ Delete
       </button>

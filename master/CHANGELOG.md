@@ -2,6 +2,51 @@
 
 ---
 
+## 2026-04-24T21:00Z — H2: CSRF protection on state-changing POST routes [HEALTH]
+
+### What was built
+Added a global synchronizer-token CSRF defence to every cookie-authenticated mutating route. Before this change, each of login, register, logout, invoice create / edit / delete, invoice status change, billing settings, webhook URL save, Stripe Checkout initiation, and Stripe Billing Portal entry was a cookie-authenticated POST with **no** CSRF token. A third-party page visited by a logged-in user could silently submit a cross-site top-level POST form (e.g. `<form action=https://quickinvoice.io/invoices/123/status method=POST><input name=status value=paid></form>`) and the server would honour it. SameSite=Lax on the session cookie (the recent `express-session` default) only blocks cross-site cookie attachment on GET-triggered sub-requests; a top-level POST navigation still sends the cookie.
+
+### Changes
+- New `middleware/csrf.js` exporting `csrfProtection`:
+  - Generates a 24-byte hex token (`crypto.randomBytes`) on first session touch and stashes it on `req.session.csrfToken` (persists across requests so the token is stable for the life of the session and doesn't rotate on every navigation).
+  - Exposes `res.locals.csrfToken` so every EJS view can inject it.
+  - Verifies mutating requests (anything other than `GET` / `HEAD` / `OPTIONS`) against either `req.body._csrf` or the `X-CSRF-Token` / `CSRF-Token` header, using `crypto.timingSafeEqual` on equal-length buffers.
+  - Fully exempts `/billing/webhook` (Stripe sends a raw body with no cookies — its authenticity is verified by the `Stripe-Signature` header via `stripe.webhooks.constructEvent`, not CSRF).
+  - On mismatch, responds `403 Invalid or missing CSRF token` instead of silently redirecting.
+- `server.js`: mounted `csrfProtection` directly after the `res.locals.user` middleware, which is after `express-session` + body parsers and before route registration. Stripe webhook mount order is preserved (raw body first, then JSON, then session, then CSRF) so the exempt path works without needing the body parsed.
+- Every EJS form with `method="POST"` now includes `<input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">`:
+  - `views/partials/nav.ejs` — logout form
+  - `views/partials/upgrade-modal.ejs` — upgrade CTA
+  - `views/auth/login.ejs`, `views/auth/register.ejs`
+  - `views/dashboard.ejs` — past-due banner "Update payment method" form
+  - `views/invoice-form.ejs` — create / edit invoice
+  - `views/invoice-view.ejs` — mark-sent, mark-paid, delete
+  - `views/settings.ejs` — profile save, webhook URL save, portal, checkout
+  - `views/pricing.ejs` — portal, checkout
+- `locals.csrfToken || ''` guard so views still render cleanly in the test harnesses that don't mount the CSRF middleware.
+
+### Tests
+- New `tests/csrf.test.js` — 9 tests:
+  - GET does not require a token and populates `res.locals.csrfToken` (≥ 32 chars).
+  - POST without `_csrf` → 403, body mentions CSRF.
+  - POST with wrong `_csrf` → 403.
+  - POST with matching `_csrf` body field → 200.
+  - POST with matching `X-CSRF-Token` header → 200.
+  - `/billing/webhook` is fully exempt (no cookie, no token, still 200).
+  - Token is stable within a session (no rotation between requests).
+  - Different sessions receive distinct tokens.
+  - Token harvested from attacker session cannot authorize the victim session's POST (closes the naive double-submit hole).
+- Existing 13 test files unchanged and still green — they each build minimal apps without mounting the CSRF middleware, so they continue to exercise route logic without token plumbing. Total suite: 124+ tests across 15 files, all passing.
+
+### Master action required
+No human action. Ship as-is; the token lives inside the existing `pg` session store, no new tables, no new env vars.
+
+### Income relevance
+INDIRECT but material. A cookie-authenticated CSRF on `/invoices/:id/status`, `/billing/create-checkout`, or `/billing/webhook-url` is a trivial-to-exploit, production-visible flaw — the first paid customer who runs any credible security scanner (or the first Google Safe Browsing / auditor flag) would be grounds for refund / churn. Shipping CSRF now is a prerequisite for any SOC2 / vendor-security questionnaire a larger freelancer or small agency will inevitably hand over at sign-up time. No direct revenue lift, but removes a churn / trust landmine before the revenue scales.
+
+---
+
 ## 2026-04-24T20:45Z — H1: SSRF hardening on outbound webhook validator [HEALTH]
 
 ### What was built

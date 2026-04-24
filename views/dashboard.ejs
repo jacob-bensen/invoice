@@ -24,6 +24,7 @@
           Pro features are temporarily restricted while Stripe retries your card. Update your card to restore unlimited invoices immediately — your data is safe.
         </p>
         <form action="/billing/portal" method="POST" class="mt-3">
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
           <button type="submit" class="inline-flex items-center gap-1.5 bg-red-600 text-white font-semibold text-xs px-3 py-2 rounded-lg hover:bg-red-700 transition">
             Update payment method &rarr;
           </button>
