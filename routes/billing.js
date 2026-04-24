@@ -29,6 +29,7 @@ function resolvePriceId(billingCycle) {
 router.post('/create-checkout', requireAuth, async (req, res) => {
   try {
     const user = await db.getUserById(req.session.user.id);
+    if (!user) return res.redirect('/auth/login');
     let customerId = user.stripe_customer_id;
 
     if (!customerId) {
@@ -67,6 +68,7 @@ router.post('/create-checkout', requireAuth, async (req, res) => {
 router.get('/success', requireAuth, async (req, res) => {
   req.session.flash = { type: 'success', message: 'Welcome to Pro! Unlimited invoices are now unlocked.' };
   const user = await db.getUserById(req.session.user.id);
+  if (!user) return res.redirect('/auth/login');
   req.session.user = { ...req.session.user, plan: user.plan };
   res.redirect('/dashboard');
 });
@@ -74,6 +76,7 @@ router.get('/success', requireAuth, async (req, res) => {
 router.post('/portal', requireAuth, async (req, res) => {
   try {
     const user = await db.getUserById(req.session.user.id);
+    if (!user) return res.redirect('/auth/login');
     if (!user.stripe_customer_id) return res.redirect('/billing/upgrade');
 
     const portalSession = await stripe.billingPortal.sessions.create({
@@ -159,6 +162,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 
 router.get('/settings', requireAuth, async (req, res) => {
   const user = await db.getUserById(req.session.user.id);
+  if (!user) return res.redirect('/auth/login');
   const flash = req.session.flash;
   delete req.session.flash;
   res.render('settings', { title: 'Account Settings', user, flash });
@@ -201,6 +205,7 @@ router.post('/settings', requireAuth, async (req, res) => {
       business_phone: req.body.business_phone || null,
       business_email: req.body.business_email || null
     });
+    if (!updated) return res.redirect('/auth/login');
     req.session.user = { ...req.session.user, name: updated.name };
     req.session.flash = { type: 'success', message: 'Settings saved.' };
     res.redirect('/billing/settings');

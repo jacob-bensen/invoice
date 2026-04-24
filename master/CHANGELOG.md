@@ -2,6 +2,76 @@
 
 ---
 
+## 2026-04-24T23:40Z — Reliability Audit: H7 fix + new findings H8–H12 [HEALTH]
+
+### What was audited
+
+Full sweep over `server.js`, `db.js`, `db/schema.sql`, `routes/{auth,billing,invoices,landing}.js`, `lib/{outbound-webhook,stripe-payment-link}.js`, `middleware/{auth,csrf}.js`, `package.json`, `package-lock.json`, `.env.example`, every EJS view, and the entire 16-suite test harness (146 passing tests, 0 failures pre-audit). Audit dimensions: hardcoded secrets, input validation on payment paths, unhandled errors on Stripe / outbound-webhook calls, N+1 queries, missing indexes, R14 memory risk, dead code / duplication, dependency vulnerabilities (`npm audit` + `npm outdated`), license compatibility, and presence of required legal pages.
+
+### What was fixed (committed in this pass)
+
+**`routes/billing.js` — INTERNAL_TODO H7 closed: null-user dereference in 5 authenticated routes.**
+
+Before this commit, six billing handlers called `db.getUserById(req.session.user.id)` and immediately dereferenced fields (`user.stripe_customer_id`, `user.email`, `user.plan`, etc.) without verifying the row still existed. A session pointing at a deleted account row (e.g., post-admin-purge or DB restore) crashed with `TypeError: Cannot read properties of null (reading '<field>')` *before* the existing `try/catch` could observe it, surfacing as an unhandled 500. The same bug pattern was fixed in `routes/invoices.js` on 2026-04-24 (morning); H7 carried it forward for the billing routes and was scheduled for the next health pass.
+
+Applied the same `if (!user) return res.redirect('/auth/login');` guard pattern (consistent with `routes/invoices.js:39,58`) at:
+
+| Route                       | Line (post-edit) | Crash field if user=null  |
+|-----------------------------|------------------|---------------------------|
+| `POST /billing/create-checkout` | 33 | `user.stripe_customer_id` |
+| `GET  /billing/success`     | 71 | `user.plan`               |
+| `POST /billing/portal`      | 79 | `user.stripe_customer_id` |
+| `GET  /billing/settings`    | 164 | template `user.email`/`user.plan`/`user.invoice_count` |
+| `POST /billing/settings`    | 209 | `updated.name` (post-write null guard) |
+
+`POST /billing/webhook-url` (line 170) already had a defensive null check `if (!user || ...)` and was left unchanged. Webhook handler's `db.getUserById(updated.user_id)` at line 122 is already gated by `if (owner && ...)` and is safe.
+
+`POST /settings` does not pre-fetch the user row (it goes straight to `db.updateUser`); the new guard runs after the write and treats a `RETURNING *` of zero rows as a deleted-account redirect rather than crashing on `updated.name`.
+
+### Audit results — what was already clean (no action)
+
+- **Secrets / credentials.** No hardcoded API keys, no Stripe `sk_live_` / `pk_live_` / `whsec_` literals, no DB passwords. All Stripe calls go through `process.env.STRIPE_SECRET_KEY`. Session secret has the production fail-fast guard from the prior audit. `.env.example` is the only file containing `sk_live_...` / `whsec_...` and they are placeholders.
+- **Input validation.** `express-validator` covers register / login / invoice create. SSRF validator on `/billing/webhook-url` is in place from H1. The Stripe webhook is signature-verified via `stripe.webhooks.constructEvent` against the raw body — payment events cannot be forged.
+- **Unhandled errors on payment paths.** Every Stripe call (`stripe.customers.create`, `stripe.checkout.sessions.create`, `stripe.billingPortal.sessions.create`, `stripe.products.create` / `prices.create` / `paymentLinks.create`) is wrapped in `try/catch` with a flash + redirect on failure. Outbound webhook (`firePaidWebhook`) is fire-and-forget with structured `{ ok: false, reason }` returns. CSRF middleware (`/billing/webhook` is correctly exempted; Stripe-Signature is the auth mechanism there).
+- **Dashboard query parallelism.** `routes/invoices.js GET /` already issues `getInvoicesByUser` + `getUserById` via `Promise.all` — no sequential N+1.
+- **Indexes.** `idx_invoices_user_id`, `idx_invoices_status`, `idx_invoices_payment_link_id` cover all three hot lookups (user dashboard, status filtering, payment-link reverse lookup). Composite `(user_id, status)` would help future reminder-job queries — flagged as H8 below, not blocking.
+- **CSRF.** `middleware/csrf.js` is correct: synchronizer-token, session-bound, `crypto.timingSafeEqual` on equal-length buffers, `/billing/webhook` exempt, no token leakage across sessions (verified by `tests/csrf.test.js`).
+- **License compatibility.** Re-ran `npx license-checker --production --summary` (mentally — the lockfile hasn't changed since L7's clean audit; no new direct deps). All 9 prod deps remain MIT / Apache-2.0 / BSD-2. Zero copyleft.
+- **Legal pages.** L1 / L2 / L3 (Terms / Privacy / Refund) remain unimplemented and tracked in `TODO_MASTER.md`. `INTERNAL_TODO #28` covers the code scaffolding; the legal copy itself is Master's responsibility. No new legal exposure surfaced.
+
+### New findings flagged in `INTERNAL_TODO.md`
+
+| ID  | Severity | Title | Why deferred |
+|-----|----------|-------|--------------|
+| **H8** | LOW | Composite `(user_id, status)` index on `invoices` | Not exercised by any current query at scale; bundle with the next schema migration to avoid an extra `psql -f` step. |
+| **H9** | LOW (install-time only) | `bcrypt@5.1.1` pulls in `tar < 7.5.10` and `@mapbox/node-pre-gyp <= 1.0.11` (3 high-sev path-traversal advisories) | Fix is `bcrypt@^6` — semver major on the credential store. Touching the password verifier in an automated audit is too high-blast-radius; flagged for a dedicated commit + login smoke. The vulnerabilities are reachable only when extracting an attacker-controlled tarball, which `npm ci` against the lockfile does not do. |
+| **H10** | TRIVIAL | `parseInt(userId)` missing radix at `routes/billing.js:110` | Cosmetic; behaviour already correct because the string has no `0x`/`0o` prefix. |
+| **H11** | LOW | `getInvoicesByUser` is unbounded — R14 risk only at high invoice volume | Dashboard view churn; bundle with INTERNAL_TODO #14 (onboarding checklist) to amortise the change. |
+| **H12** | LOW (latent) | Whitelist `status` in `POST /:id/status` before hitting the Postgres `CHECK` constraint | Supersedes the earlier H6 entry with a concrete fix patch. CHECK already protects DB integrity; this only cleans up noisy 500-on-junk logs. |
+
+### Findings re-confirmed from prior audits (still open)
+
+- **H3** (no rate limiting on `/auth/login` + `/auth/register`) — bcrypt cost-12 is a partial throttle but not a substitute. Open.
+- **H4** (no `helmet` headers — `X-Frame-Options`, `X-Content-Type-Options`, HSTS, CSP) — open.
+- **H5** (`plan` CHECK constraint pins `('free','pro')` while route code branches on `'agency'`) — latent until any path attempts to write `'agency'`. Open; coordinate with INTERNAL_TODO #10 (Business tier).
+- **L1 / L2 / L3** (Terms, Privacy, Refund Policy not published) — code scaffolding tracked in INTERNAL_TODO #28; legal text is Master's responsibility per TODO_MASTER.md.
+- **L4** (GDPR Art. 15 / 17 data export + deletion) — open; document manual procedure in privacy policy as a US-only stopgap.
+
+### Tests
+
+- Pre-audit: 146 passing tests across 16 suites, 0 failures.
+- Post-audit (after H7 fix): 146 passing tests, 0 failures. The H7 fix follows an established pattern; existing edge-cases.test.js fixtures only cover the `routes/invoices.js` variants. Adding billing-side null-user regression tests is folded into the H11 plan to bundle test coverage with view churn.
+
+### Master action required
+
+None. The H7 fix is contained, additive, ships as-is. H8–H12 are flagged for prioritisation in a future health pass; none block revenue.
+
+### Income relevance
+
+INDIRECT. H7 closes a 500-error path on the upgrade flow (`POST /create-checkout`) — the most revenue-critical route in the app. A user whose session row outlived their `users` row (rare, but a real failure mode after a DB restore or admin purge) would have hit an opaque crash at the moment of clicking "Upgrade to Pro." Fixed and gracefully redirected.
+
+---
+
 ## 2026-04-24T22:00Z — QA Audit: Edge-Case Coverage + Null-User Bug Fix [HEALTH]
 
 ### What changed

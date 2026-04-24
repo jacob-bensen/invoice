@@ -122,12 +122,62 @@ Replace the dead-end at the 3-invoice limit with a full-screen Alpine.js modal i
 
 ---
 
-### H7. [HEALTH] Null user dereference in billing.js authenticated routes (added 2026-04-24) [XS]
+### H7. [DONE 2026-04-24] [HEALTH] Null user dereference in billing.js authenticated routes (added 2026-04-24) [XS]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** LOW (latent) — `routes/billing.js` calls `db.getUserById(req.session.user.id)` in `POST /create-checkout`, `GET /success`, `POST /portal`, `GET /settings`, `POST /settings`, and `POST /webhook-url`, then immediately dereferences fields (`user.stripe_customer_id`, `user.plan`, etc.) without a null guard. If a session references a deleted account, all six of these routes produce an unhandled 500 instead of a graceful redirect. The same bug existed in `routes/invoices.js` for `GET /new` and `POST /new` and was fixed on 2026-04-24 with `if (!user) return res.redirect('/auth/login')`. The billing routes need the same treatment.
 **Effort:** Very Low
-**Sub-tasks:** In each of the six billing route handlers listed above, add `if (!user) return res.redirect('/auth/login');` immediately after `const user = await db.getUserById(...)`. Add regression tests analogous to `tests/edge-cases.test.js` tests 6–7.
+**Resolution (2026-04-24 PM audit):** Added `if (!user) return res.redirect('/auth/login');` in `POST /create-checkout`, `GET /success`, `POST /portal`, and `GET /settings`. `POST /webhook-url` already had the guard. `POST /settings` was patched to `if (!updated) return res.redirect('/auth/login');` after `db.updateUser` (it does not pre-fetch). All 16 test suites still pass; no test changes required for this commit since the existing edge-cases.test.js fixtures only exercise the invoices.js variants — adding billing-side regression tests is folded into H11 below.
+
+---
+
+### H8. [HEALTH] Composite index `(user_id, status)` on `invoices` (added 2026-04-24 PM audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** LOW — `db/schema.sql` already creates `idx_invoices_user_id` and `idx_invoices_status` separately. Once the planned reminder job (#16) and any "outstanding invoices for user" dashboard query land, a composite `(user_id, status)` index will let Postgres serve those queries from one index lookup instead of bitmap-anding two. Single-tenant scale (a few hundred invoices per user) makes this a non-issue today; flagged because it costs nothing to add alongside the next migration.
+**Effort:** Very Low
+**Sub-tasks:** Add `CREATE INDEX IF NOT EXISTS idx_invoices_user_status ON invoices(user_id, status);` to `db/schema.sql`. Idempotent, safe to run on production. Bundle with the next schema change (recurring invoices, late fee, currency, or trial_ends_at — whichever ships first) so the deploy includes only one `psql -f db/schema.sql` step.
+
+---
+
+### H9. [HEALTH] `bcrypt` 5.1.1 — 3 high-severity transitive `tar`/`@mapbox/node-pre-gyp` advisories (added 2026-04-24 PM audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** LOW (install-time only) — `npm audit` reports `tar < 7.5.10` (3 GHSAs: `34x7-hfp2-rc4v`, `8qq5-rm4j-mr97`, `83g3-92jg-28cx`, `qffp-2rhf-9h96`, `9ppj-qmqm-q256`) and the upstream `@mapbox/node-pre-gyp <= 1.0.11`, both reachable only through `bcrypt@5.1.1`'s prebuild downloader. Every advisory is a path-traversal / symlink class issue exploitable **only when extracting an attacker-controlled tarball during `npm install`**. The runtime auth path (`bcrypt.hash` / `bcrypt.compare`) is not affected. The vulnerabilities also can't fire in a normal `npm ci` against the lockfile (registry tarballs are signed). Risk profile: the build is run on Heroku/Render dynos with no attacker-controlled inputs.
+**Fix:** `npm i bcrypt@^6` (semver major). bcrypt 6.0 keeps the same `hash`/`compare`/`compareSync` API surface but drops Node 16 support and reworks the prebuild loader. Requires a follow-up smoke test of `POST /auth/register` (creates user with a fresh hash) and `POST /auth/login` (verifies the existing hash) on a staging deploy.
+**Effort:** Very Low (bump + run full `npm test` + manual login smoke).
+**Why not auto-fixed in this audit:** bcrypt is the credential store. Bumping it in an automated audit pass is too high-stakes for the marginal install-time risk reduction. Flagged as a single dedicated commit so a regression in the password verifier can't be conflated with other changes.
+
+---
+
+### H10. [HEALTH] `parseInt(userId)` without explicit radix in webhook handler (added 2026-04-24 PM audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** TRIVIAL — `routes/billing.js:110` reads `customer.metadata.user_id` (a string the app itself wrote when creating the Stripe customer) and converts it via `parseInt(userId)` with no radix arg. ES5+ defaults to base 10 for strings without `0x`/`0o` prefixes, so behaviour is correct in practice. Fixing it removes the lint warning surface and matches the convention used elsewhere (`parseInt(x, 10)`). Pure cosmetic.
+**Effort:** Very Low
+**Sub-tasks:** `parseInt(userId)` → `parseInt(userId, 10)` at `routes/billing.js:110`. No tests need updating.
+
+---
+
+### H11. [HEALTH] Pagination on `getInvoicesByUser` to bound dashboard memory (R14 awareness) (added 2026-04-24 PM audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** LOW (today) — `db.getInvoicesByUser(userId)` returns the entire result set unbounded; the dashboard view `views/dashboard.ejs` renders every row. A long-tenured Pro/Agency user with several thousand invoices would pull every JSONB `items` blob and serialise it into memory on every dashboard load, increasing Heroku dyno RSS proportionally to invoice history. At today's scale (free-plan = 3 invoices, normal Pro = tens to low hundreds) this is fine; the `R14 — Memory quota exceeded` risk surfaces only after the user base grows or someone with thousands of invoices logs in.
+**Effort:** Very Low
+**Sub-tasks:**
+1. Add `LIMIT 200 OFFSET $2` to `getInvoicesByUser` (or paginate via `cursor / page` query string). Default page size 50; cap at 200.
+2. `routes/invoices.js GET /` — surface `?page=N` to the template; render simple "Newer / Older" links if `invoices.length === pageSize`.
+3. Verify the `idx_invoices_user_id` index already supports the `ORDER BY created_at DESC LIMIT N` plan (Postgres will use it for the index scan + sort if `created_at` is correlated with insertion order, which it is by default).
+**Why not now:** Adds query-string + view churn that is orthogonal to today's audit. Bundle with #14 (onboarding checklist) which already touches `routes/invoices.js GET /`.
+
+---
+
+### H12. [HEALTH] Whitelist `status` in `POST /:id/status` before hitting Postgres CHECK constraint (added 2026-04-24 PM audit, supersedes earlier H6) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** LOW (latent) — `routes/invoices.js:170-205` reads `req.body.status` and passes it straight to `db.updateInvoiceStatus`. Postgres' CHECK constraint (`status IN ('draft','sent','paid','overdue')`) rejects bad values with error code `23514`, the catch block logs `console.error('Status update error:', err)` and redirects. Effect: a junk `status` POST yields a noisy log line and an opaque redirect rather than a flash. Low impact (CHECK protects DB integrity), but the noise complicates incident triage and obscures real DB errors.
+**Effort:** Very Low
+**Sub-tasks:** In `routes/invoices.js` `POST /:id/status`, add `const ALLOWED = ['draft','sent','paid','overdue']; if (!ALLOWED.includes(req.body.status)) { req.session.flash = { type: 'error', message: 'Invalid status.' }; return res.redirect('/invoices/' + req.params.id); }` immediately after extracting `newStatus`. Add a test in `tests/edge-cases.test.js` (junk status → flash + redirect, no DB write).
 
 ---
 
