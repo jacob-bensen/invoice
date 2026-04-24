@@ -310,6 +310,66 @@ Track replies in a spreadsheet. Follow up once if no reply after 7 days.
 
 ---
 
+### 22. [MARKETING] Apply for AppSumo Lifetime Deal
+
+**Impact:** HIGH — AppSumo has 1M+ deal-seeking subscribers; a well-structured lifetime deal (e.g. $69 once → lifetime Pro access capped at 2,000 invoices/mo) can generate $10,000–50,000 in a single week and creates an instant user base to collect testimonials, bug reports, and referrals; AppSumo customers churn at near-zero rates (they've already paid) and become vocal advocates
+**Action:**
+1. Apply at **appsumo.com/partners** (the "List your product" form). Category: "Business & Productivity" → "Invoicing & Billing."
+2. In the application, emphasise: Stripe Payment Links (unique vs. most competitors), annual billing option, Zapier webhook, PDF export, and the roadmap (recurring invoices coming to QuickInvoice).
+3. Proposed deal structure: **$69 one-time** → Lifetime Pro access (unlimited invoices, clients, payment links, custom branding, Zapier webhook). AppSumo typically takes 25–50% of revenue; structure the deal so you net at least $35/LTD customer. At 500 sales that's $17,500–35,000 upfront.
+4. Include 5 screenshots: landing page, invoice editor with line items, invoice with Pay Now button, payment dashboard stats, settings with Zapier webhook.
+5. **Prerequisite:** Product must be live with a real domain, functional payment flow, and at least 5 real (non-test) user signups to be accepted by AppSumo's review team. Time the application after Product Hunt launch (#12 above) to show traction.
+6. **Code note:** AppSumo purchases fire a webhook; the autonomous team can implement AppSumo redemption codes mapped to lifetime plan grants in a future sprint (flag this if accepted).
+
+---
+
+### 23. [MARKETING] Submit QuickInvoice to Stripe App Marketplace
+
+**Impact:** HIGH — Stripe's App Marketplace surfaces tools directly to existing Stripe merchants who are already paying with Stripe; the target persona (freelancers and small agencies using Stripe) is a perfect zero-CAC match; a listing puts QuickInvoice in front of millions of Stripe users at the moment they're looking for invoicing tools
+**Action:**
+1. Apply at **stripe.com/app-marketplace** → "List your app." Category: Invoicing.
+2. Prepare the listing:
+   - **App name:** QuickInvoice
+   - **Tagline:** "Professional invoices with built-in Stripe Payment Links — for freelancers"
+   - **Description:** 2–3 sentences. Emphasise: creates Stripe Payment Links automatically when you send an invoice, clients pay in one click, no login required, status auto-updates to Paid via webhook.
+   - **Screenshots:** 3–5 images covering the invoice editor, the Pay Now button on an invoice, and the dashboard stats.
+   - **Stripe features used:** Checkout, Payment Links, Customer Portal, Webhooks — all existing integrations.
+3. Stripe requires an OAuth integration for Marketplace apps. The autonomous team will need to implement Stripe Connect for the listing (INTERNAL_TODO sub-task to be added if accepted). For the initial application, note that the app currently uses API keys; Connect will be added as part of the Marketplace onboarding.
+4. **Timeline:** Stripe's review typically takes 2–4 weeks. Submit early so the listing is live before the Product Hunt launch (#12).
+
+---
+
+### 24. [MARKETING] Submit QuickInvoice as a Native Zapier App (Zapier Marketplace)
+
+**Impact:** MEDIUM-HIGH — Zapier has 3M+ users who actively search for new app integrations; a native Zapier app listing (separate from the outbound webhook feature in INTERNAL_TODO #7) makes QuickInvoice discoverable inside the Zapier UI under "Invoicing" and puts it in front of exactly the power users most likely to upgrade to Pro; it also enables pre-built Zap templates ("When Stripe payment received → Create QuickInvoice invoice") that appear in Google search results
+**Action:**
+1. Create a Zapier developer account at **developer.zapier.com** (free).
+2. Use the Zapier CLI to scaffold a new integration: `npm install -g zapier-platform-cli && zapier init quickinvoice`. Implement at minimum:
+   - **Trigger: "Invoice Paid"** — polls `GET /api/invoices?status=paid&since=` or uses the existing outbound webhook as a REST Hook trigger. The outbound webhook (INTERNAL_TODO #7) already sends the correct JSON payload — this maps directly to a Zapier REST hook.
+   - **Action: "Create Invoice"** — POSTs to `POST /invoices/new` with client name, line items, and due date. This requires an API-key auth flow (add `GET /auth/api-key` endpoint that returns the session user's API key stored in the `users` table).
+3. Write 3 Zap templates to submit alongside the integration:
+   - "When an invoice is paid in QuickInvoice → Add a row to Google Sheets"
+   - "When a new client is added in QuickInvoice → Add contact to Mailchimp"
+   - "When an invoice is paid in QuickInvoice → Post a message to Slack"
+4. Submit for Zapier review (typically 2–6 weeks for public listing approval).
+5. **Code note:** this requires a small API key auth system in QuickInvoice (`ALTER TABLE users ADD COLUMN api_key VARCHAR(64) UNIQUE`, generated on first `/settings` load). Flag to the autonomous team to implement as a prerequisite.
+
+---
+
+### 25. [MARKETING] Agency Cold Email Campaign (Target Small Creative Agencies)
+
+**Impact:** MEDIUM — Agency plan at $49/mo; acquiring 20 agency customers = $980 MRR from a single outreach campaign; agencies managing 5–15 freelancers are the exact use case for the Agency plan's team-seat feature (INTERNAL_TODO #9); unlike inbound marketing, this is a direct, measurable experiment with a clear ROI calculation
+**Action:**
+1. Build a prospect list of 100–200 small creative agencies and independent studio owners using **LinkedIn Sales Navigator** (7-day free trial) or **Hunter.io** (free tier, 25 searches/mo). Search criteria: "Creative Director", "Studio Owner", "Agency Principal" with 2–15 employees, in English-speaking markets (US, CA, UK, AU).
+2. Write a 3-email sequence (use a tool like Instantly.ai or Lemlist, ~$30–50/mo):
+   - **Email 1 (Day 0):** Subject: "How [Agency Name] invoices their clients." Body (60 words max): introduce QuickInvoice, 1 sentence on the team-seat feature ("manage invoicing for your whole team from one account"), free trial CTA.
+   - **Email 2 (Day 4):** Subject: "One thing freelance agencies hate about invoicing." Body: 1–2 pain points (chasing payments, re-entering client details for retainers), link to the `/invoice-generator` landing page.
+   - **Email 3 (Day 9):** Subject: "Last check-in — free agency account." Body: 2-sentence "no hard feelings" close + offer a 30-day free Agency trial with Stripe coupon code (create a 100%-off-first-month coupon in Stripe Dashboard).
+3. Track: open rate target >40%, reply rate target >5%, trial signup rate target >2%. At 200 prospects and 2% conversion that's 4 Agency accounts = $196 MRR from one afternoon of setup.
+4. **Prerequisite for team-seat pitch:** INTERNAL_TODO #9 (InvoiceFlow team seats) must be complete before this campaign goes out, or the Agency plan pitch must be limited to QuickInvoice's existing multi-user-friendly features (shared billing, unlimited invoices, Zapier webhook).
+
+---
+
 ## 8. Set logo uploads directory (added 2026-04-22)
 Logo uploads are stored on the local filesystem. Set a persistent path (e.g., an attached volume on Heroku/Railway):
 ```
