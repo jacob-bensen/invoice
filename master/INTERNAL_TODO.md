@@ -115,12 +115,25 @@ HSTS (`max-age=15552000; includeSubDomains`) is enabled only when `NODE_ENV === 
 
 ---
 
-### H5. [HEALTH] Inconsistent `plan` CHECK constraint vs. application code (added 2026-04-23 audit) [S]
+### H5. [DONE 2026-04-25] [HEALTH] Inconsistent `plan` CHECK constraint vs. application code (added 2026-04-23 audit) [S]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** LOW (latent) — `db/schema.sql` line 12 pins `plan IN ('free', 'pro')`, but `routes/invoices.js:175,189` and `routes/billing.js:123,170` branch on `plan === 'agency'`. Any path that attempts to persist `plan = 'agency'` will fail the CHECK constraint with a 23514 error. No current route actually writes `'agency'`, so this is latent — but it is a trip wire when INTERNAL_TODO #9 (team seats / Agency tier) or #10 (Business tier) lands.
 **Effort:** Very Low
 **Sub-tasks:** Add idempotent migration to `db/schema.sql`: `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_plan_check; ALTER TABLE users ADD CONSTRAINT users_plan_check CHECK (plan IN ('free','pro','business','agency'));`. Coordinate with INTERNAL_TODO #10's schema change so both land in one migration.
+
+**Resolution (2026-04-25 PM):** Widened the constraint in two places (so fresh installs and existing deployments converge on the same definition):
+
+1. The inline `CREATE TABLE users` CHECK on line 12 now reads `CHECK (plan IN ('free', 'pro', 'business', 'agency'))`. New installs land on the wide list directly.
+2. A new idempotent migration block (`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_plan_check;` followed by `ALTER TABLE users ADD CONSTRAINT users_plan_check CHECK (plan IN ('free','pro','business','agency'));`) sits alongside the other `ALTER TABLE … ADD COLUMN IF NOT EXISTS` statements. On an existing prod DB the DROP removes the narrow constraint that Postgres auto-named when CREATE TABLE first ran; the ADD installs the wide one. On a fresh DB the DROP no-ops past `IF EXISTS` if the constraint doesn't exist (it does — CREATE TABLE just created it with the wide list — so DROP+re-ADD is a same-definition swap). Net: one `psql -f db/schema.sql` lands the change on both fresh and migrated databases.
+
+We did NOT bundle this with #10's Business-tier schema as the original sub-task suggested. #10 is [L] effort and is gated on a Master action (creating Stripe Business prices); H5 is the specific trip-wire fix for the existing `agency` references in `routes/billing.js:144,192`, `routes/invoices.js:212,241`, `db.js:164` (reminder query), and `jobs/reminders.js:35` (`PAID_PLANS` Set). Decoupling lets #10 land later without re-litigating the constraint, and unblocks #9 (Agency team seats) which is the other consumer.
+
+New `tests/plan-check-constraint.test.js` adds 7 static-lint assertions: (1) the inline CREATE TABLE CHECK lists exactly `['free','pro','business','agency']` in canonical order; (2) the migration includes `DROP CONSTRAINT IF EXISTS users_plan_check`; (3) the migration's `ADD CONSTRAINT users_plan_check CHECK` definition matches the inline one exactly (so a future schema edit can't drift one without the other); (4) DROP precedes ADD in the file (reversal would no-op on fresh installs and double-add on second runs); (5) every plan literal referenced in `routes/billing.js`, `routes/invoices.js`, `db.js`, and `jobs/reminders.js` (matched via `\bplan\s*[!=]==\s*'X'`, `plan IN (...)`, and `PAID_PLANS = new Set([...])`) is in the whitelist — defence against typos like `'agnecy'` that would slip past the constraint and silently always-evaluate-false; (6) `jobs/reminders.js`'s `PAID_PLANS` Set equals the whitelist minus `'free'`; (7) `db.js`'s `getOverdueInvoicesForReminders` `u.plan IN (...)` filter equals the same paid subset. Wired into `package.json` `test` script. Full suite still green: 23 test files, 0 failures.
+
+**[Master action]** required: re-run the schema migration on production. Single command — `psql $DATABASE_URL -f db/schema.sql`. Idempotent and safe to run on a populated DB. See TODO_MASTER.md.
+
+**Income relevance:** Indirect — unblocks #9 (Agency team seats at $49/mo, the highest-ARPU tier) and #10 (Business tier at $29/mo, raises ARPU ceiling from $12 to $29 per power user). Both tasks would otherwise hit a Postgres 23514 the first time any user upgrade tried to persist `plan='agency'` or `plan='business'`. With the constraint widened, both tiers can ship without re-touching the schema.
 
 ---
 

@@ -602,3 +602,43 @@ Reviewed all direct runtime dependencies: `express` (MIT), `express-session` (MI
 - **SendGrid / Resend (pending INTERNAL_TODO #13):** transactional email to the user's own clients is within normal ToS. Do not repurpose into marketing blasts without the recipient's explicit opt-in.
 - **Google Search Console / sitemap.xml:** compliant (no scraping, only exposing our own sitemap).
 - **Future Google OAuth (INTERNAL_TODO #17):** Google OAuth brand guidelines require the standard "G" icon rendered per `https://developers.google.com/identity/branding-guidelines` — already noted in that task.
+
+---
+
+## 21. QuickInvoice: re-run schema migration to widen `users.plan` CHECK (added 2026-04-25 PM)
+
+INTERNAL_TODO H5 is closed: `db/schema.sql` now declares `plan` as `CHECK (plan IN ('free', 'pro', 'business', 'agency'))` (was `('free', 'pro')`) and includes an idempotent `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_plan_check; ALTER TABLE users ADD CONSTRAINT users_plan_check CHECK (...)` block to migrate existing production DBs.
+
+Five call sites in the application code (`routes/billing.js:144,192`, `routes/invoices.js:212,241`, `db.js:164` — reminder query, `jobs/reminders.js:35` — `PAID_PLANS` Set) already branch on `plan === 'agency'`. Without this constraint widening, the first attempt to persist `plan='agency'` (or `plan='business'` once #10 ships) would have hit a Postgres 23514 error — silently 500'ing the upgrade flow.
+
+### Action
+
+A single command on production after the next deploy:
+
+```
+psql $DATABASE_URL -f db/schema.sql
+```
+
+This is the same migration step that previously landed `last_reminder_sent_at`, `trial_ends_at`, `onboarding_dismissed`, `reply_to_email`, and `webhook_url`. The schema file is fully idempotent — re-running it on a populated DB is safe (every change lives behind `IF NOT EXISTS` / `IF EXISTS` / `DROP …; ADD …`). The next deploy can pick up all queued schema changes in one shot.
+
+### Verification
+
+```sql
+SELECT conname, pg_get_constraintdef(oid)
+  FROM pg_constraint
+ WHERE conname = 'users_plan_check';
+```
+
+Expected output:
+
+```
+       conname       |                  pg_get_constraintdef
+---------------------+-----------------------------------------------------------
+ users_plan_check    | CHECK ((plan)::text = ANY (ARRAY['free'::character varying, 'pro'::character varying, 'business'::character varying, 'agency'::character varying]::text[]))
+```
+
+If the output still shows the narrow `('free', 'pro')` pair, the migration didn't run — re-execute the `psql -f` step. Constraint widening is non-blocking (`ALTER TABLE … ADD CONSTRAINT` does not lock the table for reads or writes when the new predicate is a superset of the old one — Postgres skips the table-rescan because every existing row already satisfies the new predicate).
+
+### Why this matters
+
+Indirect income lift: this is the prerequisite plumbing for #9 (Agency team seats at $49/mo, the highest-ARPU tier in `master/APP_SPEC.md`) and #10 (Business tier at $29/mo, raises ARPU ceiling from $12 to $29 per power user). Both tasks would have hit a 23514 the first time any user upgrade tried to persist `plan='agency'` or `plan='business'`. With the constraint widened, both tiers can ship without re-touching the schema.

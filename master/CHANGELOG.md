@@ -2,6 +2,51 @@
 
 ---
 
+## 2026-04-25T23:30Z — Widen `users.plan` CHECK to allow `business` + `agency` (INTERNAL_TODO H5 closed) [HEALTH]
+
+### What was built
+
+**`db/schema.sql` + `tests/plan-check-constraint.test.js` + `package.json` — INTERNAL_TODO H5 closed: the Postgres CHECK constraint on `users.plan` now matches the four plan values the application code already branches on, removing a latent 23514 trip wire that would have surfaced the first time anyone tried to upgrade a user to Agency or Business.**
+
+The constraint mismatch was identified in the 2026-04-23 audit. `db/schema.sql` line 12 pinned `plan IN ('free', 'pro')`, but five call sites in `routes/billing.js`, `routes/invoices.js`, `db.js`, and `jobs/reminders.js` already branched on `plan === 'agency'` (and #10 will write `'business'`). No current code path persisted those values, so the bug was latent — the first `db.updateUser(id, { plan: 'agency' })` would have hit a CHECK violation (Postgres error code 23514), the route's try/catch would have logged `Status update error: ...` and silently 500'd the upgrade. Closing this widens the constraint so #9 (Agency team seats at $49/mo) and #10 (Business tier at $29/mo) can ship without re-touching the schema.
+
+| File | Change |
+|------|--------|
+| `db/schema.sql` | Line 12 inline CHECK widened from `('free', 'pro')` → `('free', 'pro', 'business', 'agency')`. New idempotent migration block at lines 54-63 (`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_plan_check;` followed by `ALTER TABLE users ADD CONSTRAINT users_plan_check CHECK (plan IN ('free', 'pro', 'business', 'agency'));`) — drops the narrow Postgres-auto-named constraint and re-adds the wide one. Safe to run on both fresh installs (DROP no-ops past `IF EXISTS` if the wide one is already there from CREATE TABLE; ADD re-installs same definition) and existing prod DBs (DROP removes the narrow constraint that auto-named when CREATE TABLE first ran years ago; ADD installs the wide one). |
+| `tests/plan-check-constraint.test.js` | New 7-assertion static lint of the schema + every plan-literal call site. See test list below. |
+| `package.json` | Appended `tests/plan-check-constraint.test.js` to the `test` script. |
+
+### Why this is the right shape of fix
+
+- **Wide list in CREATE TABLE + idempotent migration.** Both layers converge on the same definition, so a fresh dev DB (`createdb && psql -f db/schema.sql`) and a years-old production DB end up with byte-identical constraint definitions. Without the inline widening, the migration would have to keep dropping and re-adding on every fresh-install bootstrap; without the migration, existing production DBs would still reject `plan='agency'` until someone hand-rolled the ALTER. Doing both is the cheapest path to convergence.
+- **Drop-then-add, not modify-in-place.** Postgres has no `ALTER CONSTRAINT … DROP/ADD VALUES` for CHECK constraints (CHECKs aren't enums); the only way to widen the predicate is to drop and re-add. `IF EXISTS` makes the DROP idempotent.
+- **Defensive lint test, not a Postgres integration test.** Tests in this codebase don't talk to real Postgres — they stub `db.js` and exercise routes via supertest. So the test asserts the static contents of `db/schema.sql` (regex-matched) plus that every `plan === 'X'` literal in `routes/*.js`, `db.js`, and `jobs/reminders.js` is in the whitelist. The latter assertion catches future typos like `'agnecy'` (typo'd) or `'PRO'` (case-mismatched) that would silently always-evaluate-false at runtime — a much harder bug to debug than a CHECK violation. The trade-off vs. a real Postgres test: we don't prove the constraint accepts `'business'`/`'agency'` against a live DB, but the SQL is trivial enough that the static assertion is sufficient confidence; a smoke-test of the migration on staging is the right gate before production rollout.
+- **Decoupled from #10's Business-tier work.** The original H5 sub-task suggested bundling with #10 to "land both schema changes in one migration." We didn't — #10 is [L] effort and gated on Master creating Stripe Business prices. Decoupling means H5 ships in one commit, unblocks #9, and #10 can later ship without re-litigating the constraint.
+
+### Tests
+
+New `tests/plan-check-constraint.test.js` adds 7 static-lint assertions; full suite (24 test files, ~213 assertions) passes with 0 failures:
+
+| Test | What it proves |
+|------|----------------|
+| Inline CHECK has all 4 plans | The CREATE TABLE inline `CHECK (plan IN (…))` lists exactly `['free','pro','business','agency']` in canonical order. |
+| Migration DROPs old constraint | `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_plan_check` is present (the only safe way to widen). |
+| Migration ADDs wide constraint | `ALTER TABLE users ADD CONSTRAINT users_plan_check CHECK (plan IN ('free','pro','business','agency'))` is present. |
+| Migration matches inline definition | The two CHECK lists are equal — a future schema edit can't drift one without the other. |
+| DROP precedes ADD | Reversal would no-op on fresh installs (`IF EXISTS` skips, then ADD collides with CREATE TABLE's auto-constraint) and double-add on second runs. |
+| Every routes/db/jobs plan literal is in the whitelist | Static scan of `\bplan\s*[!=]==\s*'X'`, `plan IN (…)`, and `PAID_PLANS = new Set([...])` across `routes/billing.js`, `routes/invoices.js`, `db.js`, `jobs/reminders.js`. Catches typos that would slip past the constraint and silently always-evaluate-false. |
+| `PAID_PLANS` Set + reminders query plan filter both equal `whitelist - 'free'` | Three sources of truth (whitelist, JS Set, SQL filter) must agree, so adding a fifth plan in the future means updating one place and the test fails until the others catch up. |
+
+### What's next (Master action required)
+
+A single `psql $DATABASE_URL -f db/schema.sql` on production. The schema file is fully idempotent — every change in this commit (and every change since the last migration) lives behind `IF NOT EXISTS` / `IF EXISTS` / `DROP …; ADD …`, so re-running it on a populated DB is safe. Filed under TODO_MASTER.md as the same migration step that previously landed `last_reminder_sent_at`, `trial_ends_at`, `onboarding_dismissed`, and `reply_to_email`; the next deploy will pick all of them up in one shot.
+
+### Income relevance
+
+Indirect — this commit unblocks #9 (Agency team seats at $49/mo, the highest-ARPU tier in `master/APP_SPEC.md`) and #10 (Business tier at $29/mo, raises ARPU ceiling from $12 to $29 per power user). Without the constraint widened, both tiers would have hit a Postgres 23514 the first time any user upgrade tried to persist `plan='agency'` or `plan='business'`. The income lift is realised when those tasks ship; this is the prerequisite plumbing.
+
+---
+
 ## 2026-04-25T22:00Z — Automated Payment Reminders for Pro/Business/Agency (INTERNAL_TODO #16 closed) [GROWTH]
 
 ### What was built
