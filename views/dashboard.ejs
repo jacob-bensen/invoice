@@ -2,6 +2,50 @@
 <%- include('partials/nav') %>
 
 <div class="max-w-5xl mx-auto px-4 py-10">
+  <% if (locals.onboarding && onboarding && !onboarding.allDone) { %>
+    <div
+      data-testid="onboarding-checklist"
+      class="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 print:hidden"
+      role="region"
+      aria-label="Getting started checklist"
+    >
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h2 class="font-semibold text-blue-900">Get up and running</h2>
+          <p class="text-blue-700 text-sm mt-0.5">
+            <%= onboarding.completed %> of <%= onboarding.total %> steps complete &mdash; finish setup to start getting paid.
+          </p>
+        </div>
+        <form action="/onboarding/dismiss" method="POST">
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          <button
+            type="submit"
+            class="text-blue-500 hover:text-blue-800 text-xs font-medium underline"
+            aria-label="Dismiss onboarding checklist"
+          >Dismiss</button>
+        </form>
+      </div>
+      <ul class="mt-4 space-y-2">
+        <% onboarding.steps.forEach((step) => { %>
+          <li
+            class="flex items-center gap-3 text-sm"
+            data-testid="onboarding-step-<%= step.key %>"
+            data-done="<%= step.done ? 'true' : 'false' %>"
+          >
+            <span class="<%= step.done ? 'text-green-600' : 'text-gray-300' %> text-lg leading-none w-5 inline-block">
+              <% if (step.done) { %>&#10003;<% } else { %>&#9711;<% } %>
+            </span>
+            <% if (step.done) { %>
+              <span class="text-gray-500 line-through"><%= step.label %></span>
+            <% } else { %>
+              <a href="<%= step.href %>" class="text-blue-700 font-medium hover:underline"><%= step.label %> &rarr;</a>
+            <% } %>
+          </li>
+        <% }) %>
+      </ul>
+    </div>
+  <% } %>
+
   <% if (locals.days_left_in_trial && days_left_in_trial > 0) { %>
     <div
       x-data="{ dismissed: false }"

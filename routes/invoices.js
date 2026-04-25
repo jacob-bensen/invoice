@@ -35,12 +35,34 @@ router.get('/', requireAuth, async (req, res) => {
         days_left_in_trial = Math.max(0, Math.ceil((ends - Date.now()) / 86400000));
       }
     }
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial });
+    const onboarding = buildOnboardingState(user, invoices);
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding });
   } catch (err) {
     console.error(err);
-    res.render('dashboard', { title: 'My Invoices', invoices: [], user: req.session.user || null, flash: null, days_left_in_trial: 0 });
+    res.render('dashboard', {
+      title: 'My Invoices', invoices: [], user: req.session.user || null,
+      flash: null, days_left_in_trial: 0, onboarding: null
+    });
   }
 });
+
+function buildOnboardingState(user, invoices) {
+  if (!user || user.onboarding_dismissed) return null;
+  const list = Array.isArray(invoices) ? invoices : [];
+  const businessAdded = !!(user.business_name && String(user.business_name).trim());
+  const invoiceCreated = list.length >= 1;
+  const invoiceSent = list.some((i) => ['sent', 'paid', 'overdue'].includes(i.status));
+  const invoicePaid = list.some((i) => i.status === 'paid');
+  const steps = [
+    { key: 'business', label: 'Add your business info', href: '/billing/settings', done: businessAdded },
+    { key: 'create', label: 'Create your first invoice', href: '/invoices/new', done: invoiceCreated },
+    { key: 'send', label: 'Send an invoice to a client', href: '/invoices', done: invoiceSent },
+    { key: 'paid', label: 'Get paid', href: '/invoices', done: invoicePaid }
+  ];
+  const completed = steps.filter((s) => s.done).length;
+  const allDone = completed === steps.length;
+  return { steps, completed, total: steps.length, allDone };
+}
 
 router.get('/new', requireAuth, async (req, res) => {
   const user = await db.getUserById(req.session.user.id);
@@ -237,4 +259,17 @@ router.post('/:id/delete', requireAuth, async (req, res) => {
   }
 });
 
+async function onboardingDismissHandler(req, res) {
+  try {
+    if (!req.session || !req.session.user) return res.redirect('/auth/login');
+    await db.dismissOnboarding(req.session.user.id);
+    req.session.user = { ...req.session.user, onboarding_dismissed: true };
+  } catch (err) {
+    console.error('Onboarding dismiss error:', err);
+  }
+  return res.redirect('/invoices');
+}
+
 module.exports = router;
+module.exports.buildOnboardingState = buildOnboardingState;
+module.exports.onboardingDismissHandler = onboardingDismissHandler;

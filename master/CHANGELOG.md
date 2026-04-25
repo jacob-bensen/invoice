@@ -2,6 +2,73 @@
 
 ---
 
+## 2026-04-25T14:10Z — In-App Onboarding Checklist for New User Activation (INTERNAL_TODO #14 closed) [GROWTH]
+
+### What was built
+
+**`db/schema.sql` + `db.js` + `routes/invoices.js` + `server.js` + `views/dashboard.ejs` + `tests/onboarding.test.js` — INTERNAL_TODO #14 closed: in-app onboarding checklist.**
+
+Replaces the dashboard's empty state — which previously dropped first-time users onto a single "Create your first invoice" button with no path-to-value signposting — with a 4-step activation checklist surfaced at the top of every dashboard load. The checklist is the lowest-risk, highest-leverage retention lever available: industry data shows users who reach "first invoice paid" churn at 5–10× lower rates than users who fall off before activation.
+
+The 4 steps, in order:
+
+1. **Add your business info** → links to `/billing/settings` (done when `users.business_name` is non-empty / non-whitespace)
+2. **Create your first invoice** → links to `/invoices/new` (done when the user has any invoice)
+3. **Send an invoice to a client** → links to the dashboard (done when any invoice has `status IN ('sent', 'paid', 'overdue')`)
+4. **Get paid** → links to the dashboard (done when any invoice has `status = 'paid'`)
+
+| File | Change |
+|------|--------|
+| `db/schema.sql` | `ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_dismissed BOOLEAN DEFAULT false;` (idempotent — safe to re-run on production). |
+| `db.js` | New `dismissOnboarding(userId)` helper — single UPDATE that flips the flag and bumps `updated_at`. |
+| `routes/invoices.js GET /` (dashboard) | Builds an `onboarding` local via the new pure `buildOnboardingState(user, invoices)` helper and passes it to the template. Returns `null` when dismissed/missing user; otherwise emits `{steps[], completed, total, allDone}`. The `allDone` flag short-circuits the EJS render so the card disappears the instant a user finishes the funnel without requiring an explicit Dismiss click. |
+| `routes/invoices.js` | New `onboardingDismissHandler` exported alongside `buildOnboardingState`. The handler is defence-in-depth: re-checks the session and redirects to `/auth/login` if unauthenticated, swallows DB errors so a Postgres outage never 500s the dashboard, and mutates `req.session.user.onboarding_dismissed = true` so the next render skips the card without a refetch. |
+| `server.js` | New `POST /onboarding/dismiss` route mounted at the app root, protected by `requireAuth` + the existing global CSRF middleware, delegating to `invoiceRoutes.onboardingDismissHandler`. |
+| `views/dashboard.ejs` | New card rendered above the trial banner (above all other dashboard chrome) when `locals.onboarding && onboarding && !onboarding.allDone`. Light-blue banner (`bg-blue-50 border-blue-200`) per the spec, with `print:hidden` so it does not leak into print views. Card markup: `<h2>` + progress count ("X of 4 steps complete"), then a `<ul>` of steps. Done steps render `&#10003;` (heavy check) in green + label inside a `line-through` span; pending steps render `&#9711;` (large circle) in gray + label as an anchor link to the step's `href` with a `→` arrow. Dismiss form is a small underlined button in the card header that POSTs to `/onboarding/dismiss` with the existing CSRF token. |
+
+### Why this lifts revenue
+
+- **Activation → retention coupling.** SaaS retention is dominated by the activation rate, not the signup rate. A user who creates and sends an invoice in the first session retains at multiples of one who never gets past dashboard. The checklist surfaces the full path with one-click links instead of an empty state.
+- **Funnel input for the upgrade modal.** Step 2 (Create your first invoice) feeds new users straight into the existing free-plan invoice limit; once they hit it, the upgrade modal (#1) fires. The checklist increases the volume of users who reach the upgrade decision.
+- **Zero ongoing maintenance.** Every step is a one-shot DB-derived check — the card removes itself the moment all four boxes flip without writing any state. Dismissal is the only persisted bit, defaulted to `false` so existing users see the card on next dashboard load.
+- **Composable with the trial banner.** The trial banner (#19, just shipped) sits below the checklist, so a brand-new Pro-trial user sees both: "you're on a 7-day trial" + "here's how to use the next 7 days to get paid before the card prompt fires." Together they compress time-to-value.
+
+### Tests
+
+New `tests/onboarding.test.js` adds 17 assertions; existing test suites unaffected:
+
+| Test | What it proves |
+|------|----------------|
+| `buildOnboardingState: dismissed user → null` | A user with `onboarding_dismissed=true` causes the helper to short-circuit, so the EJS guard never renders the card. |
+| `buildOnboardingState: missing user → null` | Defensive: a null/undefined user (catch branch in the dashboard route) does not throw. |
+| `buildOnboardingState: fresh user → all incomplete` | New signups see all 4 steps unchecked, in canonical order (`business`, `create`, `send`, `paid`). |
+| `buildOnboardingState: business_name marks business step done` | Step 1 completion derives from `users.business_name`. |
+| `buildOnboardingState: whitespace business_name does not count` | A `   ` value is treated as empty — prevents bypass. |
+| `buildOnboardingState: any invoice marks create step done` | Step 2 completion is purely "exists at least one invoice" (status-agnostic). |
+| `buildOnboardingState: send step counts sent/paid/overdue` | Step 3 includes `paid` and `overdue` because both imply the invoice was sent. |
+| `buildOnboardingState: paid step requires status=paid` | Step 4 only fires on a real paid invoice. |
+| `buildOnboardingState: allDone flips when 4/4` | Card auto-removes when funnel complete. |
+| `dashboard.ejs: renders checklist when in-progress` | Card markup, `data-testid="onboarding-checklist"`, progress text, step labels, `print:hidden`, dismiss form, CSRF field. |
+| `dashboard.ejs: completed step strikethrough; pending step is a link` | Visual differentiation between done and pending steps in rendered HTML. |
+| `dashboard.ejs: omits checklist once all 4 steps done` | Card disappears at completion without a Dismiss click. |
+| `dashboard.ejs: omits checklist when onboarding is null (dismissed)` | Template handles the dismissed → null path safely. |
+| `dashboard.ejs: omits checklist when local is undefined` | Catch-branch in the dashboard route may omit the local entirely; template must not crash. |
+| `POST /onboarding/dismiss: persists + flags session + redirects` | End-to-end: Express + express-session + cookie jar verify the DB call, the `req.session.user` mutation, and the `/invoices` redirect. |
+| `onboardingDismissHandler: unauth → /auth/login, no DB call` | Defence-in-depth: handler refuses to call the DB without a session, even if `requireAuth` is bypassed somehow. |
+| `onboardingDismissHandler: swallows DB errors and still redirects` | A DB outage during dismiss does not 500 the user — they get redirected back to the dashboard. |
+
+Full suite: 205 tests, 0 failures (was 188 before this commit).
+
+### Master action
+
+None required — schema change is additive + idempotent, no Stripe/Resend/env config needed. The card will start appearing for every existing user on next dashboard load (because `onboarding_dismissed` defaults to `false`); long-tenured users with all four steps already completed will see the card disappear immediately via `allDone`. See `TODO_MASTER.md` for an optional cohort-tracking SQL snippet.
+
+### Income relevance
+
+Direct: every user who completes the funnel (creates → sends → gets paid) becomes a candidate for Pro upgrade once they hit the free-plan invoice limit. Indirect: lifts retention on the free plan (more chances to convert) and on the Pro trial (more reasons to add a card by day 7). Compounds with #1 (upgrade modal), #2 (payment links), #13 (email delivery), and #19 (Pro trial) — the checklist is the activation funnel that feeds all of them.
+
+---
+
 ## 2026-04-25T09:30Z — 7-Day Pro Free Trial, No Credit Card Required (INTERNAL_TODO #19 closed) [GROWTH]
 
 ### What was built

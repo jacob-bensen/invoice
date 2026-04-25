@@ -123,6 +123,14 @@ const db = {
     return rows[0] || null;
   },
 
+  async dismissOnboarding(userId) {
+    const { rows } = await pool.query(
+      'UPDATE users SET onboarding_dismissed = true, updated_at = NOW() WHERE id = $1 RETURNING id',
+      [userId]
+    );
+    return rows[0] || null;
+  },
+
   async getNextInvoiceNumber(userId) {
     const { rows } = await pool.query(
       'SELECT COUNT(*) as count FROM invoices WHERE user_id=$1',

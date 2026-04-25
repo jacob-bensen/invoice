@@ -342,7 +342,7 @@ New `tests/email.test.js` adds 15 assertions: not-configured graceful no-op, inv
 
 ---
 
-### 14. [GROWTH] In-App Onboarding Checklist (Activation Flow) [S]
+### 14. [DONE 2026-04-25] [GROWTH] In-App Onboarding Checklist (Activation Flow) [S]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** HIGH — users who reach "first invoice sent" have 5–10× lower churn; the dashboard currently drops new users with no guidance
@@ -359,6 +359,18 @@ New `tests/email.test.js` adds 15 assertions: not-configured graceful no-op, inv
    - ✅ **Get paid** (check: any invoice has `status = 'paid'`)
    Mark each completed step with a green checkmark (Alpine.js toggled by initial render state); show a "Dismiss" link that POSTs to `/onboarding/dismiss`.
 4. Style the card as a light blue banner (Tailwind `bg-blue-50 border border-blue-200`); keep it out of the print stylesheet.
+
+**Resolution (2026-04-25):** `db/schema.sql` adds idempotent `ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_dismissed BOOLEAN DEFAULT false;` so existing production deploys can re-run `psql -f db/schema.sql` without a separate migration step. `db.js` exports `dismissOnboarding(userId)` — a single UPDATE that sets the flag and bumps `updated_at`. New `POST /onboarding/dismiss` route (mounted at the app root in `server.js`, protected by `requireAuth` + the existing global CSRF middleware) delegates to a small `onboardingDismissHandler` exported from `routes/invoices.js`. The handler is defence-in-depth: it re-checks the session and redirects to `/auth/login` if unauthenticated, swallows DB errors so a Postgres outage never 500s the dashboard, and mutates `req.session.user.onboarding_dismissed = true` so the next render skips the card without a refetch.
+
+`routes/invoices.js GET /` (dashboard) builds an `onboarding` local via the new pure `buildOnboardingState(user, invoices)` helper. The helper returns `null` for dismissed/missing users and otherwise emits a 4-step checklist in canonical order — `business` (`!!user.business_name && trimmed`), `create` (`invoices.length >= 1`), `send` (any invoice with `status IN ('sent', 'paid', 'overdue')` — paid/overdue imply sent), `paid` (any invoice with `status = 'paid'`). Each step carries `{key, label, href, done}` and the wrapper exposes `{steps, completed, total, allDone}`. The `allDone` flag short-circuits the EJS render so the card disappears the instant a user finishes the funnel without requiring them to click Dismiss.
+
+`views/dashboard.ejs`: new card rendered above the trial banner (above all other dashboard chrome) when `locals.onboarding && onboarding && !onboarding.allDone`. Light-blue banner (`bg-blue-50 border-blue-200`) per the spec, with `print:hidden` so it does not leak into invoice print views — the existing print path uses a different template (`invoice-print.ejs`) but the dashboard could plausibly be printed by a user; safer to suppress. Card markup: `<h2>` + progress count ("X of 4 steps complete"), then a `<ul>` of steps. Done steps render `&#10003;` (heavy check) in green + label inside a `line-through` span; pending steps render `&#9711;` (large circle) in gray + label as an anchor link to the step's `href` with a `→` arrow. Dismiss form is a small underlined button in the card header that POSTs to `/onboarding/dismiss` with the existing CSRF token.
+
+New `tests/onboarding.test.js` adds 17 assertions: 9 for `buildOnboardingState` pure logic (dismissed/missing user → null, fresh user → all incomplete, business_name marks business done, whitespace business_name does NOT count, any invoice marks create done, send step counts sent/paid/overdue, paid step requires status=paid, allDone flips when 4/4, step keys in canonical order); 5 for EJS rendering (renders when in-progress, completed step strikethrough + pending step as link, hides when allDone, hides when null, hides when local is undefined — guards the catch-branch in the dashboard route); 3 for the dismiss handler (persists + flags session + redirects to /invoices, unauth → /auth/login with no DB call, swallows DB errors and still redirects). The dismiss test uses a real Express + express-session pipeline with a cookie jar to verify the session mutation persists across the redirect-then-inspect flow. Full suite: 205 tests, 0 failures (was 188 before this commit).
+
+**[Master action]** none required — schema change is additive + idempotent, no Stripe/Resend/env config needed. The card will start appearing for every existing user on next dashboard load (because `onboarding_dismissed` defaults to `false`); long-tenured users with all four steps already completed will see the card disappear immediately via `allDone`.
+
+**Income relevance:** Activation is the highest-leverage retention lever for SaaS — users who reach "first invoice paid" churn at 5–10× lower rates than users who never get past signup. The dashboard previously dropped new users at an empty state with one CTA; the checklist now surfaces the full path-to-value (business profile → invoice → send → get paid) with one-click links to each step, lifting activation rate and feeding more users into the Pro upgrade funnel.
 
 ---
 

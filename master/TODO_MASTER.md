@@ -453,6 +453,29 @@ Optional post-deploy actions to track trial-cohort health:
    ```
 3. **Day-3 nudge email** (future hardening, blocked on `node-cron` job introduced by INTERNAL_TODO #16): if `trial_ends_at` is 3–4 days away and the user has not added a payment method, send a "Heads-up — your Pro trial ends in N days" email with a Customer Portal link. Out of scope for #19 itself; documented here so it does not get missed when #16 lands.
 
+## 19. [OPTIONAL] Monitor onboarding-checklist activation funnel (added 2026-04-25)
+INTERNAL_TODO #14 is closed: every dashboard load now renders a 4-step activation checklist (business info → first invoice → first sent → first paid) until the user dismisses it or completes all four. **No env var, no Stripe / Resend config change is required for the checklist to work** — the schema migration is in `db/schema.sql` (idempotent `ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_dismissed BOOLEAN DEFAULT false;`) and is applied by the existing `psql -f db/schema.sql` deploy step.
+
+Optional post-deploy actions to track activation-cohort health:
+
+1. **DB-side activation-funnel query** (run on the QuickInvoice production DB to see how many users complete each step within 7 days of signup):
+   ```sql
+   SELECT
+     date_trunc('week', u.created_at) AS signup_week,
+     COUNT(*) AS signups,
+     COUNT(*) FILTER (WHERE u.business_name IS NOT NULL AND length(trim(u.business_name)) > 0) AS step1_business,
+     COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM invoices i WHERE i.user_id = u.id)) AS step2_created,
+     COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM invoices i WHERE i.user_id = u.id AND i.status IN ('sent','paid','overdue'))) AS step3_sent,
+     COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM invoices i WHERE i.user_id = u.id AND i.status = 'paid')) AS step4_paid,
+     COUNT(*) FILTER (WHERE u.onboarding_dismissed) AS dismissed
+   FROM users u
+   WHERE u.created_at > NOW() - INTERVAL '90 days'
+   GROUP BY 1 ORDER BY 1 DESC;
+   ```
+   Healthy SaaS funnels lose 30–50% per step. If `step4_paid / signups` < 5% the checklist is *not* fixing activation by itself — the next levers are payment-link reliability (INTERNAL_TODO #2, already done) and email delivery to clients (INTERNAL_TODO #13, done — but the Resend API key still needs provisioning per item 18).
+2. **Trigger-based dismissal monitoring**: a sudden spike in `dismissed=true` rows without a corresponding spike in `step4_paid` is a signal the card copy or progress logic is annoying users. Re-evaluate the wording in `views/dashboard.ejs` (`Get up and running` → consider `Welcome — let's get your first invoice paid` if the data warrants it).
+3. **No marketing-email-to-clients fallout**: dismissing the checklist does not affect any email behaviour — it only suppresses the dashboard banner for that user. Safe to roll back via a single UPDATE if the feature regresses (`UPDATE users SET onboarding_dismissed = false;`).
+
 ## 8. Set logo uploads directory (added 2026-04-22)
 Logo uploads are stored on the local filesystem. Set a persistent path (e.g., an attached volume on Heroku/Railway):
 ```

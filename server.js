@@ -11,6 +11,7 @@ const billingRoutes = require('./routes/billing');
 const landingRoutes = require('./routes/landing');
 const { csrfProtection } = require('./middleware/csrf');
 const { securityHeaders } = require('./middleware/security-headers');
+const { requireAuth } = require('./middleware/auth');
 
 const app = express();
 
@@ -58,6 +59,8 @@ app.get('/dashboard', (req, res) => {
   if (!req.session.user) return res.redirect('/auth/login');
   res.redirect('/invoices');
 });
+
+app.post('/onboarding/dismiss', requireAuth, invoiceRoutes.onboardingDismissHandler);
 
 app.use('/auth', authRoutes);
 app.use('/invoices', invoiceRoutes);
