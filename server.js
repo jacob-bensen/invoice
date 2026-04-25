@@ -10,8 +10,11 @@ const invoiceRoutes = require('./routes/invoices');
 const billingRoutes = require('./routes/billing');
 const landingRoutes = require('./routes/landing');
 const { csrfProtection } = require('./middleware/csrf');
+const { securityHeaders } = require('./middleware/security-headers');
 
 const app = express();
+
+app.use(securityHeaders());
 
 if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
   throw new Error('SESSION_SECRET must be set in production. Refusing to start with a predictable default.');

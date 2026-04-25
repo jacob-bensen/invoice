@@ -97,12 +97,21 @@ Replace the dead-end at the 3-invoice limit with a full-screen Alpine.js modal i
 
 ---
 
-### H4. [HEALTH] No security headers (helmet) (added 2026-04-23 audit) [S]
+### H4. [DONE 2026-04-25] [HEALTH] No security headers (helmet) (added 2026-04-23 audit) [S]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** LOW–MEDIUM — missing `X-Frame-Options: DENY` (clickjacking), `X-Content-Type-Options: nosniff`, `Strict-Transport-Security`, `Content-Security-Policy`, and the rest of the helmet defaults. Every modern web audit (SOC2, PCI, Google Search Console security warnings) flags this.
 **Effort:** Very Low
 **Sub-tasks:** `npm i helmet`; `app.use(helmet())` right after `const app = express()`. Start with defaults; relax the CSP one directive at a time if a view breaks (inline Alpine.js / Tailwind CDN may need `script-src 'self' 'unsafe-inline' cdn.tailwindcss.com` etc.).
+**Resolution (2026-04-25):** Added `helmet@^8.1.0` to dependencies. New `middleware/security-headers.js` exports a `securityHeaders()` factory that wraps `helmet()` with a CSP tuned for the actual view set:
+- `script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net` (Alpine x-data + tailwind config inline block + `onclick="window.print()"` in `views/invoice-print.ejs` + Tailwind Play CDN + Alpine CDN + the QR-code script)
+- `style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com` (Tailwind Play CDN injects `<style>` blocks at runtime; utility classes work because they are class names, but the runtime stylesheet itself needs the CDN host whitelisted)
+- `script-src-attr 'unsafe-inline'` (Alpine `@click`/`@submit` directives serialise to event-handler attributes)
+- `frame-ancestors 'none'`, `object-src 'none'`, `base-uri 'self'` (clickjacking + plugin lockdown + `<base>`-tag injection lockdown)
+- `form-action 'self' https://checkout.stripe.com https://billing.stripe.com` (Stripe Checkout + Customer Portal redirects)
+- `img-src 'self' data: blob:` (inline SVG QR code fallback + future user-uploaded logos)
+- `upgradeInsecureRequests` set in production only.
+HSTS (`max-age=15552000; includeSubDomains`) is enabled only when `NODE_ENV === 'production'` so local `http://` dev does not become unreachable. `crossOriginEmbedderPolicy` is left disabled (would break the cross-origin Tailwind/Alpine CDN scripts); `crossOriginResourcePolicy` is `same-origin` (default). `X-Powered-By` is removed by helmet's default behaviour. New `tests/security-headers.test.js` adds 9 assertions: common helmet header set, clickjacking protection (XFO + CSP frame-ancestors), powered-by hidden, CSP allows Tailwind CDN for both script-src and style-src, CSP allows jsdelivr (Alpine), CSP retains `'unsafe-inline'` for Alpine handlers, CSP locks default-src/object-src/base-uri, HSTS conditional on `NODE_ENV=production`, server.js wires the middleware before route mounting. `package.json` `test` script appends the new test file. Full suite: 163 tests, 0 failures (was 154 before this commit).
 
 ---
 

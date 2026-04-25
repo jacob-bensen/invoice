@@ -2,6 +2,61 @@
 
 ---
 
+## 2026-04-25T07:30Z — Security Headers via Helmet (H4 closed) [HEALTH]
+
+### What was built
+
+**`middleware/security-headers.js` + `server.js` — INTERNAL_TODO H4 closed: no security headers (helmet).**
+
+Before this commit, every QuickInvoice response shipped without `X-Frame-Options`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy`, `Strict-Transport-Security`, or `Referrer-Policy`. Any external page could iframe `/dashboard`, `/invoices/:id`, and `/billing/settings` to mount UI-redress / clickjacking attacks (combined with cookie auth, this lets an attacker page trick a logged-in user into clicking the "Mark Paid" or "Delete" buttons inside a transparent overlay). Browsers were also free to MIME-sniff served assets and the response leaked the framework via `X-Powered-By: Express`. Every modern security checklist (SOC2, PCI, Google Search Console, vendor security questionnaires) flags the absence as a finding.
+
+Added the `helmet@^8.1.0` runtime dependency. The new `middleware/security-headers.js` exports a `securityHeaders()` factory wrapping `helmet()` with a CSP **tuned to the actual view set in `views/`** rather than the maximally-strict default that would have white-screened every page that uses Tailwind CDN, Alpine, or inline `onclick=` handlers:
+
+| Directive               | Value                                                                                       | Why                                                                                  |
+|-------------------------|---------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
+| `default-src`           | `'self'`                                                                                    | Catch-all; everything else is an explicit relax.                                     |
+| `script-src`            | `'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net`               | Tailwind Play CDN, Alpine.js CDN, the inline `tailwind.config = …` block in `partials/head.ejs`, and the QR-code script in `invoice-print.ejs`. |
+| `script-src-attr`       | `'unsafe-inline'`                                                                           | Alpine `@click`/`@submit` directives serialise to event-handler attributes; Alpine cannot work without this. |
+| `style-src`             | `'self' 'unsafe-inline' https://cdn.tailwindcss.com`                                        | Tailwind Play CDN injects `<style>` blocks at runtime.                               |
+| `img-src`               | `'self' data: blob:`                                                                        | Inline SVG QR-code data URIs + future user-uploaded logos.                           |
+| `font-src`              | `'self' data:`                                                                              | data: URIs for any future inline icon font.                                          |
+| `connect-src`           | `'self'`                                                                                    | No third-party telemetry; no XHR egress.                                             |
+| `form-action`           | `'self' https://checkout.stripe.com https://billing.stripe.com`                             | Stripe Checkout + Customer Portal redirects.                                         |
+| `frame-ancestors`       | `'none'`                                                                                    | Modern equivalent of `X-Frame-Options: DENY` — primary clickjacking defence.         |
+| `object-src`            | `'none'`                                                                                    | Block legacy `<object>`/`<embed>` plugins.                                           |
+| `base-uri`              | `'self'`                                                                                    | Prevent `<base>`-tag injection from rebasing relative URLs to an attacker host.      |
+| `upgrade-insecure-requests` | enabled in production only                                                              | Quietly upgrade any leftover `http://` URL on a deployed page.                       |
+
+HSTS (`max-age=15552000; includeSubDomains`) is enabled **only** when `NODE_ENV === 'production'` so a local `http://localhost:3000` dev server doesn't pin the browser to https for 6 months. `crossOriginEmbedderPolicy` is left disabled (would block the cross-origin Tailwind/Alpine CDN scripts from loading at all); `crossOriginResourcePolicy` stays at helmet's `same-origin` default. `X-Powered-By` is removed by helmet's default behaviour.
+
+`server.js` mounts `app.use(securityHeaders())` immediately after `const app = express()` so the headers attach to every response, including 404s, the static-file pipeline, the Stripe webhook raw-body branch, and error pages.
+
+Tests added — `tests/security-headers.test.js` (9 new tests, 0 failures):
+
+| Test                                                                  | What it proves |
+|-----------------------------------------------------------------------|----------------|
+| Common helmet headers (nosniff, referrer-policy, dns-prefetch, download-options) | Base helmet defaults are present on every response. |
+| Clickjacking protection (X-Frame-Options + CSP frame-ancestors)       | Both legacy XFO and modern `frame-ancestors 'none'` are emitted, so old browsers and modern browsers both refuse to render the app in an iframe. |
+| `X-Powered-By` is hidden                                              | No framework leak.                              |
+| CSP allows Tailwind CDN for both `script-src` and `style-src`         | Real production page would not break.           |
+| CSP allows jsdelivr (Alpine.js)                                       | Alpine CDN load is not blocked.                 |
+| CSP includes `'unsafe-inline'` for inline Alpine handlers              | Existing `@click`/`onclick=` handlers keep working. |
+| CSP locks `default-src`/`object-src`/`base-uri`                        | Catch-all + plugin lockdown + `<base>`-injection defence. |
+| HSTS only set in production                                           | Local dev not bricked; prod deploys still get 6-month pin. Re-requires `middleware/security-headers` to flip `NODE_ENV` between asserts. |
+| `server.js` wires `securityHeaders` before route mounting             | Static analysis check that the require + invocation are present and ordered before any `app.use('/auth' …)` so all routes are covered. |
+
+`package.json` `test` script updated to append the new test file. Full suite post-change: **163 passing tests, 0 failures** across 18 suites (was 154 before, plus 9 new tests).
+
+### Master action required
+
+None for code. No DB migration. No new credentials. No Stripe config change. The `helmet` package is MIT-licensed (no copyleft impact). One follow-up Master verification: after deploy, run `curl -I https://<prod-host>/` and confirm presence of `Content-Security-Policy`, `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, and absence of `X-Powered-By`. If any production page breaks because of the CSP (most likely cause: a future view introduces a new external script source or inline `style="…"` attribute), relax the relevant directive in `middleware/security-headers.js` rather than removing helmet altogether.
+
+### Income relevance
+
+INDIRECT but real. (1) Removes the only iframe-based clickjacking surface against logged-in Pro users — a "Mark Paid" or "Delete Invoice" UI-redress would otherwise be a credible support / refund liability. (2) Required for SOC2 / ISO 27001 / customer security questionnaires once QuickInvoice pursues mid-market or agency deals; "no helmet" is a gimme finding on every pen-test report. (3) Google Search Console flags missing security headers under "Issues" which can suppress the QuickInvoice landing pages in SERP, capping the SEO funnel from #8 (niche landing pages) and #25 (expansion). (4) `Strict-Transport-Security` in production prevents downgrade attacks against the Stripe Checkout redirect, which is the single highest-revenue path in the app — a successful HTTP→HTTPS strip on that hop would let an attacker swap the Stripe URL for a phishing page and intercept Pro upgrades.
+
+---
+
 ## 2026-04-25T00:00Z — Rate Limiting on Auth Endpoints (H3 closed) [HEALTH]
 
 ### What was built

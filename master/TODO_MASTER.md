@@ -384,6 +384,20 @@ No DB migration, no Stripe config, no new dependencies beyond the install of `ex
 
 ---
 
+## 17. (Verification only) Confirm security headers on prod (added 2026-04-25)
+
+INTERNAL_TODO H4 (helmet security headers) shipped in this commit. No new env var, no DB migration, no Stripe change, no human action needed to make it work — `helmet` (MIT) is now a runtime dep and the middleware is wired into `server.js` ahead of all routes. After your next deploy, run:
+
+```
+curl -sI https://<prod-host>/ | grep -iE 'content-security-policy|strict-transport|x-content-type|x-frame|referrer-policy|x-powered-by'
+```
+
+You should see `Content-Security-Policy`, `Strict-Transport-Security` (max-age 15552000; includeSubDomains), `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, **no** `X-Powered-By`, and either `X-Frame-Options: SAMEORIGIN` or `frame-ancestors 'none'` inside the CSP (both are emitted). If a future view adds a new external script source (e.g. a fonts.googleapis.com stylesheet, a Plausible analytics tag, or a Stripe Elements iframe), the page will silently break in DevTools console with a CSP violation. Fix in `middleware/security-headers.js` by adding the new origin to the relevant directive — do **not** remove helmet to "fix" the symptom.
+
+`Strict-Transport-Security` is intentionally suppressed when `NODE_ENV !== 'production'` so local `http://localhost:3000` dev traffic is not pinned to HTTPS for 6 months by the browser.
+
+---
+
 ## 8. Set logo uploads directory (added 2026-04-22)
 Logo uploads are stored on the local filesystem. Set a persistent path (e.g., an attached volume on Heroku/Railway):
 ```
