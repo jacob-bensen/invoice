@@ -718,12 +718,111 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
 
 ---
 
-## BLOCKED — Do Not Start Until Prerequisites Are Met
-
-### 11. [GROWTH] [BLOCKED] Churn Win-Back Email Sequence [L]
+### 29. [GROWTH] Trial End Day-3 Nudge Email [XS]
 
 **App:** QuickInvoice (Node.js)
-**BLOCKED:** Email delivery is not implemented in QuickInvoice. Complete "Add email delivery (Resend or SendGrid)" in `TODO.md` first.
+**Impact:** HIGH — the single highest-leverage conversion action available for trial users; industry benchmarks show a day-3/4 nudge email is responsible for 30–50% of trial-to-paid conversions; without it, users who signed up but never added a card silently lapse on day 7
+**Effort:** Very Low
+**Prerequisites:** Email delivery (#13, done) + node-cron (#16, done) + `trial_ends_at` column (#19, done) — all prerequisites are live
+
+**Sub-tasks:**
+1. `db.js`: add `getTrialUsersNeedingNudge()` — single SELECT: `WHERE trial_ends_at BETWEEN NOW() + INTERVAL '2 days' AND NOW() + INTERVAL '4 days' AND plan = 'pro'`. Join on `subscription_status` if available; the intent is to catch users still in trial who haven't added a card. Add `trial_nudge_sent_at TIMESTAMP` column to `users` via idempotent `ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_nudge_sent_at TIMESTAMP;` in `db/schema.sql`. Filter on `trial_nudge_sent_at IS NULL` so each user gets exactly one nudge.
+2. `jobs/reminders.js` or new `jobs/trial-nudge.js`: add a second `node-cron` job (`'0 10 * * *'`, 10:00 UTC daily). For each row from step 1: call `sendEmail()` with subject `"Your Pro trial ends in N days — don't lose your data"` and body listing their active Pro features (payment links, auto-reminders, custom branding), a count of invoices they've created in the trial, and a single CTA button `"Keep Pro → Add payment method"` pointing to `/billing/portal`. Stamp `trial_nudge_sent_at = NOW()` on success. On `not_configured`, skip stamp so the nudge fires on the next tick once Resend is live.
+3. `server.js`: register the new job with the same `NODE_ENV !== 'test'` guard.
+4. Tests in `tests/trial-nudge.test.js` (4 tests): user with trial ending in 3 days → email sent + stamped; user already nudged (`trial_nudge_sent_at IS NOT NULL`) → skipped; user whose trial already expired → skipped; `not_configured` → not stamped so next run retries.
+
+---
+
+### 30. [GROWTH] "Invoice Paid" Instant Notification Email to Freelancer [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** HIGH — the "cha-ching" magic moment that drives word-of-mouth ("this app texts me the second I get paid"); the emotional resonance of an instant paid-notification converts casual users into vocal advocates; costs ~5 lines of code in the existing Stripe webhook handler; no new infrastructure
+**Effort:** Very Low
+**Prerequisites:** Email delivery (#13, done); Payment Links (#2, done)
+
+**Sub-tasks:**
+1. `routes/billing.js` `checkout.session.completed` handler: inside the `session.mode === 'payment'` branch (payment link payments), after `db.updateInvoiceStatus(invoice.id, 'paid')`, fire a `sendEmail()` to the invoice owner (look up via `invoice.user_id → db.getUserById`). Subject: `"Invoice #[invoice_number] was just paid — $[total]"`. HTML body: two lines ("Great news — [client_name] paid invoice #X for $Y.") + a "View invoice →" button to `/invoices/:id`. Reply-to: owner's `reply_to_email` or `business_email`. Fire-and-forget (`then/catch`, never `await` — don't delay the webhook 200 response).
+2. Handle the case where `sendEmail` returns `not_configured` gracefully (same pattern as reminder job — log and continue).
+3. Tests in `tests/paid-notification.test.js` (3 tests): payment-link `checkout.session.completed` → `sendEmail` called with the right owner email, subject containing the invoice number and amount; `sendEmail` throw does NOT prevent the invoice from being marked paid (fire-and-forget safety); non-payment-link checkout (subscription upgrade) does NOT trigger a paid notification (guard on `session.mode === 'payment'`).
+
+---
+
+### 31. [GROWTH] Free-Plan Invoice Limit Progress Bar on Dashboard [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM — the upgrade modal (#1) fires only at the hard wall (5th invoice); this adds a visible, non-pushy "X of 5 free invoices used this month" progress bar that creates conversion pressure before the wall; users who see they're at 3/5 or 4/5 are highly likely to upgrade rather than wait for the hard stop; different from #15 (contextual upsell) which targets specific feature interactions rather than the usage-limit dimension
+**Effort:** Very Low
+**Prerequisites:** None
+
+**Sub-tasks:**
+1. `routes/invoices.js` `GET /` (dashboard): for free-plan users, compute `monthly_invoice_count` — count of invoices created in the current calendar month (or rolling 30 days, matching whichever window the hard limit enforces). Pass `invoice_limit_progress: { used: N, max: 5 }` to the template only when `user.plan === 'free'`.
+2. `views/dashboard.ejs`: above the invoice list and below the onboarding checklist, render a slim progress bar when `locals.invoice_limit_progress` is defined. Tailwind: outer container `bg-gray-100 rounded-full h-2`, inner fill `bg-indigo-500 rounded-full h-2` with `style="width: N%"`. Label above: `"<strong>N of 5</strong> free invoices used this month"`. At 4/5 or 5/5 change fill color to `bg-amber-500` and append an inline `"Upgrade →"` link to `/billing/upgrade`. Wrap in `print:hidden`.
+3. No tests needed for a pure view change; spot-check that the bar does not render for Pro/Business/Agency users.
+
+---
+
+### 32. [GROWTH] API Key Authentication + REST Endpoints (Zapier Marketplace Prerequisite) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM-HIGH — required prerequisite for TODO_MASTER #24 (native Zapier app listing, which exposes QuickInvoice to Zapier's 3M+ users); also enables power users to build their own automations and unlocks the "developer market" segment; the API key model is the simplest auth pattern (no OAuth server needed) and is the standard for indie SaaS Zapier integrations
+**Effort:** Low
+**Prerequisites:** None
+
+**Sub-tasks:**
+1. `db/schema.sql`: `ALTER TABLE users ADD COLUMN IF NOT EXISTS api_key VARCHAR(64) UNIQUE;`. Idempotent.
+2. `db.js`: update `createUser()` to generate `api_key = crypto.randomBytes(32).toString('hex')` on insert. Add `getUserByApiKey(apiKey)` — `SELECT ... FROM users WHERE api_key = $1`. Add `regenerateApiKey(userId)` — `UPDATE users SET api_key = $1, updated_at = NOW()` with a fresh `crypto.randomBytes(32).toString('hex')` value; returns the new key.
+3. `middleware/api-auth.js`: new `requireApiKey` middleware — reads `Authorization: Bearer <key>` header, calls `db.getUserByApiKey`, attaches `req.apiUser`; returns `401 { error: 'Unauthorized' }` on missing/invalid key.
+4. `routes/api.js` (new file, mount at `/api` in `server.js`):
+   - `GET /api/invoices` — `requireApiKey`; accepts `?status=paid|sent|draft|overdue&since=ISO_DATE&limit=50`; returns JSON array of invoice objects. Used as the Zapier "Invoice Paid" polling trigger.
+   - `GET /api/me` — `requireApiKey`; returns `{ plan, invoice_count_this_month, client_count }`. Used by Zapier for connection verification.
+5. `views/settings.ejs`: add a "Developer / API" card in the Pro section (Pro/Agency plan gate). Shows the current API key in a monospaced input (masked, with a toggle-reveal button using Alpine.js). "Regenerate key" button POSTs to `POST /billing/api-key/regenerate` (small handler in `routes/billing.js`) with CSRF token. Free users see a locked placeholder with upgrade CTA.
+6. Tests in `tests/api-key.test.js` (5 tests): valid API key → `GET /api/invoices` returns 200 with invoice array filtered by status/since; missing key → 401; invalid key → 401; `GET /api/me` returns plan + counts; `POST /billing/api-key/regenerate` (Pro user) returns new key and updates DB.
+
+---
+
+### 33. [GROWTH] Invoice Bulk CSV Export [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM — tax season is the #1 churn-risk event for freelancers (they switch tools when they realise they can't easily pull their invoicing data for their accountant); a one-click CSV export of all invoices eliminates this churn vector and is a concrete Pro feature that differentiates from free-tier invoicing tools; GDPR Art. 15 data portability also makes this a compliance requirement for EU users
+**Effort:** Low
+**Prerequisites:** None
+
+**Sub-tasks:**
+1. `db.js`: add `getInvoicesForExport(userId)` — `SELECT invoice_number, issue_date, due_date, client_name, client_email, status, total, currency, payment_link_url, last_reminder_sent_at, created_at FROM invoices WHERE user_id = $1 ORDER BY created_at DESC` (no `LIMIT` — export is intentionally unbounded). Separate from `getInvoicesByUser` which will eventually be paginated (#H11).
+2. `routes/invoices.js`: add `GET /invoices/export.csv` — `requireAuth`; call `getInvoicesForExport`; set headers `Content-Type: text/csv; charset=utf-8` and `Content-Disposition: attachment; filename="invoices-YYYY-MM-DD.csv"`; stream the response as CSV (use Node's built-in string building — no CSV library needed for flat row data). Each row: `invoice_number, issue_date, due_date, client_name, client_email, status, total, currency`. First row: column headers. Escape any commas in field values by wrapping in double-quotes.
+3. `views/dashboard.ejs`: add an "Export CSV" button in the dashboard header row (right-aligned, next to any future filter controls). Style as a secondary button. Visible for all plan levels (export is a data-portability right, not a Pro feature). Link directly to `/invoices/export.csv` (plain anchor, no JS needed — browser triggers a download).
+4. Tests in `tests/csv-export.test.js` (3 tests): authenticated user → 200, `Content-Type: text/csv`, body contains invoice_number header row + invoice data rows; unauthenticated → redirect to `/auth/login`; user with no invoices → 200 with header row only (empty export is valid).
+
+---
+
+### 34. [GROWTH] Plausible Analytics Integration [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM — without analytics there is no way to measure which niche landing pages drive registrations, whether the upgrade modal converts, what the landing-page → signup funnel looks like, or whether any of the distribution actions (Product Hunt, Show HN, newsletter mentions) are sending traffic; Plausible is cookie-less (no GDPR consent banner needed per TODO_MASTER L6), privacy-friendly, and costs $9/mo; this is operational infrastructure for every future growth decision
+**Effort:** Very Low
+**Prerequisites:** Master must sign up at plausible.io and provide the domain name (see TODO_MASTER #29 below); the code integration is a 2-line change
+
+**Sub-tasks:**
+1. Add `PLAUSIBLE_DOMAIN` to `.env.example` (e.g. `quickinvoice.io`). When unset, skip injection entirely — graceful degradation, no 500s.
+2. `views/partials/head.ejs`: inside `<head>`, inject conditionally:
+   ```html
+   <% if (process.env.PLAUSIBLE_DOMAIN) { %>
+   <script defer data-domain="<%= process.env.PLAUSIBLE_DOMAIN %>" src="https://plausible.io/js/script.js"></script>
+   <% } %>
+   ```
+   No `unsafe-eval` needed — Plausible's script is external and already allowed by the CSP's `script-src` if the Plausible domain is added to `middleware/security-headers.js`.
+3. `middleware/security-headers.js`: add `https://plausible.io` to `script-src` and `connect-src` CSP directives (Plausible's tracker makes a `POST /api/event` XHR to its own domain).
+4. Key conversion events to track via the custom events API (`plausible('EventName')`): add `<script>plausible('Signup')</script>` to `views/auth/register.ejs` success redirect; `plausible('UpgradeStart')` in the upgrade modal CTA click handler; `plausible('TrialStart')` in `views/partials/upgrade-modal.ejs` after successful checkout. These are optional progressive enhancements — pageview tracking alone (default Plausible behaviour) is immediately valuable.
+5. No tests needed (external script injection is trivial); verify in browser DevTools Network tab that `POST https://plausible.io/api/event` fires on pageload.
+
+---
+
+## BLOCKED — Do Not Start Until Prerequisites Are Met
+
+### 11. [GROWTH] [UNBLOCKED — email (#13) is live] Churn Win-Back Email Sequence [L]
+
+**App:** QuickInvoice (Node.js)
+**~~BLOCKED~~ UNBLOCKED (2026-04-25):** INTERNAL_TODO #13 (email delivery via Resend) shipped on 2026-04-25. Email delivery is now implemented. This task is ready to execute once `RESEND_API_KEY` is provisioned in production. The `churn_sequences` table, job, and webhook handler below can be implemented immediately.
 **Impact:** MEDIUM
 **Effort:** Low–Medium (after email is live)
 
@@ -738,10 +837,10 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
 
 ---
 
-### 12. [GROWTH] [BLOCKED] Monthly Revenue Summary Email to Pro Subscribers [M]
+### 12. [GROWTH] [UNBLOCKED — email (#13) is live] Monthly Revenue Summary Email to Pro Subscribers [M]
 
 **App:** QuickInvoice (Node.js)
-**BLOCKED:** Email delivery is not implemented in QuickInvoice. Complete "Add email delivery (Resend or SendGrid)" in `TODO.md` first.
+**~~BLOCKED~~ UNBLOCKED (2026-04-25):** INTERNAL_TODO #13 (email delivery via Resend) shipped on 2026-04-25. This task is ready to execute once `RESEND_API_KEY` is provisioned in production.
 **Impact:** MEDIUM — reduces passive churn by reminding users of value received each month
 **Effort:** Low (after email is live)
 

@@ -370,6 +370,72 @@ Track replies in a spreadsheet. Follow up once if no reply after 7 days.
 
 ---
 
+### 26. [MARKETING] Request G2 and Capterra Reviews from First Pro Users
+
+**Impact:** HIGH — G2 and Capterra reviews appear directly in Google SERPs for queries like "QuickInvoice reviews" and "best invoicing software for freelancers"; a product with 0 reviews is invisible in category comparisons; even 5 genuine reviews can move a SaaS product from page 3 to the first page of G2's category ranking; this is a zero-cost action that compounds indefinitely (reviews attract more reviews)
+**Action:**
+1. After the first 10 Pro or Business plan signups, email each user directly from a personal address (not a no-reply). Keep it under 60 words:
+   > Subject: Quick favour — 2 minutes on G2?
+   >
+   > Hi [first name], I'm the founder of QuickInvoice. You've been using it for [N] days — I'd love to hear what you think. Would you mind leaving a 2-sentence review on G2? It takes about 2 minutes and helps other freelancers find the tool. Here's the link: [G2 review link]. Totally optional — just thought I'd ask.
+2. Include a G2 review link (your product's G2 page — created as part of item #13 above). Do the same for Capterra and AlternativeTo (3 separate outreach emails, spaced 3 days apart, to avoid survey fatigue).
+3. Offer a genuine incentive if helpful: "I'll extend your subscription by 1 month as a thank-you" (create a Stripe coupon for `100% off once` and include a redemption link in the follow-up after they post the review).
+4. Track review counts on a monthly basis. Target: 5 reviews within 60 days of first 10 Pro signups. Update directory listings (#13) with the new review count as it grows.
+
+---
+
+### 27. [MARKETING] Free Invoice Template PDF Lead Magnet
+
+**Impact:** MEDIUM-HIGH — a downloadable free invoice template PDF serves two purposes: (1) it intercepts the high-intent "invoice template for freelance designer/developer/etc." search query that the niche landing pages (#8) are already targeting, converting organic visitors who aren't ready to sign up yet; (2) it builds an email list for future drip sequences; every user who downloads a template and later becomes a paid subscriber arrived at near-zero CAC
+**Action:**
+1. Create a professional, cleanly designed PDF invoice template for each niche (minimum: one generic + one per the 6 existing niche pages). Tools: Canva (free), Figma, or Google Docs → PDF export. The template should include: the freelancer's name/logo placeholder, client details section, line items table, total, payment terms, and a subtle "Made with QuickInvoice — quickinvoice.io" footer.
+2. Add a "Download free template" email capture form to each niche landing page (rendered by `views/partials/lp-niche.ejs`). Gate the download behind a first-name + email form. On submit: (a) add the email to a Resend audience list or a simple CSV/Airtable log; (b) redirect to the PDF file URL or email it automatically. The dev team can implement the form + Resend audience add; the PDF itself is a Master asset.
+3. Use the downloaded-user email list for a 3-email onboarding drip: Day 0 ("Here's your template"), Day 3 ("Here's how to make clients pay faster"), Day 7 ("QuickInvoice does all of this automatically — free to start").
+4. **Dev prerequisite:** the autonomous team will need a `POST /landing/template-download` route that accepts `email + niche`, adds the email to a `template_leads` DB table (simple: `id, email, niche, created_at`), and either serves a redirect to the PDF asset URL or triggers a Resend send. Small [S] task — flag to the autonomous team as a companion to #25 (Expand SEO niche pages).
+
+---
+
+### 28. [MARKETING] Freelancer Slack and Discord Community Outreach
+
+**Impact:** MEDIUM — large freelancer Slack/Discord communities contain tens of thousands of active freelancers who share tool recommendations daily; unlike Reddit (item #14) which is asynchronous and competitive, Slack/Discord communities are real-time, relationship-driven, and highly trusted; a single organic mention from a respected community member can drive 50–200 signups in 24 hours at zero cost
+**Action:** Join and post in the following communities (one post per community, organic tone — introduce yourself as the builder, share a specific pain you solved, link to the product):
+- **Designer Hangout** (designerhangout.co) — 15,000+ designers, invite-only Slack; request an invite via the website. Post in `#tools` or `#freelance` channel.
+- **Freelance Forward Discord** (searchable on Discord) — active freelancers across design, dev, writing.
+- **Webflow Community** (webflow.com/community) — large community of freelance Webflow developers; many invoice clients and need invoicing tools.
+- **The UX Mastery Community** (uxmastery.com/community) — UX/product designers who frequently do contract work.
+- **Indie Hackers community chat** — already captured for the IH product listing (#13), but also post in the `#growth` and `#tools` channels of the IH Discord.
+- **Remote Work Hub** (various Slack groups under this name) — remote workers include a high proportion of freelancers.
+
+**Tone guide:** Never post a bare product link. Lead with the problem ("Tired of clients saying they never received the invoice?"), describe the solution briefly (2 sentences), and end with "I built QuickInvoice to fix this — happy to give anyone here a free Pro month to try it." The Pro-month offer costs $12 and acquires a user whose LTV is $60–$120.
+
+**Timing:** Post Tuesday–Thursday between 9 AM and 1 PM ET for maximum active user overlap.
+
+---
+
+### 29. [MARKETING] Sign Up for Plausible Analytics (Prerequisite for INTERNAL_TODO #34)
+
+**Impact:** MEDIUM (operational) — without analytics there is no way to measure whether any of the distribution actions above (#12–#28) are driving traffic or signups; Plausible is privacy-friendly, cookie-less (no GDPR consent banner required per TODO_MASTER L6), and costs $9/mo; the dev team's code integration (INTERNAL_TODO #34) requires the `PLAUSIBLE_DOMAIN` env var from this step
+**Action:**
+1. Sign up at **plausible.io** ($9/mo Starter, or start with the 30-day free trial — no credit card required for the trial).
+2. Add your domain (e.g. `quickinvoice.io`) as a new site in the Plausible dashboard. Plausible will show you the one-line JS snippet — pass the domain name to the autonomous team as `PLAUSIBLE_DOMAIN=quickinvoice.io` so they can complete INTERNAL_TODO #34.
+3. Set `PLAUSIBLE_DOMAIN=quickinvoice.io` as an env var on the deployed app. The code integration is already handled by INTERNAL_TODO #34 — once the env var is set, analytics start immediately on next deploy.
+4. In Plausible dashboard → Goals, create the following custom goals (these correspond to the `plausible('EventName')` calls INTERNAL_TODO #34 adds to the views): `Signup`, `UpgradeStart`, `TrialStart`. These will let you see the signup funnel and attribute signups to specific traffic sources.
+5. **Optional:** connect Google Search Console to Plausible (Settings → Integrations) so keyword-level data from your niche landing pages (#8) flows into the same dashboard.
+
+---
+
+### 30. [MARKETING] Announce "Invoice Paid Instant Notification" Feature on Social
+
+**Impact:** MEDIUM — when INTERNAL_TODO #30 ("Invoice Paid" notification email to freelancer) ships, it is the kind of emotionally resonant micro-feature that goes viral on Twitter/X among freelancers; the single-sentence pitch ("QuickInvoice now emails you the instant your client pays — so you can stop refreshing your bank account") is a self-contained hook that needs no explanation; native video or screenshot of the email in a phone notification tray maximises engagement
+**Action (after INTERNAL_TODO #30 is deployed):**
+1. Write the tweet/X post: `"I added one small thing to QuickInvoice: the instant a client pays your invoice, you get this email. No more refreshing your bank account. 🔔" [screenshot of the "Invoice #X was just paid — $1,200" email on a phone screen]`
+2. Post as a native Twitter/X image post (not a link). Tag relevant accounts: `@stripe`, `@resend`, and any freelancer community accounts you follow.
+3. Cross-post to LinkedIn (more professional tone): `"We just shipped a small feature with big emotional impact: QuickInvoice now sends you an instant notification the moment a client pays your invoice."` + screenshot.
+4. Share in the same Reddit/community channels from #14 and #28 as a "just shipped" update post. This is a legitimate update post, not a promotional post — communities reward builders who share progress transparently.
+5. Add the feature to the product's landing page feature grid (`views/index.ejs`) with copy: "Instant paid notifications — get emailed the moment your client pays."
+
+---
+
 ## 16. (Optional) Tune auth rate-limit cap (added 2026-04-25)
 
 The new auth rate limiter (INTERNAL_TODO H3) defaults to **10 POSTs/minute/IP** on `POST /auth/login` and `POST /auth/register`. No action required to ship — the default is safe. To raise or lower the cap on the deployed app, set:
