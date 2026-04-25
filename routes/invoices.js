@@ -176,6 +176,12 @@ router.post('/:id/edit', requireAuth, async (req, res) => {
     let items = [];
     try { items = JSON.parse(req.body.items); } catch (_) {}
 
+    const requestedStatus = req.body.status || 'draft';
+    if (!ALLOWED_INVOICE_STATUSES.includes(requestedStatus)) {
+      req.session.flash = { type: 'error', message: 'Invalid invoice status.' };
+      return res.redirect(`/invoices/${req.params.id}/edit`);
+    }
+
     await db.updateInvoice(req.params.id, req.session.user.id, {
       client_name: req.body.client_name,
       client_email: req.body.client_email || null,
@@ -188,7 +194,7 @@ router.post('/:id/edit', requireAuth, async (req, res) => {
       notes: req.body.notes || null,
       issued_date: req.body.issued_date,
       due_date: req.body.due_date || null,
-      status: req.body.status || 'draft'
+      status: requestedStatus
     });
 
     res.redirect(`/invoices/${req.params.id}`);

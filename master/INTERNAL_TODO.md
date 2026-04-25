@@ -196,6 +196,44 @@ New `tests/plan-check-constraint.test.js` adds 7 static-lint assertions: (1) the
 
 ---
 
+### H13. [DONE 2026-04-25 PM] [HEALTH] Apply `ALLOWED_INVOICE_STATUSES` whitelist to `POST /:id/edit` (added 2026-04-25 PM audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** LOW (latent) — H12 closed the whitelist gap on `POST /:id/status` but missed `POST /:id/edit` (`routes/invoices.js:174-199`), which still passes `req.body.status || 'draft'` straight into `db.updateInvoice`. The DB CHECK constraint still rejects junk values with 23514, but the catch block logs `console.error('Update invoice error:', err)` and redirects to `/edit`, producing the same noisy log + opaque UX that H12 fixed for the `/status` route. The form template only emits the four valid options so well-behaved clients never trip this; an attacker submitting a hand-crafted form (or a corrupted browser autofill) can still POST any string.
+**Effort:** Very Low
+**Resolution (2026-04-25 PM, in this audit):** Added the same `ALLOWED_INVOICE_STATUSES.includes(...)` short-circuit at the top of `POST /:id/edit` that `POST /:id/status` already uses. Invalid status flashes `'Invalid invoice status.'` and redirects to `/invoices/:id/edit` (back to the form so the user can correct it). Re-uses the existing module-level `ALLOWED_INVOICE_STATUSES` constant — single source of truth across both routes. No test added in this commit (the existing `tests/status-whitelist.test.js` already covers the constant export contract that both routes depend on, and a regression in the edit-route whitelist would surface immediately as a 23514 in the DB CHECK constraint just as before — defence in depth, not new functionality).
+
+---
+
+### H14. [HEALTH] `escapeHtml` / `formatMoney` duplication between `lib/email.js` and `jobs/reminders.js` (added 2026-04-25 PM audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** TRIVIAL (maintenance) — both modules implement byte-identical `escapeHtml(value)` (5-char replace chain: `&` → `&amp;`, `<` → `&lt;`, `>` → `&gt;`, `"` → `&quot;`, `'` → `&#39;`) and very-similar `formatMoney(amount[, currency])` helpers. A future change to either (e.g. adding the Unicode left-single-quote codepoint, or fixing a currency symbol) has to be made in two places or the email template and reminder template silently drift. No security risk because both implementations are correct today.
+**Effort:** Very Low
+**Sub-tasks:** Promote both helpers to a `lib/html.js` (or `lib/format.js`) module: `module.exports = { escapeHtml, formatMoney }`. Update `lib/email.js` and `jobs/reminders.js` to `const { escapeHtml, formatMoney } = require('./html')` (paths adjusted). Verify the existing `lib/email.js` `_internal` test export and `jobs/reminders.js` `_internal` test export still work. Run `npm test` to confirm no test that asserts against the email or reminder HTML breaks.
+**Why not now:** Touches two production code paths that send revenue-relevant email (invoice send + overdue reminder). Worth a dedicated commit so a regression in either email template can be cleanly bisected.
+
+---
+
+### H15. [HEALTH] Sequential `db.getInvoiceById` + `db.getUserById` in `routes/invoices.js` GET handlers (added 2026-04-25 PM audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** TRIVIAL (latency) — three handlers (`GET /:id`, `GET /:id/edit`, `GET /:id/print`) `await db.getInvoiceById(...)` then `await db.getUserById(...)` sequentially. Both queries are independent (the user lookup doesn't depend on the invoice row) so they could be a single `Promise.all([...])`, halving the per-page DB-roundtrip count from 2 to effectively 1. The dashboard handler (`GET /`) already does this correctly (`Promise.all([getInvoicesByUser, getUserById])` at line 15-18); the per-invoice handlers are out of pattern. With local-network Postgres each round trip is sub-millisecond, so user-visible latency impact is sub-10ms on a Heroku dyno; matters only as the app's RPS rises.
+**Effort:** Very Low
+**Sub-tasks:** Replace the two sequential `await`s in `GET /:id`, `GET /:id/edit`, `GET /:id/print` with `const [invoice, user] = await Promise.all([db.getInvoiceById(req.params.id, req.session.user.id), db.getUserById(req.session.user.id)]);` then keep the existing `if (!invoice) return res.redirect('/dashboard');` guard. Existing tests for these routes continue to pass because the resolved-value semantics are identical.
+
+---
+
+### H16. [HEALTH] `resend@^6.12.2` — moderate-severity transitive `svix → uuid` advisory (added 2026-04-25 PM audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** LOW — `npm audit --production` reports `uuid <14.0.0` (`GHSA-w5hq-g745-h8pq` — "Missing buffer bounds check in v3/v5/v6 when buf is provided"), reachable through `resend@6.12.2 → svix → uuid`. The advisory is a moderate-severity bounds check on a *user-supplied* buffer to specific UUID generation paths (v3/v5/v6 with a custom buffer). QuickInvoice never calls `uuid` directly; the only consumer in our dependency tree is `svix` (Resend's webhook signature library), which we don't use the verifier of — we only call `resend.emails.send()`. The advisory's exploit requires attacker control of the `buf` argument to `uuid.v3/v5/v6`, which is not reachable through any of our call paths.
+**Fix:** `npm i resend@^6.1.3` (semver downgrade — note the audit fix's recommended version is *lower* than current because resend `6.2.0+` pulled in the affected svix range). Confirm `lib/email.js` `sendEmail` happy path still works against the downgraded SDK (the public `Resend(...).emails.send({...})` API has been stable across the 6.x line). Or: wait for `resend@^6.13` which is expected to pin the patched `svix@>=1.92`.
+**Effort:** Very Low (bump + run full `npm test` + manual mark-sent smoke).
+**Why not auto-fixed in this audit:** Same reasoning as H9 (bcrypt) — Resend is the email transport for invoice send + reminder emails (the Pro feature). A regression in the SDK's send API is income-relevant. Worth a dedicated commit so any rate-limit or payload-shape change can be cleanly attributed. Runtime exposure is nil; this is install-time/library-hygiene only.
+
+---
+
 ### H12. [DONE 2026-04-25] [HEALTH] Whitelist `status` in `POST /:id/status` before hitting Postgres CHECK constraint (added 2026-04-24 PM audit, supersedes earlier H6) [XS]
 
 **App:** QuickInvoice (Node.js)

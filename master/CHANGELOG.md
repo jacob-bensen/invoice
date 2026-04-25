@@ -54,6 +54,52 @@ None required — code-only change. No schema migration, no env var, no Stripe c
 
 ---
 
+## 2026-04-25T23:35Z — Reliability/legal audit on `routine/autonomous`; closes H13 (status whitelist on `POST /:id/edit`); flags H14/H15/H16 [HEALTH]
+
+### What was audited
+
+Full pass across security, performance, code quality, dependencies, and legal on the `routine/autonomous` branch (synced from `origin/master` @ `211441d`). Source surface reviewed: `server.js`, `db.js`, `db/schema.sql`, `routes/{auth,billing,invoices,landing}.js`, `lib/{email,outbound-webhook,stripe-payment-link}.js`, `jobs/reminders.js`, `middleware/{auth,csrf,rate-limit,security-headers}.js`, `package.json`, `package-lock.json`, `.env.example`, all `views/**/*.ejs`. Cross-referenced against the open and closed items in `master/INTERNAL_TODO.md` and `master/TODO_MASTER.md` so this audit isn't re-flagging prior fixes.
+
+### Fixed in this commit
+
+| File | Change |
+|------|--------|
+| `routes/invoices.js` | **H13 closed.** `POST /:id/edit` now applies the existing `ALLOWED_INVOICE_STATUSES` whitelist (`['draft','sent','paid','overdue']`) to `req.body.status` before persisting. Previously the route accepted any string and relied on the Postgres CHECK constraint as the only gate — an invalid value would log `Update invoice error: 23514 …` and redirect, the same noisy fallback that H6/H12 closed for the `/status` route. Invalid status now flashes `'Invalid invoice status.'` and redirects back to `/edit` so the user can correct it. Re-uses the module-level constant — single source of truth across both `/edit` and `/status`. |
+| `master/INTERNAL_TODO.md` | New entries: H13 (status whitelist on `/edit` — closed in this commit), H14 (escapeHtml/formatMoney duplication between `lib/email.js` and `jobs/reminders.js`), H15 (sequential getInvoiceById + getUserById in three GET handlers — should be Promise.all'd to match the dashboard pattern), H16 (`resend@^6.12.2` → moderate `svix → uuid` advisory `GHSA-w5hq-g745-h8pq`, reachable only via the unused webhook-verifier path; flagged for a dedicated bump commit so any SDK regression is bisectable). |
+
+### Findings flagged but not auto-fixed (full context in `master/INTERNAL_TODO.md`)
+
+- **H14** [HEALTH] [XS] — `escapeHtml` and `formatMoney` are byte-identical copies in `lib/email.js` and `jobs/reminders.js`. Future template-quoting tweaks have to land in two places or the invoice-send and reminder emails silently drift. Recommendation: extract to `lib/html.js`. Not auto-fixed: touches both production email paths (revenue-relevant); worth a dedicated commit so a regression in either template can be cleanly bisected.
+- **H15** [HEALTH] [XS] — `routes/invoices.js` `GET /:id`, `GET /:id/edit`, `GET /:id/print` each `await` `db.getInvoiceById` then `await` `db.getUserById` sequentially. The dashboard handler at line 15-18 already does this correctly via `Promise.all`. Out-of-pattern, sub-10ms latency lift, low risk to fix.
+- **H16** [HEALTH] [XS] — `npm audit --production` reports `uuid <14.0.0` (`GHSA-w5hq-g745-h8pq`, moderate) reachable through `resend@6.12.2 → svix`. Runtime exposure is nil (we only call `resend.emails.send()`, never the svix webhook verifier). Fix is `npm i resend@^6.1.3` or wait for resend `^6.13` with patched svix. Not auto-fixed for the same reason H9 (bcrypt) wasn't: the Resend SDK powers Pro/Agency invoice send + overdue reminders — worth a dedicated commit so any send-API regression is bisectable.
+
+### Findings reviewed and confirmed CLEAN
+
+- **Secrets / hardcoded credentials.** No `sk_live_…`, `whsec_…`, `re_…`, or other API-key literals anywhere outside `.env.example` placeholders. `tests/*` use clearly-named fakes (`'sk_test_dummy'`, `'price_monthly_TEST'`). `server.js:20-22` refuses to boot in production without `SESSION_SECRET`. No `[CRITICAL]` items added to `TODO_MASTER.md`.
+- **Stripe webhook integrity.** `routes/billing.js:97-106` verifies `Stripe-Signature` via `stripe.webhooks.constructEvent` against `STRIPE_WEBHOOK_SECRET` and returns 400 on signature failure. The handler is also CSRF-exempt (`middleware/csrf.js:10` `EXEMPT_PATHS`) and uses raw body parsing (`server.js:29`).
+- **Outbound webhook SSRF.** `lib/outbound-webhook.js` already implements full DNS-resolved private-range blocking (10/8, 127/8, 169.254/16, 172.16/12, 192.168/16, plus IPv6 ULA/link-local) — closed by H1 on 2026-04-24.
+- **Rate limiting on auth.** `middleware/rate-limit.js` + `routes/auth.js` cap `/login` and `/register` at 10 req/min/IP with a generic flash; closed by H3.
+- **Helmet / CSP / HSTS / X-Frame.** All wired in `middleware/security-headers.js` (closed by H4); HSTS conditional on `NODE_ENV=production`.
+- **Status validation.** `POST /:id/status` whitelists since H6/H12. `POST /:id/edit` whitelists as of this commit (H13 above).
+- **Pagination / R14 (`db.getInvoicesByUser`).** Already tracked as H11 — flagged for the next dashboard-touching commit so the query-string + view changes land together.
+- **Composite `(user_id, status)` index.** Already tracked as H8.
+- **bcrypt 5.1.1 transitive `tar` advisories.** Already tracked as H9.
+- **Legal — required pages (Terms / Privacy / Refund).** All three pre-existing as L1 / L2 / L3 in `master/TODO_MASTER.md`. Code scaffolding is INTERNAL_TODO #28 (still pending); no new [LEGAL] items added because the gaps are already documented.
+- **Legal — license inventory.** `package-lock.json` license types: `MIT`, `Apache-2.0`, `BSD-2-Clause`, `BSD-3-Clause`, `BlueOak-1.0.0`, `ISC`, `MIT-0`, `Unlicense`. **No GPL, AGPL, LGPL, MPL, EPL, or other copyleft licenses** in the production tree. Confirms L7's earlier finding; safe for closed-source commercial distribution.
+- **Legal — third-party API ToS.** Stripe (Checkout + Payment Links — recommended integration), Resend (transactional email to user's own clients — within ToS). No new third-party APIs introduced in this audit window.
+- **Legal — PCI-DSS scope.** Confirmed SAQ-A: no card data ever transits this server (Stripe-hosted Checkout + Payment Links). L5 in TODO_MASTER.md still requires Master to file the annual SAQ-A self-attestation.
+- **Legal — GDPR data-subject rights.** L4 (export + delete endpoints) remains open — Master decision per existing TODO_MASTER entry.
+
+### Why nothing was flagged [CRITICAL]
+
+The audit specifically looked for hardcoded secrets, missing payment-error handling, and unhandled exceptions on Stripe / Resend calls. None found. Every Stripe call is in a try/catch with a graceful redirect; every `sendEmail` consumer treats the result object's `ok` flag (`routes/invoices.js:228-235`, `jobs/reminders.js:160-194`); every webhook handler is wrapped (`routes/billing.js:108-176`); the outbound webhook fire-and-forgets with `.catch` (`routes/invoices.js:243-246`).
+
+### Income relevance
+
+Indirect — H13 closes a noisy log path that would have made an incident-triage pager wake feel like a real DB outage. H14/H15/H16 are pure hygiene / latency / supply-chain items that are best fixed alone for clean bisect history. No income-critical features are blocked by this commit.
+
+---
+
 ## 2026-04-25T23:30Z — Widen `users.plan` CHECK to allow `business` + `agency` (INTERNAL_TODO H5 closed) [HEALTH]
 
 ### What was built
