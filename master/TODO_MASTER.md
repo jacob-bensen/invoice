@@ -434,6 +434,25 @@ INTERNAL_TODO #13 (email delivery for QuickInvoice) shipped in this commit. The 
 
 ---
 
+## 12. [OPTIONAL] Monitor 7-day Pro trial conversion (added 2026-04-25)
+INTERNAL_TODO #19 is closed: the Pro Checkout now ships with `subscription_data: { trial_period_days: 7 }`, no card required. **No env var, no Stripe Dashboard config change is required for the trial to work** — Stripe applies the trial to either the monthly or annual price automatically.
+
+Optional post-deploy actions to track trial-cohort health:
+
+1. **Stripe Dashboard health check.** Stripe Dashboard → Billing → Subscriptions → filter `Status = trialing`. Watch the count grow over the first 14 days. Trial → paid conversion typically lands at 25–60% depending on activation; below 20% means the in-product activation flow (INTERNAL_TODO #14 onboarding checklist) is the next bottleneck to fix.
+2. **DB-side cohort query** (run on the QuickInvoice production DB):
+   ```sql
+   SELECT
+     date_trunc('day', created_at) AS signup_day,
+     COUNT(*) FILTER (WHERE trial_ends_at IS NOT NULL) AS started_trial,
+     COUNT(*) FILTER (WHERE plan = 'pro' AND trial_ends_at IS NOT NULL AND trial_ends_at < NOW()) AS converted,
+     COUNT(*) FILTER (WHERE plan = 'free' AND trial_ends_at IS NOT NULL AND trial_ends_at < NOW()) AS lapsed
+   FROM users
+   WHERE created_at > NOW() - INTERVAL '60 days'
+   GROUP BY 1 ORDER BY 1 DESC;
+   ```
+3. **Day-3 nudge email** (future hardening, blocked on `node-cron` job introduced by INTERNAL_TODO #16): if `trial_ends_at` is 3–4 days away and the user has not added a payment method, send a "Heads-up — your Pro trial ends in N days" email with a Customer Portal link. Out of scope for #19 itself; documented here so it does not get missed when #16 lands.
+
 ## 8. Set logo uploads directory (added 2026-04-22)
 Logo uploads are stored on the local filesystem. Set a persistent path (e.g., an attached volume on Heroku/Railway):
 ```

@@ -78,6 +78,12 @@ const mockStripeClient = {
     async retrieve(customerId) {
       return { metadata: { user_id: customerUserId } };
     }
+  },
+  subscriptions: {
+    // Default: no trial. Trial-specific tests override this.
+    async retrieve(subId) {
+      return { id: subId, trial_end: null };
+    }
   }
 };
 

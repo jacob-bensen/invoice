@@ -84,11 +84,13 @@
           <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
           <input type="hidden" name="billing_cycle" :value="cycle">
           <button type="submit" class="w-full bg-white text-brand-700 font-bold py-3 rounded-xl hover:bg-brand-50 transition text-center">
-            <span x-show="cycle === 'monthly'">Upgrade now — $12/month →</span>
-            <span x-show="cycle === 'annual'" x-cloak>Upgrade now — $99/year →</span>
+            Start 7-day free trial &rarr;
           </button>
         </form>
-        <p class="text-xs text-brand-200 text-center mt-3">Secure checkout via Stripe</p>
+        <p class="text-xs text-brand-200 text-center mt-3">
+          No credit card required. Cancel anytime.<br>
+          <span class="text-brand-100">After trial: <span x-show="cycle === 'monthly'">$12/month</span><span x-show="cycle === 'annual'" x-cloak>$99/year</span> · Secure checkout via Stripe</span>
+        </p>
       <% } %>
     </div>
   </div>

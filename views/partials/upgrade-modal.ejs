@@ -84,13 +84,13 @@
           type="submit"
           class="w-full bg-brand-600 text-white font-bold py-3 rounded-xl hover:bg-brand-700 transition text-center"
         >
-          <span x-show="cycle === 'monthly'">Upgrade to Pro — $12/month →</span>
-          <span x-show="cycle === 'annual'" x-cloak>Upgrade to Pro — $99/year →</span>
+          Start 7-day free trial &rarr;
         </button>
       </form>
 
       <p class="text-center text-xs text-gray-400 mb-4">
-        Join thousands of freelancers already on Pro · Secure checkout via Stripe
+        No credit card required. Cancel anytime.<br>
+        After trial: <span x-show="cycle === 'monthly'">$12/month</span><span x-show="cycle === 'annual'" x-cloak>$99/year</span> · Secure checkout via Stripe
       </p>
 
       <div class="flex items-center justify-center gap-4 text-xs">

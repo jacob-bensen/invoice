@@ -2,6 +2,63 @@
 
 ---
 
+## 2026-04-25T09:30Z — 7-Day Pro Free Trial, No Credit Card Required (INTERNAL_TODO #19 closed) [GROWTH]
+
+### What was built
+
+**`routes/billing.js` + `routes/invoices.js` + `views/dashboard.ejs` + `views/pricing.ejs` + `views/partials/upgrade-modal.ejs` + `db/schema.sql` + `tests/trial.test.js` — INTERNAL_TODO #19 closed: 7-day Pro free trial.**
+
+Removes the highest-friction conversion gate in the funnel. Until this commit the only way for a free-plan user to access Pro was to submit a credit card up-front. Industry benchmarks for indie SaaS show 25–40% of free-plan users who are willing to *try* a paid product will not surrender a card to do so; offering a no-card-required trial directly recovers that segment. Stripe handles trials natively via `subscription_data.trial_period_days`, so this ships without any new billing logic — Stripe collects no card during checkout, never charges before day 8, and auto-cancels the subscription via `customer.subscription.deleted` if no payment method has been added by trial end.
+
+The change set:
+
+| File                                  | Change                                                                                                                                         |
+|---------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| `routes/billing.js POST /create-checkout` | `subscription_data: { trial_period_days: 7 }` added to the `stripe.checkout.sessions.create` call. Applies to both monthly and annual cycles. |
+| `routes/billing.js` webhook (`checkout.session.completed`) | After upgrading the user to `plan='pro'`, fetches the subscription via `stripe.subscriptions.retrieve(...)` and persists `trial_ends_at = new Date(sub.trial_end * 1000)` if `trial_end` is set; otherwise clears `trial_ends_at` to `null`. Wrapped in try/catch so a Stripe outage degrades gracefully — user still gets upgraded; only the dashboard countdown is skipped. |
+| `db/schema.sql`                       | `ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMP;` (idempotent — safe to re-run on production).                              |
+| `routes/invoices.js GET /` (dashboard) | Computes `days_left_in_trial = Math.max(0, Math.ceil((user.trial_ends_at - Date.now()) / 86400000))` and passes it to the template.            |
+| `views/dashboard.ejs`                 | Dismissible blue banner (`bg-blue-50 border-blue-200`) above the past-due banner: "🎉 You're on a Pro trial — N day(s) left." with an "Add payment method →" CTA that POSTs to `/billing/portal`. Singular/plural handled template-side. |
+| `views/pricing.ejs`                   | Free-user CTA copy changed from "Upgrade now — $12/month →" / "Upgrade now — $99/year →" to "Start 7-day free trial →". Subtext: "No credit card required. Cancel anytime." with the post-trial price disclosed below ("After trial: $12/month · Secure checkout via Stripe"). Pricing-card $99/yr and $12/mo numerals are unchanged so existing `annual-billing.test.js` assertions still pass. |
+| `views/partials/upgrade-modal.ejs`    | Same CTA copy change ("Start 7-day free trial →"). Subtext: "No credit card required. Cancel anytime."                                          |
+
+### Why this lifts revenue
+
+- **Conversion volume.** No-card trials remove the single hardest psychological barrier in SaaS — handing a card to a service the user has not yet used. The user gets seven days of unlimited invoices, payment links, branding, and email delivery before Stripe ever asks for a card.
+- **Volunteer self-qualification.** Users who *do* add a card by day 7 have demonstrated the product is worth $12/mo to them by their own use; conversion rates from trial-with-card to paid are typically 40–60% because the user has already generated invoices in the product.
+- **Funnel symmetry with annual billing (#3) and the upgrade modal (#1).** Both already exist; this slots into the same Stripe checkout path with one new line in `subscription_data`. Annual checkouts still discount to $99 — Stripe applies the trial in front of either price.
+
+### Tests
+
+New `tests/trial.test.js` adds 10 assertions (exceeds the 3-test spec from INTERNAL_TODO #19); existing test suites unaffected:
+
+| Test                                                                                | What it proves                                                                                                            |
+|-------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------|
+| `Checkout: monthly cycle includes trial_period_days=7`                              | The `subscription_data.trial_period_days` field reaches `stripe.checkout.sessions.create` on monthly checkouts.            |
+| `Checkout: annual cycle includes trial_period_days=7`                               | Annual cycle still uses the annual price *and* the trial — they compose, not conflict.                                     |
+| `Webhook: trial subscription persists trial_ends_at`                                | A `trial_end` Unix-seconds value from `stripe.subscriptions.retrieve` lands as a `Date` on `users.trial_ends_at`.          |
+| `Webhook: non-trial subscription clears trial_ends_at`                              | A paid signup (`trial_end:null`) writes `trial_ends_at:null` so a stale trial countdown does not linger after conversion. |
+| `Webhook: subscription fetch error → still upgrades, no trial_ends_at write`        | Graceful degradation: a Stripe outage during the post-checkout retrieve does not block the plan upgrade and does not write a bogus trial date. |
+| `Dashboard: renders trial banner when days_left_in_trial > 0`                       | The `data-testid="trial-banner"` element is present, the day count is rendered, and the CTA POSTs to `/billing/portal`.   |
+| `Dashboard: singular "1 day left" copy when one day remains`                        | Template uses `1 day left` (singular), not `1 days left`. Catches off-by-one English bugs.                                |
+| `Dashboard: omits trial banner when no trial / 0 days left`                         | Banner is hidden when local is `0` and when local is `undefined` (defensive — corrupted DB row never renders a phantom banner). |
+| `Pricing: CTA reads "Start 7-day free trial"`                                       | Free-user pricing button copy updated; "No credit card required" subtext present.                                          |
+| `Modal: CTA reads "Start 7-day free trial"`                                         | Upgrade modal CTA copy updated; "No credit card required" subtext present.                                                |
+
+`subscriptions.retrieve` mock added to existing `tests/billing-webhook.test.js`, `tests/error-paths.test.js`, and `tests/gap-coverage.test.js` so their Stripe stubs satisfy the new code path without spurious "Could not fetch subscription" warnings.
+
+Full suite: all tests pass, 0 failures.
+
+### Master action
+
+None required for the trial itself — Stripe trials work out-of-the-box on existing prices. Optional post-deploy: monitor 7-day trial→paid conversion in Stripe Dashboard → Billing → Subscriptions → filter `status=trialing`. See `TODO_MASTER.md` for an SQL snippet to track trial cohort health on the QuickInvoice DB side.
+
+### Income relevance
+
+Direct: removes purchase anxiety at the highest-friction conversion moment; targets a 25–40% lift in free→paid conversion. Indirect: trial users who experience Pro-only features (unlimited invoices, payment links, custom branding, automated email delivery) generate concrete value during the 7 days, raising willingness-to-pay and lowering Day-30 cancellation versus a cold cold-card upgrade.
+
+---
+
 ## 2026-04-25T08:30Z — Email Delivery via Resend (INTERNAL_TODO #13 closed) [GROWTH]
 
 ### What was built

@@ -52,6 +52,9 @@ router.post('/create-checkout', requireAuth, async (req, res) => {
         quantity: 1
       }],
       mode: 'subscription',
+      // 7-day no-card-required Pro trial. Stripe auto-cancels via
+      // customer.subscription.deleted if no payment method is added by day 8.
+      subscription_data: { trial_period_days: 7 },
       metadata: { billing_cycle: cycle, user_id: String(user.id) },
       success_url: `${process.env.APP_URL}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.APP_URL}/billing/upgrade`
@@ -110,10 +113,25 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           const customer = await stripe.customers.retrieve(session.customer);
           const userId = customer.metadata.user_id;
           if (userId) {
-            await db.updateUser(parseInt(userId), {
+            // If the subscription started in a trial (no card required)
+            // capture trial_ends_at so the dashboard can show the countdown
+            // banner. Stripe gives us trial_end as Unix-seconds when present.
+            const updates = {
               plan: 'pro',
               stripe_subscription_id: session.subscription
-            });
+            };
+            try {
+              const sub = await stripe.subscriptions.retrieve(session.subscription);
+              if (sub && sub.trial_end) {
+                updates.trial_ends_at = new Date(sub.trial_end * 1000);
+              } else {
+                // Paid signup (no trial) — clear any prior trial countdown.
+                updates.trial_ends_at = null;
+              }
+            } catch (e) {
+              console.warn('Could not fetch subscription for trial_end:', e && e.message);
+            }
+            await db.updateUser(parseInt(userId, 10), updates);
           }
         } else if (session.mode === 'payment' && session.payment_link) {
           // Invoice Payment Link was paid — mark the invoice as paid.

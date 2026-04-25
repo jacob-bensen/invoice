@@ -2,6 +2,39 @@
 <%- include('partials/nav') %>
 
 <div class="max-w-5xl mx-auto px-4 py-10">
+  <% if (locals.days_left_in_trial && days_left_in_trial > 0) { %>
+    <div
+      x-data="{ dismissed: false }"
+      x-show="!dismissed"
+      x-cloak
+      data-testid="trial-banner"
+      class="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 flex items-start gap-3"
+      role="status"
+    >
+      <div class="text-blue-500 text-xl leading-none mt-0.5">&#127881;</div>
+      <div class="flex-1 text-sm">
+        <p class="font-semibold text-blue-800">
+          You're on a Pro trial — <%= days_left_in_trial %> day<%= days_left_in_trial === 1 ? '' : 's' %> left.
+        </p>
+        <p class="text-blue-700 mt-0.5">
+          Add a payment method to keep Pro features when your trial ends. No charge today.
+        </p>
+        <form action="/billing/portal" method="POST" class="mt-3">
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          <button type="submit" class="inline-flex items-center gap-1.5 bg-blue-600 text-white font-semibold text-xs px-3 py-2 rounded-lg hover:bg-blue-700 transition">
+            Add payment method &rarr;
+          </button>
+        </form>
+      </div>
+      <button
+        type="button"
+        @click="dismissed = true"
+        class="text-blue-400 hover:text-blue-600 text-2xl leading-none"
+        aria-label="Dismiss"
+      >&times;</button>
+    </div>
+  <% } %>
+
   <% if (user && (user.subscription_status === 'past_due' || user.subscription_status === 'paused')) { %>
     <div
       x-data="{ dismissed: false }"

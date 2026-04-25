@@ -28,10 +28,17 @@ router.get('/', requireAuth, async (req, res) => {
         invoice_count: user.invoice_count
       };
     }
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash });
+    let days_left_in_trial = 0;
+    if (user && user.trial_ends_at) {
+      const ends = new Date(user.trial_ends_at).getTime();
+      if (!Number.isNaN(ends)) {
+        days_left_in_trial = Math.max(0, Math.ceil((ends - Date.now()) / 86400000));
+      }
+    }
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial });
   } catch (err) {
     console.error(err);
-    res.render('dashboard', { title: 'My Invoices', invoices: [], user: req.session.user || null, flash: null });
+    res.render('dashboard', { title: 'My Invoices', invoices: [], user: req.session.user || null, flash: null, days_left_in_trial: 0 });
   }
 });
 
