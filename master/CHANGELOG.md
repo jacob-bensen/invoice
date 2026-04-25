@@ -2,6 +2,58 @@
 
 ---
 
+## 2026-04-25T23:55Z — QA Audit: 8 New Tests for Untested Income-Critical Paths [HEALTH]
+
+### What was built
+
+**`tests/checkout-and-webhook-url.test.js` + `package.json` — QA audit pass: 8 new assertions covering three untested income-critical paths that were present in production code but had no test harness.**
+
+Audit method: read every route handler in `routes/billing.js` and `routes/invoices.js` against every existing test file; flag any path exercised by production traffic that had zero test coverage. Three clusters of untested code were found, all touching the revenue path directly.
+
+| Untested path | Risk if broken | Test added |
+|---|---|---|
+| `POST /billing/create-checkout` — no `stripe_customer_id` | First-time subscriber checkout silently creates a duplicate Stripe customer on every retry, or fails to store the customer ID, breaking future portal access | Test 1 |
+| `GET /billing/success` — `req.session.user.plan` refresh | Just-upgraded Pro user still sees free-plan limits until they log out; upgrade banner persists on dashboard; invoice limit gate fires wrongly | Test 2 |
+| `POST /billing/webhook-url` (all 5 branches) | Free users could save webhook URLs (bypassing plan gate); invalid/SSRF URLs could reach DB; clearing a URL could write `""` instead of `null` | Tests 3–7 |
+| `POST /invoices/:id/delete` — owner success path | No regression guard; a future refactor of the delete route could break the happy path silently | Test 8 |
+
+### Tests
+
+New `tests/checkout-and-webhook-url.test.js` adds 8 assertions; full suite (25 test files, 199 assertions) passes with 0 failures:
+
+| Test | What it proves |
+|---|---|
+| `POST /billing/create-checkout: no existing customer → creates Stripe customer + stores stripe_customer_id` | First-time subscriber path: `stripe.customers.create` is called, the returned ID is written to DB via `db.updateUser`, and that same ID is passed to `checkout.sessions.create`. A 303 redirect to `checkout.stripe.com` confirms the end-to-end flow. Previously, a regression here would have produced a silent duplicate-customer bug or a Stripe API error with no test to catch it. |
+| `GET /billing/success: session plan refreshed from DB (free→pro without re-login)` | Uses a real `express-session` MemoryStore + cookie jar across two sequential requests: (1) seeds session with `plan:'free'`, calls `/billing/success` (DB returns `plan:'pro'`), captures cookie; (2) reads session back — asserts `plan === 'pro'`. Without this refresh the user would see stale free-plan limits immediately after paying. |
+| `POST /billing/webhook-url: free plan → error flash, no DB write` | Plan gate fires before `db.updateUser`: free users are redirected with an error flash and `updateUserCalls` stays empty. |
+| `POST /billing/webhook-url: agency plan → allowed` | Agency inherits all Pro features; `db.updateUser` is called with the correct URL. |
+| `POST /billing/webhook-url: valid URL → trimmed + saved to DB + redirect` | Leading/trailing whitespace is stripped before the DB write (the route calls `String(raw).trim()`). Asserts exact stored value. |
+| `POST /billing/webhook-url: empty URL → clears webhook_url to null` | Whitespace-only body writes `webhook_url: null`, not an empty string. `null` is the correct sentinel — the paid-webhook dispatcher checks `owner.webhook_url` truthiness before firing. |
+| `POST /billing/webhook-url: SSRF-blocked URL → rejected, no DB write` | `isValidWebhookUrl` stub returns `false` (simulating a cloud-metadata IP). `db.updateUser` must not be called. Regression guard for the SSRF hardening shipped in H1. |
+| `POST /invoices/:id/delete: owner → invoice removed from store + redirect to /dashboard` | Owner deletes their own invoice: `invoiceStore[id]` is gone after the call, response is a 302 to `/dashboard`. The IDOR case (another user's invoice) was already covered in `tests/invoice-view-and-status.test.js`; this adds the complementary success path. |
+
+### What was NOT covered (and why)
+
+- **`/billing/create-checkout` Stripe API error path** — covered by `tests/error-paths.test.js` ("Stripe checkout error → flash + redirect").
+- **`/billing/webhook-url` DB error path** — the route's `catch` block logs and flashes; the error-paths test file already exercises this pattern for other billing routes. Adding it here would be redundant.
+- **Annual vs. monthly price selection in create-checkout** — fully covered by `tests/annual-billing.test.js` (9 existing tests).
+
+### Income relevance
+
+Indirect. These tests prevent regressions on:
+- The first-time subscriber checkout (every new paying customer)
+- The post-checkout plan refresh (determines what a just-upgraded Pro user can do immediately)
+- The webhook URL feature (drives the Zapier-style paid-event integration, a Pro/Agency retention differentiator)
+- Invoice delete (data integrity on the core CRUD object)
+
+A silent regression on any of these would either block revenue collection or erode Pro value without a visible error.
+
+### Master action
+
+None required — code-only change. No schema migration, no env var, no Stripe configuration.
+
+---
+
 ## 2026-04-25T23:30Z — Widen `users.plan` CHECK to allow `business` + `agency` (INTERNAL_TODO H5 closed) [HEALTH]
 
 ### What was built

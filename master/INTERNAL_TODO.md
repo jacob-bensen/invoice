@@ -208,6 +208,24 @@ New `tests/status-whitelist.test.js` adds 8 assertions: (1) valid `'sent'` → D
 
 ---
 
+### H13. [DONE 2026-04-25] [HEALTH] QA audit — 8 new tests for untested income-critical paths [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM — prevents silent regressions on the first-time subscriber checkout, the post-checkout plan refresh, the webhook-URL CRUD, and invoice delete. Any regression on those paths would either block revenue collection or expose a Pro feature gap without a visible error.
+**Effort:** Very Low
+**Resolution (2026-04-25T23:55Z):** Systematic audit of every route handler in `routes/billing.js` and `routes/invoices.js` against every test file in `tests/`. Three untested clusters identified; all closed in a single commit.
+
+| Gap | File | Tests added |
+|---|---|---|
+| `POST /billing/create-checkout` no-`stripe_customer_id` path | `tests/checkout-and-webhook-url.test.js` | 1 |
+| `GET /billing/success` session plan refresh | same | 1 |
+| `POST /billing/webhook-url` (5 branches: free gate, agency, valid URL, clear, SSRF) | same | 5 |
+| `POST /invoices/:id/delete` owner success path | same | 1 |
+
+New file: `tests/checkout-and-webhook-url.test.js` (8 assertions). Full suite: 25 test files, 199 assertions, 0 failures.
+
+---
+
 ### 4. [DONE 2026-04-23] [HEALTH] Stripe Dunning + Smart Retries — Code Portion [S]
 
 **App:** QuickInvoice (Node.js)
