@@ -8,6 +8,7 @@ const { sendInvoiceEmail } = require('../lib/email');
 
 const router = express.Router();
 const FREE_LIMIT = 3;
+const ALLOWED_INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue'];
 
 router.get('/', requireAuth, async (req, res) => {
   try {
@@ -200,6 +201,10 @@ router.post('/:id/edit', requireAuth, async (req, res) => {
 router.post('/:id/status', requireAuth, async (req, res) => {
   try {
     const newStatus = req.body.status;
+    if (!ALLOWED_INVOICE_STATUSES.includes(newStatus)) {
+      req.session.flash = { type: 'error', message: 'Invalid invoice status.' };
+      return res.redirect(`/invoices/${req.params.id}`);
+    }
     const updated = await db.updateInvoiceStatus(req.params.id, req.session.user.id, newStatus);
 
     if (updated && newStatus === 'sent') {
@@ -273,3 +278,4 @@ async function onboardingDismissHandler(req, res) {
 module.exports = router;
 module.exports.buildOnboardingState = buildOnboardingState;
 module.exports.onboardingDismissHandler = onboardingDismissHandler;
+module.exports.ALLOWED_INVOICE_STATUSES = ALLOWED_INVOICE_STATUSES;

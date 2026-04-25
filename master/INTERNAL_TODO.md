@@ -124,11 +124,12 @@ HSTS (`max-age=15552000; includeSubDomains`) is enabled only when `NODE_ENV === 
 
 ---
 
-### H6. [HEALTH] `POST /:id/status` accepts any string (added 2026-04-23 audit) [XS]
+### H6. [DONE 2026-04-25 — superseded by H12] [HEALTH] `POST /:id/status` accepts any string (added 2026-04-23 audit) [XS]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** LOW — the DB CHECK constraint (`status IN ('draft','sent','paid','overdue')`) will reject bad values, but the 500 surfaces as `console.error('Status update error:', err)` and a redirect, creating noisy logs and a confusing UX. Whitelist in Node and return a flash on invalid.
 **Location:** `routes/invoices.js:168-203`.
+**Resolution (2026-04-25):** Closed alongside H12 — see H12 for the full implementation note.
 
 ---
 
@@ -182,12 +183,15 @@ HSTS (`max-age=15552000; includeSubDomains`) is enabled only when `NODE_ENV === 
 
 ---
 
-### H12. [HEALTH] Whitelist `status` in `POST /:id/status` before hitting Postgres CHECK constraint (added 2026-04-24 PM audit, supersedes earlier H6) [XS]
+### H12. [DONE 2026-04-25] [HEALTH] Whitelist `status` in `POST /:id/status` before hitting Postgres CHECK constraint (added 2026-04-24 PM audit, supersedes earlier H6) [XS]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** LOW (latent) — `routes/invoices.js:170-205` reads `req.body.status` and passes it straight to `db.updateInvoiceStatus`. Postgres' CHECK constraint (`status IN ('draft','sent','paid','overdue')`) rejects bad values with error code `23514`, the catch block logs `console.error('Status update error:', err)` and redirects. Effect: a junk `status` POST yields a noisy log line and an opaque redirect rather than a flash. Low impact (CHECK protects DB integrity), but the noise complicates incident triage and obscures real DB errors.
 **Effort:** Very Low
 **Sub-tasks:** In `routes/invoices.js` `POST /:id/status`, add `const ALLOWED = ['draft','sent','paid','overdue']; if (!ALLOWED.includes(req.body.status)) { req.session.flash = { type: 'error', message: 'Invalid status.' }; return res.redirect('/invoices/' + req.params.id); }` immediately after extracting `newStatus`. Add a test in `tests/edge-cases.test.js` (junk status → flash + redirect, no DB write).
+**Resolution (2026-04-25):** Added `ALLOWED_INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue']` as a module-level constant at the top of `routes/invoices.js` (re-used by tests via the new `module.exports.ALLOWED_INVOICE_STATUSES` export so the source-of-truth list cannot drift between the route and any future caller). The `POST /:id/status` handler now short-circuits with `req.session.flash = { type: 'error', message: 'Invalid invoice status.' }` and redirects to `/invoices/:id` *before* `db.updateInvoiceStatus`, the Stripe Payment Link creator (`createInvoicePaymentLink`), the outbound paid-webhook (`firePaidWebhook`), and the invoice-sent email (`sendInvoiceEmail`) — none of those side-effects can fire on a rejected status. The Postgres CHECK constraint remains the last line of defence, but it's no longer the only one. Closes H6 (which was superseded by this entry per the 2026-04-24 PM audit note).
+
+New `tests/status-whitelist.test.js` adds 8 assertions: (1) valid `'sent'` → DB write + success flash + redirect to invoice; (2) `'garbage'` → no DB write, error flash, invoice status unchanged; (3) empty string (missing form field) → no DB write, error flash; (4) `'paid '` (trailing whitespace) → no DB write, error flash (strict equality, matches DB CHECK semantics); (5) SQL-injection-shaped value `"paid'; DROP TABLE invoices;--"` → no DB write, error flash (defence-in-depth atop parameterised queries); (6) invalid status that contains the substring `paid` → no Stripe Payment Link, no outbound webhook (side-effects gated on whitelist, not on substring matching); (7) `ALLOWED_INVOICE_STATUSES` export contract (4 entries, canonical order); (8) each of the 4 valid statuses (`draft`, `sent`, `paid`, `overdue`) passes through to `db.updateInvoiceStatus` verbatim. Wired into `package.json` `test` script. Full suite: 22 test files, 191 total passes, 0 failures.
 
 ---
 

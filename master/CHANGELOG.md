@@ -2,6 +2,55 @@
 
 ---
 
+## 2026-04-25T18:30Z — Whitelist Invoice Status Before DB CHECK Constraint (INTERNAL_TODO H12 + H6 closed) [HEALTH]
+
+### What was built
+
+**`routes/invoices.js` + `tests/status-whitelist.test.js` + `package.json` — INTERNAL_TODO H12 closed (and H6 closed-by-supersession): server-side allowlist on `POST /invoices/:id/status` so junk values are rejected with a flash before the Postgres CHECK constraint sees them.**
+
+The `POST /invoices/:id/status` handler previously read `req.body.status` and forwarded it directly to `db.updateInvoiceStatus`. Postgres' CHECK constraint (`status IN ('draft', 'sent', 'paid', 'overdue')`) rejected anything off-list with error `23514`; the route's outer try/catch logged `console.error('Status update error:', err)` and redirected without a flash. Net effect: a malformed POST yielded a confusing redirect and a noisy log line that obscured real DB errors during incident triage. The fix is a 4-line gate in front of the DB call — but the *side-effect* implications matter more than the cosmetic UX win:
+
+| File | Change |
+|------|--------|
+| `routes/invoices.js` | New module-level constant `ALLOWED_INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue']` mirroring the Postgres CHECK list. The handler short-circuits with `req.session.flash = { type: 'error', message: 'Invalid invoice status.' }` and redirects to `/invoices/:id` *before* any DB write, *before* `createInvoicePaymentLink` (Pro→sent), *before* `sendInvoiceEmail` (Pro→sent with `client_email`), and *before* `firePaidWebhook` (Pro/Agency→paid with `webhook_url`). None of those four side-effects can be triggered by a rejected status — the gate is applied earlier than the side-effect dispatch, not in parallel with it. |
+| `routes/invoices.js` | `module.exports.ALLOWED_INVOICE_STATUSES` so tests (and any future caller — e.g. dropdown rendering, status-update API hardening, the planned late-fee scheduler #22) re-use the same source-of-truth list. Prevents drift between the route guard, the EJS dropdown, and the DB CHECK constraint. |
+| `tests/status-whitelist.test.js` | New 8-assertion test file. See test list below. |
+| `package.json` | New test file appended to the `test` script. |
+
+### Why this is the right shape of fix
+
+- **Before**: invalid status → DB throws 23514 → caught by outer try/catch → `console.error` → redirect with no flash. The user sees a silent no-op; the operator sees noise.
+- **After**: invalid status → guard rejects → flash error → redirect. The user sees an explicit "Invalid invoice status." message; the operator sees no spurious log line.
+- **Defence-in-depth**: the DB CHECK constraint remains the last line of defence (catches any future code path that bypasses this route, e.g. a direct `db.updateInvoiceStatus` call from a new endpoint), but it is no longer the *only* line. The application now rejects bad input at the boundary, where the user can see a useful error.
+- **Side-effect gating**: the whitelist short-circuits before the Stripe Payment Link creation, the invoice-sent email, and the outbound paid-webhook. Without this gate, a junk status string that *happened to coincide with* a substring like `'paid'` could not have triggered any side-effect (because the equality check downstream is exact), but the guard makes the contract explicit: *no side-effect fires on an invalid status, end of discussion*.
+
+### Tests
+
+New `tests/status-whitelist.test.js` adds 8 assertions; existing test suites unaffected:
+
+| Test | What it proves |
+|------|----------------|
+| Valid status `'sent'` → DB write + success flash + redirect | Happy path: a legitimate transition still works end-to-end (regression guard for the gate). |
+| Junk status `'garbage'` → no DB write, error flash, invoice status unchanged | The headline H12 case: bad input is rejected at the boundary. |
+| Empty status (missing form field) → no DB write, error flash | Defends against a stripped-out HTML form field. |
+| Whitespace status `'paid '` → no DB write, error flash | Strict equality, not trimmed — matches DB CHECK semantics. A trimmed comparison would silently fix typos at the cost of inconsistent-looking errors elsewhere. |
+| SQL-injection-shaped status `"paid'; DROP TABLE invoices;--"` → no DB write, error flash | Defence-in-depth atop the existing parameterised queries. The whitelist is a belt-and-braces layer, not the primary protection. |
+| Invalid status `'paid_in_full'` (contains `'paid'` substring) → no Stripe link, no outbound webhook | Side-effects are gated on the whitelist, not on substring matching of the rejected input. |
+| `ALLOWED_INVOICE_STATUSES` export = `['draft', 'sent', 'paid', 'overdue']` in canonical order | Export contract for downstream callers; prevents drift from the DB CHECK list. |
+| Each of 4 valid statuses (`draft`/`sent`/`paid`/`overdue`) passes through to `db.updateInvoiceStatus` verbatim | Whitelist does not silently rewrite or normalise valid input. |
+
+Full suite: 22 test files, 191 total passes, 0 failures.
+
+### Master action
+
+None required — this is a code-only change. No schema migration, no env var, no Stripe Dashboard config. The fix takes effect on next deploy.
+
+### Income relevance
+
+Indirect — operational quality, not direct revenue. Cleans up incident-triage noise (real DB errors are no longer drowned in `Status update error: ...23514` log lines from junk POSTs by misbehaving clients or scanners), and makes the failure mode visible to the user via a flash so a confused freelancer doesn't think they hit a silent bug. Closes H12 + H6 — both audit-flagged HEALTH items now have explicit defence at the route boundary.
+
+---
+
 ## 2026-04-25T14:10Z — In-App Onboarding Checklist for New User Activation (INTERNAL_TODO #14 closed) [GROWTH]
 
 ### What was built
