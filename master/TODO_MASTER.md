@@ -370,6 +370,20 @@ Track replies in a spreadsheet. Follow up once if no reply after 7 days.
 
 ---
 
+## 16. (Optional) Tune auth rate-limit cap (added 2026-04-25)
+
+The new auth rate limiter (INTERNAL_TODO H3) defaults to **10 POSTs/minute/IP** on `POST /auth/login` and `POST /auth/register`. No action required to ship — the default is safe. To raise or lower the cap on the deployed app, set:
+
+```
+AUTH_RATE_LIMIT_MAX=<integer>
+```
+
+Lower (e.g. `5`) for tighter abuse defence on a quiet domain; raise (e.g. `20`) if a legitimate office NAT shares an IP across many users. The 429 response gracefully re-renders the login/register form with a "Too many attempts" flash — no support tickets expected at the default.
+
+No DB migration, no Stripe config, no new dependencies beyond the install of `express-rate-limit` (MIT, included in the lockfile).
+
+---
+
 ## 8. Set logo uploads directory (added 2026-04-22)
 Logo uploads are stored on the local filesystem. Set a persistent path (e.g., an attached volume on Heroku/Railway):
 ```

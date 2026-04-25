@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const { body, validationResult } = require('express-validator');
 const { db } = require('../db');
 const { redirectIfAuth } = require('../middleware/auth');
+const { authLimiter } = require('../middleware/rate-limit');
 
 const router = express.Router();
 
@@ -18,7 +19,7 @@ router.get('/register', redirectIfAuth, (req, res) => {
   res.render('auth/register', { title: 'Create Account', flash });
 });
 
-router.post('/register', redirectIfAuth, [
+router.post('/register', redirectIfAuth, authLimiter, [
   body('name').trim().notEmpty().withMessage('Name is required'),
   body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
   body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
@@ -60,7 +61,7 @@ router.post('/register', redirectIfAuth, [
   }
 });
 
-router.post('/login', redirectIfAuth, [
+router.post('/login', redirectIfAuth, authLimiter, [
   body('email').isEmail().normalizeEmail(),
   body('password').notEmpty()
 ], async (req, res) => {

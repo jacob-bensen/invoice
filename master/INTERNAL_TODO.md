@@ -87,12 +87,13 @@ Replace the dead-end at the 3-invoice limit with a full-screen Alpine.js modal i
 
 ---
 
-### H3. [HEALTH] No rate limiting on auth endpoints (added 2026-04-23 audit) [S]
+### H3. [DONE 2026-04-25] [HEALTH] No rate limiting on auth endpoints (added 2026-04-23 audit) [S]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** MEDIUM — `POST /auth/login` and `POST /auth/register` are unthrottled. Bcrypt cost 12 (~200ms per check) is some natural throttle, but a botnet can still grind credentials / enumerate emails via the "account exists" error.
 **Effort:** Very Low
 **Sub-tasks:** `npm i express-rate-limit`; 10 req/min per IP on `/auth/login` + `/auth/register`; return the same generic "invalid email or password" on both not-found and wrong-password to kill the enumeration oracle.
+**Resolution (2026-04-25):** Added `express-rate-limit@^7.5.1` to dependencies. New `middleware/rate-limit.js` exports `authLimiter` (10 req/min/IP, configurable via `AUTH_RATE_LIMIT_MAX`) plus a `createAuthLimiter` factory used by tests. Wired into `routes/auth.js` on both `POST /register` and `POST /login` (after `redirectIfAuth` so authenticated users are redirected before counting). The login enumeration oracle was already closed — both unknown-email and wrong-password paths render the identical generic "Invalid email or password." flash. Exhausted-bucket responses re-render the correct auth view (login or register, picked from `req.path`) with a 429 and a "Too many attempts. Please wait a minute and try again." flash. New `tests/rate-limit.test.js` adds 8 tests (155 total in suite, 0 failures): under-limit pass-through, 429 after max, login/register view selection, independent limiter state, production wiring on `POST /auth/login`, login enumeration-oracle defence, and middleware export sanity. Test-mode (`NODE_ENV=test`) uses a high default so existing suites don't trip the limiter; `package.json` `test` script now sets `NODE_ENV=test` for every test file.
 
 ---
 

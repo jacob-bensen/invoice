@@ -2,6 +2,52 @@
 
 ---
 
+## 2026-04-25T00:00Z — Rate Limiting on Auth Endpoints (H3 closed) [HEALTH]
+
+### What was built
+
+**`middleware/rate-limit.js` + `routes/auth.js` — INTERNAL_TODO H3 closed: no rate limiting on `/auth/login` and `/auth/register`.**
+
+Before this commit, both auth endpoints accepted unbounded POSTs from any IP. Bcrypt cost-12 (~200 ms per `compare`) is a partial natural throttle but is not a substitute for explicit throttling — a credential-stuffing botnet hitting from a single IP could still grind ~300 password attempts / minute against any one account, and the register endpoint was an unrestricted email-enumeration oracle (the "account already exists" branch leaks registration status to anyone who can POST to it). The legacy login enumeration oracle (distinguishing unknown-email from wrong-password in the response) was already closed in the existing code — both paths render the identical generic "Invalid email or password." flash — so the fix here is purely the throttle.
+
+Added the `express-rate-limit@^7.5.1` runtime dependency. The new `middleware/rate-limit.js` exports a `createAuthLimiter({ windowMs, max })` factory plus a singleton `authLimiter` bound at module load:
+
+| Setting              | Value                                              |
+|----------------------|----------------------------------------------------|
+| Window               | 60 s (rolling)                                     |
+| Max per window       | 10 (configurable via `AUTH_RATE_LIMIT_MAX`)        |
+| Bucket key           | `req.ip` (express's normalized client IP)          |
+| Test bypass          | `NODE_ENV === 'test'` lifts the cap to 1,000,000   |
+| Headers              | `RateLimit-*` (draft-7); legacy `X-RateLimit-*` off|
+| 429 handler          | Re-renders the source view (`auth/login` or `auth/register`, picked from `req.path`) with a flash: "Too many attempts. Please wait a minute and try again." |
+
+Wired into `routes/auth.js` on both `POST /register` and `POST /login`, **after** `redirectIfAuth` so authenticated users are redirected to `/dashboard` before being counted (preserves existing UX; tested in `edge-cases.test.js`).
+
+Tests added — `tests/rate-limit.test.js` (8 new tests, 0 failures):
+
+| Test                                                          | What it proves |
+|---------------------------------------------------------------|----------------|
+| `createAuthLimiter allows requests up to max`                 | First N requests pass under any configured `max`. |
+| `createAuthLimiter returns 429 after max`                     | The (N+1)th request returns 429 with the user-facing flash. |
+| `rate-limited /auth/login renders the login view`             | 429 handler picks the login view based on `req.path`. |
+| `rate-limited /auth/register renders the register view`       | 429 handler picks the register view based on `req.path`. |
+| `independent limiter instances have separate state`           | Each `createAuthLimiter()` call has its own MemoryStore. |
+| `production authLimiter is wired into POST /auth/login`       | The module-bound limiter throttles real `/auth/login` traffic with `AUTH_RATE_LIMIT_MAX=3` set. |
+| `login response defeats email-enumeration oracle`             | Unknown-email and wrong-password produce the identical generic flash; neither response leaks account-existence. |
+| `authLimiter is exported as middleware function`              | Sanity guard so `routes/auth.js` can keep slotting it in. |
+
+`package.json` `test` script updated to set `NODE_ENV=test` per file invocation so the test-mode high default applies cleanly across all 17 suites. Total post-change: **155 passing tests, 0 failures** across all suites.
+
+### Master action required
+
+None for code. To tune the cap on the live deploy, optionally set `AUTH_RATE_LIMIT_MAX=<n>` (default 10). No DB migration. No new credentials. No Stripe config. The `express-rate-limit` package is MIT-licensed (no copyleft impact). One non-blocking install-time advisory chain re-confirmed (path-traversal in `tar` via `bcrypt`'s prebuild loader; tracked under H9, unchanged by this commit since `bcrypt` was not bumped).
+
+### Income relevance
+
+INDIRECT but real. (1) Closes the only remaining unmetered credential-stuffing surface — every successful breach is a Pro account compromise, support burden, and refund/chargeback risk that is far more expensive than the throttle. (2) Eliminates the register-side email enumeration oracle, which an attacker could otherwise weaponise to build a hit-list of QuickInvoice users for spear-phishing or external password-spraying. (3) Required for SOC2 / ISO27001 / customer-vendor security questionnaires once the app pursues mid-market deals (a hard "missing rate limiting" finding from any pen-test or IT-procurement review previously blocked those revenue paths).
+
+---
+
 ## 2026-04-24T23:40Z — Reliability Audit: H7 fix + new findings H8–H12 [HEALTH]
 
 ### What was audited
