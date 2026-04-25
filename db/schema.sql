@@ -49,7 +49,11 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS webhook_url TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS reply_to_email VARCHAR(255);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMP;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_dismissed BOOLEAN DEFAULT false;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_reminder_sent_at TIMESTAMP;
 
 CREATE INDEX IF NOT EXISTS idx_invoices_user_id ON invoices(user_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
 CREATE INDEX IF NOT EXISTS idx_invoices_payment_link_id ON invoices(payment_link_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_reminder_due
+  ON invoices(status, due_date)
+  WHERE status = 'sent';

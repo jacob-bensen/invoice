@@ -131,6 +131,55 @@ const db = {
     return rows[0] || null;
   },
 
+  /*
+   * Returns invoices whose owner is on a paid plan, status='sent', past their
+   * due date, and either never reminded or last reminded more than
+   * `cooldownDays` ago. Joined to the owner so jobs/reminders.js can compose
+   * the email without an extra round-trip per invoice.
+   */
+  async getOverdueInvoicesForReminders(cooldownDays = 3) {
+    const { rows } = await pool.query(
+      `SELECT
+         i.id              AS invoice_id,
+         i.user_id          AS user_id,
+         i.invoice_number   AS invoice_number,
+         i.client_name      AS client_name,
+         i.client_email     AS client_email,
+         i.total            AS total,
+         i.due_date         AS due_date,
+         i.payment_link_url AS payment_link_url,
+         i.last_reminder_sent_at AS last_reminder_sent_at,
+         i.items            AS items,
+         u.email            AS owner_email,
+         u.name             AS owner_name,
+         u.business_name    AS owner_business_name,
+         u.business_email   AS owner_business_email,
+         u.reply_to_email   AS owner_reply_to_email,
+         u.plan             AS owner_plan
+       FROM invoices i
+       JOIN users u ON u.id = i.user_id
+       WHERE i.status = 'sent'
+         AND i.due_date IS NOT NULL
+         AND i.due_date < CURRENT_DATE
+         AND u.plan IN ('pro', 'business', 'agency')
+         AND (i.last_reminder_sent_at IS NULL
+              OR i.last_reminder_sent_at < NOW() - ($1 * INTERVAL '1 day'))
+       ORDER BY i.due_date ASC
+       LIMIT 500`,
+      [cooldownDays]
+    );
+    return rows;
+  },
+
+  async markInvoiceReminderSent(invoiceId) {
+    const { rows } = await pool.query(
+      `UPDATE invoices SET last_reminder_sent_at = NOW(), updated_at = NOW()
+        WHERE id = $1 RETURNING id, last_reminder_sent_at`,
+      [invoiceId]
+    );
+    return rows[0] || null;
+  },
+
   async getNextInvoiceNumber(userId) {
     const { rows } = await pool.query(
       'SELECT COUNT(*) as count FROM invoices WHERE user_id=$1',

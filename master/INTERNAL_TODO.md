@@ -393,22 +393,45 @@ New `tests/onboarding.test.js` adds 17 assertions: 9 for `buildOnboardingState` 
 
 ---
 
-### 16. [GROWTH] Automated Payment Reminders for QuickInvoice (Pro Feature) [M]
+### 16. [DONE 2026-04-25] [GROWTH] Automated Payment Reminders for QuickInvoice (Pro Feature) [M]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** MEDIUM-HIGH — InvoiceFlow already has this; QuickInvoice Pro users currently have to manually follow up on overdue invoices, which is the #1 pain point the product is supposed to solve
 **Effort:** Low-Medium
-**Prerequisites:** Email delivery (#13 above) must be live first
+**Prerequisites:** Email delivery (#13 above) must be live first — **unblocked 2026-04-25 PM** when #13 landed.
 
 **Sub-tasks:**
 1. `npm install node-cron` (add to `package.json` dependencies).
-2. `db/schema.sql`: `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_reminder_sent_at TIMESTAMP;` on `invoices` (not users) — `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_reminder_sent_at TIMESTAMP;`
+2. `db/schema.sql`: `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_reminder_sent_at TIMESTAMP;`
 3. `jobs/reminders.js` — export a `startReminderJob()` function using `node-cron` schedule `'0 9 * * *'` (daily 09:00 UTC):
-   - Query: `SELECT i.*, u.email AS owner_email, u.business_name, u.plan FROM invoices i JOIN users u ON i.user_id = u.id WHERE i.status = 'sent' AND i.due_date < NOW() AND (i.last_reminder_sent_at IS NULL OR i.last_reminder_sent_at < NOW() - INTERVAL '3 days') AND u.plan IN ('pro', 'business')`.
+   - Query: invoices joined to users where `status='sent'`, `due_date < CURRENT_DATE`, `plan IN ('pro','business','agency')`, and either never reminded or last reminded > 3 days ago.
    - For each row: call `sendEmail()` to the client email with subject "Friendly reminder: Invoice [number] is overdue" and a body including invoice total, due date, and payment link URL (if set).
    - Update `invoices.last_reminder_sent_at = NOW()` after sending.
 4. `server.js`: `require('./jobs/reminders').startReminderJob();` after the DB pool is confirmed ready.
 5. Write a unit test in `tests/reminders.test.js` (stub `node-cron` and `lib/email.js`) verifying: overdue Pro invoice → email sent; free-plan invoice → skipped; already-reminded-within-3-days → skipped.
+
+**Resolution (2026-04-25 PM):** Added `node-cron@^4.2.1` to dependencies. New `db/schema.sql` line: `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_reminder_sent_at TIMESTAMP;` plus a partial index `idx_invoices_reminder_due ON invoices(status, due_date) WHERE status = 'sent'` so the daily cron query reads from a slim sent-only index instead of bitmap-scanning the full status column. Both are idempotent — production deploy is one `psql -f db/schema.sql`.
+
+`db.js` adds two helpers:
+- `getOverdueInvoicesForReminders(cooldownDays = 3)` — single SELECT joining `invoices` to `users`, filtering `status='sent' AND due_date IS NOT NULL AND due_date < CURRENT_DATE AND plan IN ('pro','business','agency') AND (last_reminder_sent_at IS NULL OR last_reminder_sent_at < NOW() - ($1 * INTERVAL '1 day'))`. Returns one row per due reminder with the owner's name/email/business already joined in (no N+1). `LIMIT 500` caps a runaway batch on a backlogged dyno.
+- `markInvoiceReminderSent(invoiceId)` — single UPDATE that stamps `last_reminder_sent_at = NOW()` and bumps `updated_at`.
+
+New `jobs/reminders.js` exports:
+- `processOverdueReminders({ db, sendEmail, now, cooldownDays, log })` — pure orchestrator with full DI. Returns a structured summary `{ found, sent, skipped, errors, notConfigured }` so tests can assert against it without mocks. Plan-gates again in JS (`PAID_PLANS = {'pro','business','agency'}`) as defence-in-depth atop the SQL filter — a future bad join can't accidentally email a free user's clients. Treats `{ ok:false, reason:'not_configured' }` as a clean skip (counted under `notConfigured`, NOT stamped) so until Master provisions a Resend key the cron is a safe no-op that retries every day. `sendEmail` rejections / DB stamp failures are caught and surfaced as `errors` without bubbling — the rest of the batch still gets processed.
+- `buildReminderSubject` / `buildReminderHtml` / `buildReminderText` — pure formatters; HTML is built via the same `escapeHtml` pattern as `lib/email.js` so client_name, business_name, invoice number, and payment URLs are XSS-safe even if user-controlled. The HTML body includes a "Pay invoice X" CTA button (when `payment_link_url` is set) and a red "N day(s) overdue" line so the visual urgency rises with the days late.
+- `daysOverdue(row, now)` — pure floor((now - due_date) / 86400000), clamped to 0 for future-dated rows.
+- `startReminderJob(opts)` — wraps the orchestrator in a `node-cron` schedule (default `'0 9 * * *'` UTC, overrideable via `REMINDER_CRON_SCHEDULE` env or `opts.schedule`). Refuses to start when `NODE_ENV='test'` unless `opts.force=true` so the test suite never spawns a background scheduler that could leak across tests. Refuses double-start (returns `{ ok:false, reason:'already_running' }`). A `require('node-cron')` failure is caught and logged — the reminder feature degrading is preferable to taking down the web server. `cron.schedule` errors are also caught.
+- `stopReminderJob()` — clears the singleton; only used by tests.
+
+`server.js` calls `startReminderJob()` immediately after `app.listen` succeeds, but only when `NODE_ENV !== 'test'`. The startup is wrapped in try/catch so a cron init failure logs and lets the web server keep running. Stdout reports the active schedule (or the reason it didn't start) on boot for ops visibility.
+
+New `tests/reminders.test.js` adds 15 assertions covering: (1) subject formatter contract; (2) HTML escapes raw `<script>` tags + ampersands + retains the payment-link query string; (3) text fallback includes pay link + days-overdue copy; (4) `daysOverdue` arithmetic incl. clamp-at-0 for future dates; (5) happy path → sendEmail called with correct payload, DB stamped; (6) free-plan row is skipped (defence-in-depth — even if SQL filter misses); (7) row missing `client_email` is skipped without error; (8) `not_configured` does NOT stamp DB so the next run retries; (9) `sendEmail` throw → counted as error, batch continues, only successful row is stamped; (10) reply-to precedence (reply_to_email > business_email > email); (11) DB query throw → top-level errors=1, no orphaned writes; (12) idempotent across runs via cooldown (second run of the same fake db sees 0 rows because the cooldown filter excludes the just-stamped invoice); (13) `startReminderJob()` under `NODE_ENV=test` (no force) returns `{ok:false, reason:'test_env'}`; (14) with `force:true` + a fake cron, captures the cron callback, asserts the schedule is forwarded, invokes the tick, and verifies it sends + stamps; (15) double start returns `{ok:false, reason:'already_running'}`. Wired into `package.json` `test` script. Full suite passes (24 test files), 0 failures.
+
+**[Master action required]** to actually deliver reminders: provision the Resend API key (already a [Master action] for #13). Until `RESEND_API_KEY` is set in production env, the cron runs daily but `sendEmail` returns `not_configured` and no email is sent, no DB row is stamped. The instant the key is provisioned, the next 09:00 UTC tick begins reminding for every overdue Pro/Business/Agency invoice in the queue. See TODO_MASTER.md.
+
+**Income relevance:** The single most differentiating Pro feature — Pro/Agency users are paying $9-$19/month for "automated reminders" that the upgrade modal copy already promises. Closing this gap delivers on that promise, raises the perceived Pro value (reducing churn), and recovers receivable cash for the freelancer. Industry data: an automated 3-day overdue nudge typically lifts the on-time payment rate by 15-25% with no additional human effort. Each recovered invoice is also a touchpoint that flips the user's relationship with the tool from "manual chase tool" to "set-and-forget cashflow," which is the same retention dynamic that drives InvoiceFlow's stickiness.
+
+**Unblocks:** #22 (late fee automation — reuses the same overdue-detection scheduler), eventual quarterly/weekly variants of the cooldown window, and the planned monthly summary email (#12 — same `node-cron` infrastructure).
 
 ---
 

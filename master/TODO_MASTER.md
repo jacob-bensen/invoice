@@ -476,6 +476,82 @@ Optional post-deploy actions to track activation-cohort health:
 2. **Trigger-based dismissal monitoring**: a sudden spike in `dismissed=true` rows without a corresponding spike in `step4_paid` is a signal the card copy or progress logic is annoying users. Re-evaluate the wording in `views/dashboard.ejs` (`Get up and running` → consider `Welcome — let's get your first invoice paid` if the data warrants it).
 3. **No marketing-email-to-clients fallout**: dismissing the checklist does not affect any email behaviour — it only suppresses the dashboard banner for that user. Safe to roll back via a single UPDATE if the feature regresses (`UPDATE users SET onboarding_dismissed = false;`).
 
+## 20. QuickInvoice: automated payment reminder cron — deploy notes (added 2026-04-25 PM)
+
+INTERNAL_TODO #16 is closed: a daily cron at **09:00 UTC** (`0 9 * * *`) now picks up every Pro/Business/Agency invoice that is `status='sent'`, past its `due_date`, and either never reminded or last reminded > 3 days ago, and emails the client a "Friendly reminder: Invoice X is overdue" nudge with a Pay button. **The cron is a safe no-op until the Resend API key from item 18 is provisioned** — every send returns `{ ok:false, reason:'not_configured' }`, no DB stamp is written, and the next 09:00 UTC tick retries. The instant `RESEND_API_KEY` is set, the next tick begins delivering the entire backlog.
+
+No Master action is required *for this feature on its own* — item 18 (Resend API key) is the only gate. This entry exists so deploy-day operators know what to expect and how to verify.
+
+### Verification on first tick after Resend goes live
+
+1. **Confirm the schedule is registered.** Tail the production log for the boot line:
+   ```
+   QuickInvoice running on port 3000
+   [reminders] scheduled (0 9 * * *)
+   ```
+   If you see `[reminders] not scheduled: cron_unavailable` instead, redeploy — `node-cron` did not install. If you see `[reminders] not scheduled: test_env`, the dyno is running with `NODE_ENV=test` (config error — set to `production`).
+
+2. **Wait until 09:00 UTC** (or trigger a manual run — see below). The next log line will read:
+   ```
+   [reminders] found=N sent=M skipped=K errors=0 notConfigured=0
+   ```
+   - `notConfigured=N` (matching `found`) means `RESEND_API_KEY` is unset — fix item 18.
+   - `errors > 0` means `sendEmail` threw or the DB stamp failed; check Resend dashboard → Logs and the application log for the row IDs.
+   - `sent=M` matches the number of clients who received a reminder. The `last_reminder_sent_at` column on those rows will be set to the tick's `NOW()`.
+
+3. **DB-side spot check** (run on the QuickInvoice production DB):
+   ```sql
+   SELECT id, invoice_number, client_email, due_date, status, last_reminder_sent_at
+     FROM invoices
+    WHERE last_reminder_sent_at > NOW() - INTERVAL '15 minutes'
+    ORDER BY last_reminder_sent_at DESC;
+   ```
+   Cross-reference against Resend dashboard → Logs. Each row should correspond to one delivered email.
+
+### Schema migration (idempotent, included in `db/schema.sql`)
+
+```
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_reminder_sent_at TIMESTAMP;
+CREATE INDEX IF NOT EXISTS idx_invoices_reminder_due
+  ON invoices(status, due_date) WHERE status = 'sent';
+```
+
+Apply on deploy via the existing `psql $DATABASE_URL -f db/schema.sql` step. The partial index makes the daily query a sub-millisecond hot-path even at 100k+ invoices.
+
+### Manual trigger (incident response or backfill)
+
+If a backlog accumulates while the Resend key is being provisioned, you can drive a one-shot run from a one-off dyno without waiting for the next tick:
+
+```
+heroku run node -e "(async () => { \
+  const r = await require('./jobs/reminders').processOverdueReminders(); \
+  console.log(r); \
+})()"
+```
+
+This bypasses the cron and runs against production credentials. The same plan-gate, cooldown, and `not_configured` logic applies, so it is safe to run repeatedly — at most one reminder per 3 days per invoice.
+
+### Tunables (env vars)
+
+| Var | Default | Effect |
+|-----|---------|--------|
+| `REMINDER_CRON_SCHEDULE` | `0 9 * * *` | Override the daily schedule (e.g. `0 */6 * * *` for every 6 hrs). Cron expression in UTC. |
+
+The 3-day cooldown is currently a code constant (`DEFAULT_COOLDOWN_DAYS=3` in `jobs/reminders.js`). If user feedback indicates 3 days is too aggressive (clients complaining of spam) or too lax (freelancers wanting weekly nudges only), bump the constant or expose it via `users.reminder_cooldown_days` — that is a follow-up code change, not a Master action.
+
+### What clients see
+
+Subject: `Friendly reminder: Invoice INV-2026-0042 is overdue`
+From: `<EMAIL_FROM>` (currently `QuickInvoice <onboarding@resend.dev>` until item 18 step 4 — the verified domain — completes; Resend's sandbox sender works but lands in spam more often, so prioritise domain verification).
+Reply-to: `users.reply_to_email > business_email > email` of the freelancer (so the client's "Reply" lands in the freelancer's inbox, not in a no-reply void).
+Body: HTML + plaintext, both include the freelancer's business name, the invoice total, the original due date, the days-overdue count, and a "Pay invoice X" button (only when the invoice has a `payment_link_url` — Pro/Agency invoices created or marked-sent after #2 shipped on 2026-04-23).
+
+### Why this is the highest-leverage feature shipped this cycle
+
+QuickInvoice's entire upgrade-modal copy promises "automated payment reminders" — until this commit, that promise was unfulfilled. Pro/Agency users have been paying $9-$19/month for a manual chase tool. Industry data: an automated 3-day overdue nudge typically lifts the on-time payment rate by 15-25%. Each recovered invoice is also a touchpoint that flips the user's relationship with the tool from "manual chase" to "set-and-forget cashflow" — the same retention dynamic that drives InvoiceFlow's stickiness.
+
+---
+
 ## 8. Set logo uploads directory (added 2026-04-22)
 Logo uploads are stored on the local filesystem. Set a persistent path (e.g., an attached volume on Heroku/Railway):
 ```

@@ -83,4 +83,20 @@ app.get('/sitemap.xml', (req, res) => {
 app.use((req, res) => res.status(404).redirect('/'));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`QuickInvoice running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`QuickInvoice running on port ${PORT}`);
+  // Daily payment-reminder cron. Runs only outside the test env so the test
+  // suite can require server.js without spinning up a background scheduler.
+  // Failures are logged and swallowed inside startReminderJob — a broken
+  // cron must never take down the web process.
+  if (process.env.NODE_ENV !== 'test') {
+    try {
+      const { startReminderJob } = require('./jobs/reminders');
+      const r = startReminderJob();
+      if (r && r.ok) console.log(`[reminders] scheduled (${r.schedule})`);
+      else console.warn('[reminders] not scheduled:', r && r.reason);
+    } catch (err) {
+      console.error('[reminders] startup failed:', err && err.message);
+    }
+  }
+});
