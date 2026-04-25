@@ -198,12 +198,26 @@ router.post('/webhook-url', requireAuth, async (req, res) => {
 
 router.post('/settings', requireAuth, async (req, res) => {
   try {
+    const replyToRaw = (req.body.reply_to_email || '').trim();
+    // Light email-shape validation. The DB column is VARCHAR(255); we also
+    // reject anything that doesn't have the basic local@host structure so a
+    // bad value doesn't silently land on outbound mail headers.
+    let replyTo = null;
+    if (replyToRaw.length > 0) {
+      const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replyToRaw) && replyToRaw.length <= 255;
+      if (!ok) {
+        req.session.flash = { type: 'error', message: 'Reply-to email is not a valid address.' };
+        return res.redirect('/billing/settings');
+      }
+      replyTo = replyToRaw;
+    }
     const updated = await db.updateUser(req.session.user.id, {
       name: req.body.name,
       business_name: req.body.business_name || null,
       business_address: req.body.business_address || null,
       business_phone: req.body.business_phone || null,
-      business_email: req.body.business_email || null
+      business_email: req.body.business_email || null,
+      reply_to_email: replyTo
     });
     if (!updated) return res.redirect('/auth/login');
     req.session.user = { ...req.session.user, name: updated.name };

@@ -4,6 +4,7 @@ const { db } = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const { createInvoicePaymentLink } = require('../lib/stripe-payment-link');
 const { firePaidWebhook, buildPaidPayload } = require('../lib/outbound-webhook');
+const { sendInvoiceEmail } = require('../lib/email');
 
 const router = express.Router();
 const FREE_LIMIT = 3;
@@ -172,16 +173,31 @@ router.post('/:id/status', requireAuth, async (req, res) => {
     const newStatus = req.body.status;
     const updated = await db.updateInvoiceStatus(req.params.id, req.session.user.id, newStatus);
 
-    if (updated && newStatus === 'sent' && !updated.payment_link_url) {
+    if (updated && newStatus === 'sent') {
       const user = await db.getUserById(req.session.user.id);
       if (user && (user.plan === 'pro' || user.plan === 'agency')) {
-        try {
-          const link = await createInvoicePaymentLink(updated, user);
-          if (link && link.url) {
-            await db.setInvoicePaymentLink(updated.id, user.id, link.url, link.id);
+        if (!updated.payment_link_url) {
+          try {
+            const link = await createInvoicePaymentLink(updated, user);
+            if (link && link.url) {
+              await db.setInvoicePaymentLink(updated.id, user.id, link.url, link.id);
+              updated.payment_link_url = link.url;
+              updated.payment_link_id = link.id;
+            }
+          } catch (e) {
+            console.error('Payment Link creation failed:', e.message);
           }
-        } catch (e) {
-          console.error('Payment Link creation failed:', e.message);
+        }
+        // Pro/Agency: send the invoice to the client by email. Fire-and-forget;
+        // a Resend outage must never block the redirect or break the flow.
+        if (updated.client_email) {
+          sendInvoiceEmail(updated, user)
+            .then(r => {
+              if (!r.ok && r.reason !== 'not_configured') {
+                console.warn(`Invoice email to ${updated.client_email} failed:`, r.reason || r.error);
+              }
+            })
+            .catch(e => console.error('Invoice email error:', e && e.message));
         }
       }
     }

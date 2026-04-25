@@ -398,6 +398,42 @@ You should see `Content-Security-Policy`, `Strict-Transport-Security` (max-age 1
 
 ---
 
+## 18. QuickInvoice: provision Resend API key + verify sending domain (added 2026-04-25)
+
+INTERNAL_TODO #13 (email delivery for QuickInvoice) shipped in this commit. The wrapper at `lib/email.js` is fully wired into the "Mark Sent" status transition for Pro/Agency users, but it currently no-ops in production because `RESEND_API_KEY` is unset. **The code is safe to deploy as-is — every send returns `{ ok:false, reason:'not_configured' }` until the key is provisioned, and no other route's behaviour depends on that result.** Do steps 1–4 below to flip the feature live.
+
+1. **Sign up at https://resend.com.** Free tier: 3,000 emails/month, 100/day — plenty to validate the feature and cover the first month or two of paid usage. No credit card required.
+2. **Provision an API key** at https://resend.com/api-keys. Copy the `re_…` value.
+3. **Add the env vars to the production app** (Heroku/Render/etc.):
+   ```
+   RESEND_API_KEY=re_...
+   EMAIL_FROM="QuickInvoice <onboarding@resend.dev>"   # safe sandbox sender — works immediately
+   ```
+   The `EMAIL_FROM` fallback (`onboarding@resend.dev`) is Resend's universal sandbox sender and lets sends succeed before a domain is verified. Once the domain is verified (step 4) swap it for a branded address.
+4. **Verify a sending domain** in the Resend dashboard (recommended: `mail.quickinvoice.io`). Steps:
+   - Resend dashboard → Domains → Add Domain → enter the subdomain.
+   - Add the three DNS records Resend prints (SPF / DKIM / DMARC) at your DNS provider.
+   - Wait for verification (typically <30 min). Once green, update `EMAIL_FROM`:
+     ```
+     EMAIL_FROM="QuickInvoice <invoices@mail.quickinvoice.io>"
+     ```
+5. **Run the schema migration** once after deploy (idempotent — adds the `users.reply_to_email` column):
+   ```
+   psql $DATABASE_URL -f db/schema.sql
+   ```
+6. **Smoke test** end-to-end:
+   - Register a free account → upgrade to Pro via Checkout (use Stripe test card `4242 4242 4242 4242`).
+   - Create an invoice with `client_email` set to a personal inbox.
+   - Click "Mark Sent" — verify the email arrives with the correct invoice number, total, line items, and a working "Pay invoice" button.
+   - Check the reply-to header is the user's `business_email` (or `reply_to_email` if they set one in `/billing/settings`).
+   - In `/billing/settings`, set a "Reply-to email" → save → re-send a test invoice → confirm the reply-to header reflects the new value.
+
+**If a send fails:** check the Resend dashboard → Logs for the rejection reason. The two most common pitfalls are (a) sending from an unverified domain (use the sandbox sender until DNS propagates), and (b) a malformed `EMAIL_FROM` — Resend requires `"Display Name <local@host>"` exactly.
+
+**Why this is the highest-leverage action on the list:** #13 unblocks #16 (automated payment reminders — the headline retention feature for Pro), #11 (churn win-back), #12 (monthly summary), #18 (referral invites), and #22 (late-fee notifications). Until the Resend key is set, all five of those features will deploy as no-ops. Setting the key flips them all on without any further code change.
+
+---
+
 ## 8. Set logo uploads directory (added 2026-04-22)
 Logo uploads are stored on the local filesystem. Set a persistent path (e.g., an attached volume on Heroku/Railway):
 ```

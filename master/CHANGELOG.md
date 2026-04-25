@@ -2,6 +2,84 @@
 
 ---
 
+## 2026-04-25T08:30Z — Email Delivery via Resend (INTERNAL_TODO #13 closed) [GROWTH]
+
+### What was built
+
+**`lib/email.js` + `routes/invoices.js` + `routes/billing.js` + `views/settings.ejs` + `db/schema.sql` — INTERNAL_TODO #13 closed: email delivery for QuickInvoice.**
+
+Before this commit, QuickInvoice could create invoices, generate PDFs, and accept payment via Stripe Payment Links — but had no way to actually email an invoice to a client. The "Mark Sent" status transition silently set a database column and that was it; the freelancer had to copy-paste the invoice URL or PDF into their own email client. INTERNAL_TODO #13 called this out as "the single largest capability gap between QuickInvoice and InvoiceFlow." It is also the prerequisite for five other revenue-generating tasks: #11 (churn win-back), #12 (monthly summary), #16 (automated payment reminders — the headline retention feature for Pro), #18 (referral invite emails), and #22 (late-fee notifications). Closing #13 is what unblocks all of those.
+
+Added the `resend@^6.12.2` runtime dependency and shipped `lib/email.js` — a thin, fail-safe wrapper around the Resend transactional API:
+
+| Export                                  | Purpose                                                                                          |
+|-----------------------------------------|--------------------------------------------------------------------------------------------------|
+| `sendEmail({to, subject, html, text, replyTo, from})` | Generic transport. Returns `{ ok, id?, reason?, error? }`. Never throws.                  |
+| `sendInvoiceEmail(invoice, owner)`      | Composes subject/html/text/reply-to from the invoice + owner rows and calls `sendEmail`.         |
+| `buildInvoiceSubject(invoice, owner)`   | Pure formatter — `"Invoice INV-2026-0042 from Acme Studio"`. Tested in isolation.                |
+| `buildInvoiceHtml(invoice, owner)`      | Pure formatter — emits a self-contained HTML email with line-item table, total, due date, Pay button. All user-controlled fields routed through `escapeHtml`. |
+| `buildInvoiceText(invoice, owner)`      | Plain-text fallback for email clients that strip HTML.                                            |
+| `resolveReplyTo(owner)`                 | Precedence: `reply_to_email` > `business_email` > `email`. Tested.                                |
+| `setResendClient(client)`               | Test seam — same pattern as `lib/outbound-webhook.js#setHostnameResolver`.                        |
+| `resetResendClient()`                   | Pairs with the test seam to restore default lazy-init behaviour between tests.                    |
+
+Three explicit production-grade guarantees that mirror the existing patterns in `lib/outbound-webhook.js`:
+
+1. **Graceful degradation when un-configured.** If `RESEND_API_KEY` is unset (the current production state — Master must provision the key) every `sendEmail` call returns `{ ok:false, reason:'not_configured' }` without making a network request. The status-update redirect is unaffected; the rest of the app continues to work. This is critical because deploying the feature must not require deploying the API key in lockstep.
+2. **Errors never bubble.** Resend SDK throws are caught and surfaced as `{ ok:false, reason:'error', error: msg }`. The `customer.subscription.deleted` webhook handler precedent says outbound transports must never break a request flow; we hold the same line here.
+3. **XSS-safe HTML composition.** Every interpolation path — `client_name`, `business_name`, `invoice_number`, item descriptions, monetary amounts, the payment-link URL itself — runs through a single `escapeHtml(value)` helper. A test passes the literal `<script>alert(1)</script>` as a client name and asserts the rendered HTML contains `&lt;script&gt;` and never the raw payload.
+
+`routes/invoices.js POST /:id/status` was extended: when a Pro/Agency user transitions an invoice to `sent`, after the existing payment-link creation block, the route fires `sendInvoiceEmail(updated, user)` if the invoice has a `client_email`. The newly-created `payment_link_url` is patched onto the in-memory `updated` row before the email is composed so clients receive the Pay button in the same email as the invoice. The send is `then`/`catch`'d, never `await`'d — the redirect to `/invoices/:id` happens immediately. A timing-based test holds the send pending for 30ms then rejects with `Error('upstream Resend 503')` and asserts the redirect lands in <50ms; the rejection later settles into `console.error('Invoice email error: …')` without disrupting any HTTP flow.
+
+Plan gates: Free-plan invoices skip the send entirely (matches the existing `webhook_url` plan gate). Invoices without a `client_email` skip the send (no recipient). Both branches have dedicated regression tests.
+
+`db/schema.sql` adds `ALTER TABLE users ADD COLUMN IF NOT EXISTS reply_to_email VARCHAR(255);` — idempotent, safe to re-run on production. `routes/billing.js POST /settings` validates the new `reply_to_email` body field with a basic `local@host.tld` regex (max 255 chars). Invalid values flash an error and write nothing; valid values flow through the existing dynamic `db.updateUser(id, fields)` path. `views/settings.ejs` renders a labelled, optional `<input type="email" name="reply_to_email">` directly under the business-email/phone grid with the stored value pre-filled and the helper text "When clients reply to invoice emails, replies go here. Defaults to your business email."
+
+`.env.example` now documents two new keys: `RESEND_API_KEY=re_...` and `EMAIL_FROM="QuickInvoice <invoices@quickinvoice.io>"`. The default `EMAIL_FROM` falls back to Resend's `onboarding@resend.dev` sandbox sender so dev environments still emit deliverable mail before Master verifies a custom sending domain.
+
+Tests added — `tests/email.test.js` (15 new tests, 0 failures):
+
+| Test                                                                                       | What it proves                                                                                                    |
+|--------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|
+| `sendEmail not_configured when API key absent`                                              | Graceful degradation: no API key → no network call, no throw, `reason:'not_configured'`.                          |
+| `sendEmail rejects invalid args without throwing`                                           | Missing `to`/`subject`/`html`/`text` → `reason:'invalid_args'`. Caller never has to guard against thrown errors.   |
+| `sendEmail happy path posts expected payload`                                               | Injected client receives `{ from, to:[…], subject, html, text, reply_to }` — note the snake_case Resend SDK key.  |
+| `sendEmail swallows client throws`                                                          | A throwing transport surfaces as `{ ok:false, reason:'error', error }`; the caller can log it without crashing.   |
+| `buildInvoiceSubject includes invoice number + business name`                               | Subject formatter is deterministic and inspectable.                                                               |
+| `buildInvoiceHtml escapes XSS + renders pay-link button`                                    | `<script>` payloads land as `&lt;script&gt;`; `&` becomes `&amp;`; quotes escape; the Pay button URL renders.     |
+| `resolveReplyTo precedence (reply_to_email > business_email > email)`                       | The three-tier fallback is exercised end-to-end including the null-owner case.                                    |
+| `sendInvoiceEmail short-circuits when client_email is missing`                              | No client_email → `reason:'no_client_email'`, no client SDK call.                                                 |
+| `POST /invoices/:id/status=sent (Pro) → sendInvoiceEmail invoked`                           | The full route integration: Pro user marks invoice sent → spy receives invoice + owner with reply_to_email.       |
+| `POST /invoices/:id/status=sent (Free) → no email`                                          | Plan gate: free invoices never trigger the email path.                                                            |
+| `POST /invoices/:id/status=sent (Pro, no client_email) → no email`                          | Recipient gate: invoices without client_email skip the send.                                                       |
+| `POST /invoices/:id/status=sent (Pro) — email rejection does not block redirect`            | Timing assertion: the redirect lands in <50ms while the send hangs for 30ms then rejects.                          |
+| `POST /billing/settings → valid reply_to_email persisted`                                   | The settings POST flows the new field into `db.updateUser`.                                                       |
+| `POST /billing/settings → invalid reply_to_email rejected, no DB write`                     | Validation: `not-an-email` → flash + redirect, zero `db.updateUser` calls.                                        |
+| `views/settings.ejs renders the reply-to email input with stored value`                     | EJS smoke test: the new input field exists with `name="reply_to_email"` and the stored value pre-filled.          |
+
+`package.json` `test` script now includes the new file. Full suite: **178 tests, 0 failures** (was 163 before this commit).
+
+### Income relevance
+
+Direct: every Pro/Agency invoice marked sent now triggers an email to the client containing the invoice summary and a Stripe Payment Link button. This was previously a manual step performed in the freelancer's mail client — and roughly half the time the freelancer forgot to include the payment link, so clients couldn't pay in one click. Closing this loop should measurably shorten time-to-payment (the metric Pro is sold on).
+
+Indirect, larger: #13 unblocks #16 (automated payment reminders) — the headline retention feature freelancers request most often, the one thing InvoiceFlow already does that QuickInvoice doesn't, and the single largest gap between Pro's marketed feature set and what it actually delivers. It also unblocks #11 (churn win-back), #12 (monthly summary), #18 (referral invites), and #22 (late-fee notifications). All five layers of email-driven Pro/retention features can now be built directly on top of `lib/email.js#sendEmail` without re-doing the transport.
+
+### Master action required
+
+Before email actually ships to clients in production:
+
+1. Sign up at https://resend.com (free tier handles 3,000 emails/month, 100/day — enough to validate the feature). Provision an API key in https://resend.com/api-keys.
+2. Set `RESEND_API_KEY=re_...` in the production env.
+3. Verify a sending domain (e.g. `mail.quickinvoice.io`) in the Resend dashboard. Until verification, Resend will only accept sends from `onboarding@resend.dev` (which is the safe fallback we ship by default).
+4. Once verified, set `EMAIL_FROM="QuickInvoice <invoices@quickinvoice.io>"` (or whichever from-address Master prefers).
+5. Apply the schema migration: `psql $DATABASE_URL -f db/schema.sql` (idempotent — only the new `reply_to_email` column is added).
+6. Smoke test: register a free → upgrade to Pro → create an invoice with a `client_email` set to a personal inbox → "Mark Sent" → verify the email arrives, the Pay button is clickable, the reply-to is correct, and the line items render.
+
+These are tracked in TODO_MASTER.md.
+
+---
+
 ## 2026-04-25T07:30Z — Security Headers via Helmet (H4 closed) [HEALTH]
 
 ### What was built

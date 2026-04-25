@@ -313,7 +313,7 @@ HSTS (`max-age=15552000; includeSubDomains`) is enabled only when `NODE_ENV === 
 
 ---
 
-### 13. [GROWTH] Email Delivery for QuickInvoice (Resend) [M]
+### 13. [DONE 2026-04-25] [GROWTH] Email Delivery for QuickInvoice (Resend) [M]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** HIGH — prerequisite for invoice email sending, automated reminders, churn win-back (#11), and monthly summaries (#12); currently the single largest capability gap between QuickInvoice and InvoiceFlow
@@ -327,6 +327,18 @@ HSTS (`max-age=15552000; includeSubDomains`) is enabled only when `NODE_ENV === 
 4. `views/settings.ejs`: add a "Reply-to email" field (stored as `reply_to_email` on the user row via `db.updateUser`). Fallback to the registered account email.
 5. `db/schema.sql`: `ALTER TABLE users ADD COLUMN IF NOT EXISTS reply_to_email VARCHAR(255);`
 6. Manual smoke test: mark a test invoice as sent → verify email arrives with correct invoice number, amount, and payment link.
+
+**Resolution (2026-04-25):** Added `resend@^6.12.2` as a dependency. New `lib/email.js` exports `sendEmail({ to, subject, html, text, replyTo, from })`, `sendInvoiceEmail(invoice, owner)`, and pure formatters `buildInvoiceSubject` / `buildInvoiceHtml` / `buildInvoiceText`. Three graceful-degradation guarantees: (a) when `RESEND_API_KEY` is unset (current state — Master action below), every send returns `{ ok:false, reason:'not_configured' }` without touching the network, so the rest of the app keeps working unchanged; (b) Resend SDK throws are caught and surfaced as `{ ok:false, reason:'error', error }` — never bubbled to the caller; (c) all HTML is built from a single sanitiser (`escapeHtml`) so client_name, business_name, invoice number, item descriptions, and any future user-controlled fields are XSS-safe even if they contain `<script>` payloads. Reply-to precedence is `user.reply_to_email > user.business_email > user.email`. The wrapper exposes `setResendClient(client)` as a test seam — same pattern as `lib/outbound-webhook.js`'s `setHostnameResolver`. New `EMAIL_FROM` env var (defaults to Resend's `onboarding@resend.dev` sandbox sender so dev still works pre-domain-verification).
+
+`routes/invoices.js POST /:id/status` now fires `sendInvoiceEmail` whenever a Pro/Agency user transitions an invoice to `sent` AND the invoice has a `client_email`. The send is `then`/`catch`'d, never `await`'d — the redirect happens immediately. The existing payment-link creation block was reorganised so the freshly-minted `payment_link_url` ends up on the in-memory `updated` row before the email is composed; clients receive the Pay-button link in the same email as the invoice. Free-plan and email-less invoices skip the send entirely.
+
+`db/schema.sql` adds `ALTER TABLE users ADD COLUMN IF NOT EXISTS reply_to_email VARCHAR(255);` — idempotent, safe to re-run on production. `routes/billing.js POST /settings` validates the new `reply_to_email` body field with a basic local@host regex (max 255 chars) and persists via the existing dynamic `db.updateUser` path; an invalid value flashes an error and writes nothing. `views/settings.ejs` renders a labelled, optional `<input type="email" name="reply_to_email">` directly under the business-email/phone grid with the stored value pre-filled.
+
+New `tests/email.test.js` adds 15 assertions: not-configured graceful no-op, invalid-args rejection, happy-path payload (from/to/subject/html/text/reply_to keys), throw-swallowing, subject formatter, HTML escaping + pay-button rendering, reply-to precedence, missing-client-email short-circuit, Pro send invocation with full payload, Free-plan skip, Pro-without-client_email skip, fire-and-forget redirect-doesn't-await proof (timing assertion: redirect lands in <50ms while the send hangs for 30ms then rejects), reply-to validation accept and reject paths, and an EJS render assertion that the new input field appears with its value attribute pre-filled. Wired into `package.json` `test` script. Full suite: 178 tests, 0 failures (was 163 before this commit).
+
+**[Master action]** required to actually deliver email: provision a Resend API key (https://resend.com/api-keys), set `RESEND_API_KEY=re_...` and `EMAIL_FROM="QuickInvoice <invoices@yourdomain.com>"` in production env, and verify the sending domain in the Resend dashboard. Until those are set, `sendInvoiceEmail` is a no-op — see TODO_MASTER.md.
+
+**Unblocks:** #11 (churn win-back), #12 (monthly summary), #16 (automated reminders), #18 (referral invites), #22 (late-fee notifications). All five tasks can now layer on top of `lib/email.js#sendEmail` without re-doing the transport.
 
 ---
 
