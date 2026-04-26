@@ -223,7 +223,7 @@ router.get('/settings', requireAuth, async (req, res) => {
   if (!user) return res.redirect('/auth/login');
   const flash = req.session.flash;
   delete req.session.flash;
-  res.render('settings', { title: 'Account Settings', user, flash });
+  res.render('settings', { title: 'Account Settings', user, flash, noindex: true });
 });
 
 router.post('/webhook-url', requireAuth, async (req, res) => {

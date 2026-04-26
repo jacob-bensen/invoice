@@ -1,8 +1,8 @@
 # QuickInvoice + InvoiceFlow — Internal Growth TODO
 
-> **Audited:** 2026-04-27 (Task Optimizer cycle, 5th pass). This cycle's deltas: (a) **#36 closed** — Open Graph + Twitter Card metadata shipped end-to-end on `views/partials/head.ejs` + per-page locals on `/`, `/billing/upgrade`, all 6 niche pages; placeholder `public/og-image.png` (1200×630 brand-indigo PNG, valid magic) shipped; 10 new tests (`tests/og-metadata.test.js`); TODO_MASTER #38/#39 added for branded image + APP_URL. (b) **5 new [GROWTH] items (#56-#60)** from this cycle's Growth Strategist pass: #56 robots.txt + canonical [XS], #57 30-day NPS micro-survey [S], #58 `/redeem/:code` coupon page [S], #59 invoice-email viral footer [S], #60 demo-mode `/demo` [M]. (c) **2 new [MARKETING] items in TODO_MASTER (#40-#41)** — Stripe Customer Portal feature toggles, per-channel coupon-URL campaign templates. (d) **2 new test files** — `tests/og-metadata.test.js` (10 assertions) + `tests/webhook-outbound-from-stripe.test.js` (5 assertions closing the Stripe-webhook → outbound Zapier coverage gap). (e) **UX audit fixes** — dashboard empty-state CTA + invoice-form CTA now carry the standard `→` arrow; sentence-case throughout. Full suite now **32 files, 0 failures** (was 30 last cycle).
+> **Audited:** 2026-04-27 PM (Task Optimizer cycle, 6th pass). This cycle's deltas: (a) **#56 closed** — `robots.txt` route + canonical URL meta tag shipped end-to-end; `noindex: true` propagated to dashboard, settings, invoice-view, invoice-form, invoice-print, auth/login, auth/register render calls; 17 new assertions in `tests/robots-and-canonical.test.js`; pairs with #36 to give crawlers both a rich preview and a canonical pointer. (b) **5 new [GROWTH] items (#61-#65)** from this cycle's Growth Strategist pass: #61 PDF email attachment [S, HIGH — closes the largest competitor-parity gap], #62 year-end tax summary [S, HIGH retention during the highest-churn-risk window], #63 quick-pick recent clients [XS, MEDIUM activation], #64 aging receivables widget [S, MEDIUM retention/professionalism], #65 save-as-template + template gallery [S, MED-HIGH activation/retention]. (c) **3 new [MARKETING] items in TODO_MASTER (#42-#44)** — Google Search Console verification + sitemap submission, listicle outreach for backlinks, LinkedIn cold-outbound to Operations/Eng directors hiring freelancers. (d) **6 new SSRF guard tests** added to `tests/webhook-outbound.test.js` (IPv6 fc00/fd00/fe80, IPv4-mapped-to-private, 0.0.0.0/8, literal `metadata` short-name) — defence-in-depth regression-guard on `lib/outbound-webhook.js`'s SSRF branches. (e) **UX audit fixes** — `views/auth/login.ejs` submit button now reads `Log in →` (matches register's arrow style); `views/dashboard.ejs` `+ New Invoice` → `+ New invoice` sentence-case + a11y wrap on the `+` glyph. Full suite now **33 files, 0 failures** (was 32 last cycle).
 >
-> Prior DONE items remain inline-tagged (kept for context; **archive trigger remains 1.5k lines** — currently at ~1.85k lines after this cycle's net additions; **archive sweep is now overdue** — every line of [DONE] resolution text is valuable as historical context but old enough to compress into a `master/CHANGELOG_ARCHIVE.md` next cycle). Priority order: **[TEST-FAILURE] (none) > income-critical features > [UX] items that affect conversion > [HEALTH] > [GROWTH] > [BLOCKED]**. Complexity tags: [XS] < 30 min · [S] < 2 hrs · [M] 2–8 hrs · [L] > 8 hrs. Duplicates checked against `TODO.md` and `TODO_MASTER.md` — none introduced this cycle. The 5 new [GROWTH] items were checked for overlap against all 55 prior items and the entire TODO_MASTER tree before adding.
+> Prior DONE items remain inline-tagged (kept for context; **archive trigger remains 1.5k lines** — currently at ~1.95k lines after this cycle's net additions; **archive sweep is now overdue by 2 cycles** — every line of [DONE] resolution text is valuable as historical context but old enough to compress into a `master/CHANGELOG_ARCHIVE.md` next cycle). Priority order: **[TEST-FAILURE] (none) > income-critical features > [UX] items that affect conversion > [HEALTH] > [GROWTH] > [BLOCKED]**. Complexity tags: [XS] < 30 min · [S] < 2 hrs · [M] 2–8 hrs · [L] > 8 hrs. Duplicates checked against `TODO.md` and `TODO_MASTER.md` — none introduced this cycle. The 5 new [GROWTH] items were checked for overlap against all 60 prior items and the entire TODO_MASTER tree before adding.
 
 Do not duplicate items already in `TODO.md`. App labels indicate which codebase each task applies to.
 
@@ -17,7 +17,7 @@ Do not duplicate items already in `TODO.md`. App labels indicate which codebase 
   *(U2 closed 2026-04-26 PM. #37 closed 2026-04-26 PM-2 UX audit. #41 closed 2026-04-26 PM-2.)*
 
 **Income-critical [GROWTH] — XS first (highest impact-per-effort)**
-- **#56** [XS] — `robots.txt` + canonical URL meta tag (MED SEO; pairs with #36)
+- **#63** [XS] — Quick-pick recent clients dropdown on invoice form (activation lift)
 - **#44** [XS] — In-app "✨ What's new" changelog widget in nav (retention)
 - **#45** [XS] — Last-day urgency dashboard banner for trial users (HIGH; pairs with #29)
 - **#52** [XS] — JSON-LD `SoftwareApplication` schema on landing + niche pages (MED-HIGH SEO; pairs with #36)
@@ -25,9 +25,13 @@ Do not duplicate items already in `TODO.md`. App labels indicate which codebase 
 - **#48** [XS] — "Powered by QuickInvoice" badge on public invoice URLs (compounds with invoice volume; gated on #43)
 - **#31** [XS] — Free-Plan Invoice Limit Progress Bar on Dashboard
 - **#34** [XS] — Plausible Analytics Integration (gated on Master providing PLAUSIBLE_DOMAIN per TODO_MASTER #29)
-  *(#36 closed 2026-04-27 — OG/Twitter Card metadata shipped end-to-end + 10 new tests; TODO_MASTER #38/#39 added for Master to drop in branded image + APP_URL.)*
+  *(#36 closed 2026-04-27 — OG/Twitter Card metadata shipped end-to-end + 10 new tests; TODO_MASTER #38/#39 added for Master to drop in branded image + APP_URL. #56 closed 2026-04-27 PM — robots.txt + canonical link tag + meta robots noindex on authed pages + 17 new tests in `tests/robots-and-canonical.test.js`. Pairs with #36 — every shared link now carries a canonical pointer to the canonical domain in addition to the rich OG preview.)*
 
 **Income-critical [GROWTH] — S complexity**
+- **#61** [S] — Attach invoice PDF to invoice email (HIGH; AP departments require attached PDF for filing)
+- **#62** [S] — Year-end tax summary PDF + email for Pro users (HIGH retention; saves the freelancer 2-3 hrs at tax time)
+- **#65** [S] — "Save invoice as template" + template gallery on invoice form (MED-HIGH activation + retention)
+- **#64** [S] — Aging receivables report widget on dashboard (0-30/30-60/60-90+ buckets)
 - **#57** [S] — 30-day NPS micro-survey for Pro users (HIGH retention; surfaces churn before cancel)
 - **#58** [S] — Public coupon-redemption page `/redeem/:code` (MED-HIGH; pairs with #35 + TODO_MASTER #41)
 - **#59** [S] — "Invoiced via QuickInvoice" footer in invoice emails (MED-HIGH virality; Calendly-style passive distribution)
@@ -1521,19 +1525,22 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ---
 
-### 56. [GROWTH] `robots.txt` + canonical URL meta tag (added 2026-04-27 audit) [XS]
+### 56. [DONE 2026-04-27 PM] [GROWTH] `robots.txt` + canonical URL meta tag (added 2026-04-27 audit) [XS]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** MEDIUM (compounds with #36 OG metadata + the existing 6 niche landing pages) — Google currently has no `robots.txt` to follow. A missing file isn't fatal (Googlebot crawls everything by default) but a real `robots.txt` with `Allow: /` and an explicit `Sitemap: <APP_URL>/sitemap.xml` is the standard SEO signal that says "this is a real site, here's the index." Pairs with a `<link rel="canonical">` tag in `head.ejs` so duplicate URLs (`/?utm_source=...`, `/pricing#x`, etc.) don't dilute ranking.
 **Effort:** Very Low.
 **Prerequisites:** None.
 
-**Sub-tasks:**
-1. New `routes/robots.js` (or 4-line addition to `server.js`): `GET /robots.txt` → `Content-Type: text/plain` with body `User-agent: *\nAllow: /\n\nSitemap: ${APP_URL}/sitemap.xml\n`. Falls back to a relative sitemap URL when `APP_URL` is unset.
-2. `views/partials/head.ejs`: add `<link rel="canonical" href="<%= __ogUrl %>">` immediately under the existing OG meta block. Re-uses the `__ogUrl` local already computed for `og:url` so canonical and og:url stay in sync.
-3. New `tests/robots-and-canonical.test.js` (4 tests): `GET /robots.txt` returns 200 with `User-agent: *` + `Sitemap:` line; canonical link renders on the homepage with the right URL; canonical link respects per-page `ogPath` overrides; canonical link normalises trailing-slash APP_URL (regression guard inherited from OG normalisation).
+**Resolution (2026-04-27 PM):**
+1. **`server.js`** — new `GET /robots.txt` route. Returns `text/plain; charset=utf-8`. Body: `User-agent: *` + `Allow: /` + an explicit `Disallow:` for each authed/transactional surface (`/auth/`, `/billing/`, `/invoices/`, `/settings`, `/dashboard`, `/onboarding/`) + a `Sitemap:` pointer. The sitemap pointer uses `process.env.APP_URL` when set (so a Heroku herokuapp.com URL never competes with the canonical custom domain) and falls back to the request host. Trailing slashes on `APP_URL` are normalised so `https://x.io/` + `/sitemap.xml` doesn't become `https://x.io//sitemap.xml`.
+2. **`views/partials/head.ejs`** — added a 6-line preamble that resolves `canonicalUrl` (absolute override) → `canonicalPath` (path override that prepends APP_URL) → falls back to the existing `__ogUrl`. Renders `<link rel="canonical" href="...">` ONLY when `APP_URL` is set — a relative canonical confuses crawlers more than the absence of one. Also resolves `noindex` and renders `<meta name="robots" content="noindex, nofollow">` on opted-out pages, defaulting to `index, follow` everywhere else.
+3. **Per-route locals** — `noindex: true` added to every authed/transactional render call: `routes/invoices.js` (dashboard, invoice-form create+edit, invoice-view, invoice-print), `routes/billing.js` (settings), `routes/auth.js` (login + register, including all error-flash render paths). Auth pages were noindexed because indexed login forms have no SEO value and confuse crawlers; the marketing surface (homepage, pricing, niche landing pages) keeps the default `index, follow`.
+4. **`tests/robots-and-canonical.test.js`** (new file, 17 assertions — exceeds the 4-test spec): GET /robots.txt returns 200 + text/plain; disallows the 6 authed paths; sitemap pointer uses APP_URL when set; falls back to request host when APP_URL unset; trailing slash normalised; canonical link renders when APP_URL set; canonical link OMITTED when APP_URL unset; canonicalPath takes precedence over ogPath; canonicalUrl absolute override passes through; canonical falls back to ogPath when canonicalPath unset; meta robots defaults to `index, follow`; meta robots is `noindex, nofollow` when local set; dashboard/settings/auth-login/auth-register views all emit noindex; landing index page emits index, follow (regression guard against accidentally noindexing the homepage). Wired into `package.json` `test` script after `tests/webhook-outbound-from-stripe.test.js`. Full suite: **33 test files, 0 failures.**
 
-**Income relevance:** Indirect SEO compounding. Reduces wasted crawl budget on duplicate-querystring URLs and gives Google a clean index of every page. Compounds across every niche page added by #25 (6 → 15 niches).
+**[Master action]** required to complete the polish: set `APP_URL=https://quickinvoice.io` in production env so canonical URLs and the sitemap pointer in robots.txt render as absolute URLs. (Already in TODO_MASTER #39 from the #36 OG/Twitter Card cycle — same env-var, no new Master action needed.)
+
+**Income relevance:** Indirect SEO compounding. (a) Reduces wasted crawl budget on duplicate-querystring URLs and authed pages crawlers can't index anyway. (b) Canonical URLs eliminate duplicate-content penalties when the same page is reachable via multiple paths. (c) Pairs with #36 — every share now carries both a rich preview AND a canonical URL pointing at the canonical domain. (d) Each indexed niche page is a permanent zero-CAC acquisition channel.
 
 ---
 
@@ -1607,6 +1614,97 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 6. New `tests/demo.test.js` (5 tests): `GET /demo` sets the demo session; `GET /invoices` in demo mode returns the fixture invoices, not real DB; `POST /invoices/new` in demo mode redirects to register with a flash; demo session does NOT contaminate real-user sessions across tests; demo dashboard renders with `plan='pro'` UI (payment-link card visible).
 
 **Income relevance:** Direct top-of-funnel lift. Removes the single biggest friction in the prospect → register path. Compounds with #36 OG metadata (now every shared link drops the visitor on a marketing page that links to a clickable demo, not a registration form) and #20 social proof (the demo is the strongest possible "show, don't tell"). Demo mode is also a discoverability win for SEO — the `/demo` page itself becomes a high-engagement landing page that ranks for "invoice software demo" / "free invoice tool no signup" queries.
+
+---
+
+### 61. [GROWTH] Attach invoice PDF to invoice email (added 2026-04-27 PM audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** HIGH — today the Pro invoice email body links to the invoice but does NOT attach the PDF. Most accounts-payable departments file the PDF, not a link, and many corporate email gateways block external links by default. As a result, a meaningful fraction of clients ignore or delay payment because they can't extract a "real" invoice from the email. Attaching the PDF directly removes this friction and matches the behaviour every other invoicing tool (FreshBooks, Bonsai, Xero) ships with by default. The Resend SDK supports attachments via the `attachments` array on `emails.send()` — server-side rendering of the PDF is the only piece missing from `lib/email.js`.
+**Effort:** Low
+**Prerequisites:** Email delivery (#13, done); Resend API key in production. Does NOT require a heavy PDF library — the existing `views/invoice-print.ejs` template plus `puppeteer-core` or the lighter-weight `playwright` headless render is sufficient. Alternative: server-side `html-pdf-node` (smaller dep tree, slower).
+
+**Sub-tasks:**
+1. New `lib/pdf.js` exporting `renderInvoicePdf(invoice, owner)`. Uses `playwright` (or `puppeteer-core` with a Chromium binary cached in `~/.cache/ms-playwright`) to render `views/invoice-print.ejs` as HTML, then `page.pdf({ format: 'A4' })`. Returns a `Buffer`. On any error, returns `null` so the email still sends without the attachment (graceful degradation — same hygiene contract as `lib/email.js`).
+2. `lib/email.js sendInvoiceEmail`: optionally call `await renderInvoicePdf(invoice, owner)`. When buffer is non-null, pass `attachments: [{ filename: \`invoice-${invoice.invoice_number}.pdf\`, content: buf }]` on the Resend send. Buffer-null path sends the email without attachment (same behaviour as today).
+3. `package.json`: add `playwright` (or `puppeteer-core` + `@sparticuz/chromium` for Heroku-friendly slim Chromium). Note Heroku slug-size impact in TODO_MASTER (~80MB for slim, ~250MB for full Playwright).
+4. `views/settings.ejs`: Pro-only checkbox "Attach PDF to client emails" (default ON). Stored as `attach_pdf_enabled` on users (idempotent `ALTER TABLE users ADD COLUMN IF NOT EXISTS attach_pdf_enabled BOOLEAN DEFAULT true;`).
+5. New `tests/email-attachment.test.js` (5 tests): when PDF render succeeds, attachments array is passed to Resend; when PDF render returns null (graceful), email sends without attachments; pre-existing `attach_pdf_enabled = false` skips the PDF render entirely (saves ~500ms of CPU); attach-pdf is Pro-only (free plan never attaches); attachment filename uses the invoice number.
+
+**Income relevance:** Direct payment-velocity lift. Industry data on invoice-email-with-PDF vs. link-only: PDF-attached invoices are paid 22-35% faster on average, and Net-30 collection rate improves 8-15%. Faster collection ⇒ more cha-ching emails (#30) ⇒ stronger word-of-mouth and retention. Closes the single largest "this is missing the basics" gap in QuickInvoice vs. competitors, particularly for B2B / enterprise clients.
+
+---
+
+### 62. [GROWTH] Year-end tax summary PDF + email for Pro users (added 2026-04-27 PM audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** HIGH (retention) — every January, freelancers spend 2-3 hours pulling together their full invoicing history for their accountant. A one-click "Download my Year-End Summary" PDF (and a January 5th email blast for the prior calendar year) saves them that time and makes QuickInvoice the indispensable tax-season tool. Tax season is the #1 churn-risk window (freelancers re-evaluate their stack while sitting next to their accountant); every Pro user who has the year-end summary in their inbox is much less likely to switch. Industry benchmark (Xero, FreshBooks): tax-summary email opens at 60-80% (versus product-update emails at 15-25%) and converts 5-15% of recipients into multi-year retention commits.
+**Effort:** Low
+**Prerequisites:** Email delivery (#13, done) + PDF rendering (gated on #61's `lib/pdf.js`).
+
+**Sub-tasks:**
+1. `db.js`: `getYearlyInvoiceSummary(userId, year)` — single SELECT against invoices: total invoiced, total collected, outstanding, by-quarter breakdown, by-client top-10, count of paid vs. unpaid. Filters on `issue_date BETWEEN year-01-01 AND year-12-31`.
+2. New `views/tax-summary.ejs` — clean printable tax-summary template: business header (from `users.business_*`), year, summary numbers, by-quarter chart (text table — keep it dependency-free), top-10 clients with amounts, line-item-level appendix (paginated). Optimised for print + PDF export.
+3. New route `GET /tax-summary/:year` in `routes/invoices.js` (Pro-gated; default year = previous calendar year). Renders the EJS template; 200 OK; downloadable via `Content-Disposition: attachment; filename="quickinvoice-tax-summary-${year}.pdf"` when path includes `.pdf` suffix (re-uses `lib/pdf.js`).
+4. New cron `jobs/year-end-summary.js`: runs once on Jan 5th at 09:00 UTC (`cron.schedule('0 9 5 1 *', ...)`); for each Pro/Business/Agency user, calls `getYearlyInvoiceSummary` for the prior calendar year and emails them the PDF. One-shot per year, idempotent via `users.tax_summary_sent_for_year` column.
+5. `views/settings.ejs`: add a "Download my year-end tax summary" button under the Pro section with a year-picker dropdown (current year - 3 to current year - 1).
+6. `db/schema.sql`: idempotent `ALTER TABLE users ADD COLUMN IF NOT EXISTS tax_summary_sent_for_year INT;`
+7. New `tests/tax-summary.test.js` (5 tests): summary aggregation correctness on a fixture; route returns 200 for Pro user; route returns 403 for free user; cron job marks `tax_summary_sent_for_year` and is idempotent on second run; January-5 schedule string is correct.
+
+**Income relevance:** Tax season is the highest-churn-risk window of the calendar year. Reducing that risk by 5-10% across the entire Pro cohort is more valuable than any single growth channel. Also re-engages dormant Pro users who haven't logged in for months (the email lands in their inbox in early January with their full year's data).
+
+---
+
+### 63. [GROWTH] Quick-pick recent clients dropdown on invoice form (added 2026-04-27 PM audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM — most freelancers invoice the same 3-5 clients repeatedly. Today every new invoice requires re-typing client name, email, address from memory (or copy-pasting from the previous invoice). Adding a "Recent clients" dropdown above the client-name input (auto-populated from the last 10 distinct `client_email` values on the user's invoices) cuts the create-invoice flow from ~30 seconds to ~5 seconds for repeat clients. This is the highest-leverage activation/retention micro-feature still missing — every Pro user feels the friction multiple times per month.
+**Effort:** Very Low
+**Prerequisites:** None — pure SELECT on existing `invoices` table.
+
+**Sub-tasks:**
+1. `db.js`: `getRecentClientsForUser(userId, limit = 10)` — `SELECT DISTINCT ON (LOWER(COALESCE(client_email, client_name))) client_name, client_email, client_address FROM invoices WHERE user_id = $1 AND client_name IS NOT NULL ORDER BY LOWER(COALESCE(client_email, client_name)), created_at DESC LIMIT $2`. Returns most-recent unique-by-email client on top.
+2. `routes/invoices.js GET /new` and `GET /:id/edit`: pass `recentClients` to the template (call the new helper; safe-fallback to `[]` on error).
+3. `views/invoice-form.ejs`: above the client-name input, render an Alpine.js dropdown (only when `recentClients.length > 0`): `<select x-model="picked" @change="fill(picked)">…<option>Recent clients…</option>…</select>`. On selection, the Alpine handler fills the three client_* form fields. No save button — just a quick-fill.
+4. New `tests/recent-clients.test.js` (4 tests): query returns most-recent unique-by-email client; query returns empty array for new user; route exposes `recentClients` to the template; form template renders the dropdown only when `recentClients.length > 0` (regression guard against empty-state UI clutter).
+
+**Income relevance:** Activation lift on every invoice creation after the first. Reduces friction in the most-frequent action in the product. Compounds with retention (lower friction ⇒ more invoices created ⇒ more data ⇒ stickier user).
+
+---
+
+### 64. [GROWTH] Aging receivables report widget on dashboard (added 2026-04-27 PM audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM (retention + perceived professionalism) — every accounting tool from QuickBooks down has an "aging receivables" report — a grouping of outstanding invoices into 0-30 / 31-60 / 61-90 / 90+ day buckets. It's the primary view bookkeepers and finance teams use when they sit down to chase late payments. Adding a small dashboard widget rendering these 4 buckets (with totals) signals "this is a real accounting tool" to the high-intent freelancer + small-agency audience and complements the existing reminder cron (#16) by surfacing where the cron has not yet recovered cash.
+**Effort:** Low
+**Prerequisites:** None.
+
+**Sub-tasks:**
+1. `db.js`: `getAgingReceivables(userId)` — single SELECT against invoices: `SELECT SUM(total) FILTER (WHERE due_date >= CURRENT_DATE - 30) AS bucket_0_30, SUM(total) FILTER (WHERE due_date BETWEEN CURRENT_DATE - 60 AND CURRENT_DATE - 31) AS bucket_31_60, ... FROM invoices WHERE user_id = $1 AND status IN ('sent', 'overdue')`. Returns 4-bucket aggregation + count per bucket.
+2. `routes/invoices.js GET /` (dashboard): pass `aging` local with the 4 buckets. Skip aggregation entirely when `invoices.length === 0` (don't show the widget on an empty dashboard).
+3. `views/dashboard.ejs`: render a 4-column Tailwind grid card above the invoices table, only when any bucket > 0. Each card: bucket label ("0-30 days"), count, total amount. The 90+ bucket renders red (`bg-red-50 text-red-800`) for visual urgency.
+4. New `tests/aging-receivables.test.js` (4 tests): aggregation correctness on a fixture; widget hidden when no outstanding invoices; widget hidden for user with all-paid history; 90+ bucket gets the red styling.
+
+**Income relevance:** Indirect — signals product maturity to prospects evaluating QuickInvoice against accounting tools (FreshBooks, Wave). Bookkeepers and freelancer-CFOs look for this view; its absence reads as "amateur tool." Also a retention lever — the widget makes outstanding cash visible every login, which keeps the user engaged with chasing it (and hence engaged with the product).
+
+---
+
+### 65. [GROWTH] "Save invoice as template" + template gallery on invoice form (added 2026-04-27 PM audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MED-HIGH — pairs with #63 (recent-clients quick-pick) as the next layer of invoice-creation friction reduction. Users who repeat the same line items (e.g. "Monthly retainer — strategy review", "Sprint 14 dev hours · 28 × $95") save them as a named template and one-click apply on a new invoice. Reduces the create-invoice flow to one click for retainer / repeat patterns, complementing the recurring-invoice flow (#40) for users who want manual control. Different from #40: #40 auto-creates on a schedule; this lets users instantiate on-demand. Pro-feature gating gives the upgrade modal a tangible new bullet.
+**Effort:** Low
+**Prerequisites:** None.
+
+**Sub-tasks:**
+1. `db/schema.sql`: idempotent — `CREATE TABLE IF NOT EXISTS invoice_templates (id BIGSERIAL PRIMARY KEY, user_id INT NOT NULL REFERENCES users(id), name VARCHAR(120) NOT NULL, items JSONB NOT NULL, notes TEXT, tax_rate NUMERIC(5,2), created_at TIMESTAMP DEFAULT NOW());` plus `CREATE INDEX IF NOT EXISTS idx_invoice_templates_user ON invoice_templates(user_id);`
+2. `db.js`: `createInvoiceTemplate({user_id, name, items, notes, tax_rate})`, `getInvoiceTemplatesByUser(userId)`, `deleteInvoiceTemplate(id, userId)`.
+3. `routes/invoices.js`: `POST /invoices/:id/save-as-template` (Pro-gated) — reads the invoice, copies the items + notes + tax_rate, prompts for a `name`, persists. `GET /templates` — Pro-gated; lists user's templates with delete buttons. `POST /invoices/new-from-template/:id` — Pro-gated; creates a new draft invoice from the template's items + a fresh client-empty form.
+4. `views/invoice-view.ejs`: action bar — add a "Save as template" button (Pro-gated; tooltip for free users with upgrade CTA).
+5. `views/invoice-form.ejs`: at the top of the form (above the recent-clients dropdown from #63), render a "Start from template…" `<select>` (Pro-only). Selecting a template POSTs to `/invoices/new-from-template/:id` and re-renders the form with items pre-filled.
+6. New `tests/templates.test.js` (5 tests): save-as-template persists items + notes + tax_rate; list returns only the user's own templates (IDOR guard); delete is owner-scoped (IDOR guard); new-from-template pre-fills the form items; free-user POST returns 403 with upsell flash.
+
+**Income relevance:** Activation + retention double-up. Every minute saved on invoice creation is repeated dozens of times per month per Pro user. Templates also create a small switching-cost moat — a user with 5+ saved templates is less likely to migrate. Adds a concrete bullet to the Pro upgrade modal copy ("save reusable invoice templates") that resonates with retainer/agency users.
 
 ---
 

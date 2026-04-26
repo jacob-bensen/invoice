@@ -1,6 +1,6 @@
 # Actions Required from Master
 
-> **Audited:** 2026-04-26 PM — Task Optimizer re-pass. All items reviewed against CHANGELOG (which now spans 2026-04-22 → 2026-04-26 PM). Two new items added this cycle: **#30** (activate Stripe Tax + flip env var, paired with INTERNAL_TODO #35 which closed the code-side wiring) and **#33** (LinkedIn outreach to listicle authors, [MARKETING] channel for compounding SEO traffic). No items tagged [LIKELY DONE - verify] this cycle — every Master action remains pending its respective external step (Stripe Dashboard config, Resend API key, Plausible domain, etc.). Items 1–8 are human deployment/configuration actions; none are resolved by code commits. Code for all P1–P10 features and every shipped INTERNAL_TODO item is complete; deployment + the listed Stripe / Resend / domain / analytics provisioning are the remaining blockers to scale-revenue.
+> **Audited:** 2026-04-27 PM — Task Optimizer re-pass. All items reviewed against CHANGELOG (which now spans 2026-04-22 → 2026-04-27 PM). Three new items added this cycle: **#42** (verify domain + submit sitemap to Google Search Console — 10-min one-time SEO foundation, gates the value of #8 sitemap + #36 OG metadata + #56 robots.txt), **#43** ([MARKETING] listicle outreach for backlinks — high-leverage compounding SEO), **#44** ([MARKETING] LinkedIn cold-outbound to Ops/Eng Directors hiring freelancers — Agency-tier funnel — gated on INTERNAL_TODO #9 shipping). No items tagged [LIKELY DONE - verify] this cycle — every prior Master action remains pending its respective external step (Stripe Dashboard config, Resend API key, Plausible domain, etc.). Items 1–8 are human deployment/configuration actions; none are resolved by code commits. Code for all P1–P10 features and every shipped INTERNAL_TODO item is complete; deployment + the listed Stripe / Resend / domain / analytics provisioning are the remaining blockers to scale-revenue.
 
 ---
 
@@ -1070,3 +1070,58 @@ Self-serve portal features convert "support escalation" into "happy customer" wi
 ### Why this matters
 
 Without per-channel codes, every paid signup looks identical in Stripe and channel ROI is impossible to measure. With them, Master can see "30 signups via PH50 in week 1, $0 ad spend" and double down on what works. Pairs with INTERNAL_TODO #34 (Plausible analytics) — Plausible measures the click; the coupon code measures the conversion.
+
+---
+
+## 42. [MARKETING] Submit `quickinvoice.io/sitemap.xml` + verify in Google Search Console (added 2026-04-27 PM)
+
+**Impact:** HIGH (one-time SEO foundation) — INTERNAL_TODO #56 just shipped `robots.txt` + canonical URLs, completing the trio (`/sitemap.xml` already shipped in #8, `/robots.txt` now points at it). Google still needs to be told the site exists. Verifying ownership in Google Search Console is a 5-minute one-time action that unlocks: (a) accelerated indexing of every niche landing page (typically 2-3 days vs. 4-8 weeks for organic discovery), (b) impression / click data per query so Master can see which niche pages are pulling traffic, (c) a manual reindex button for any single page after a copy update, (d) backlink reports.
+
+### Action (Master, ~10 min total)
+
+1. Go to https://search.google.com/search-console.
+2. Click "Add property" → enter `https://quickinvoice.io` (use the domain property if Cloudflare/Route53 can hold a TXT record; otherwise use the URL prefix property and verify via the HTML file method or Google Tag).
+3. After verification, navigate to "Sitemaps" → submit `https://quickinvoice.io/sitemap.xml`. Confirm Google reports "Success" (a few minutes after submission).
+4. Repeat for `https://quickinvoice.io/robots.txt` via "Settings" → "robots.txt" report — Google fetches it automatically; this just surfaces any parse errors.
+5. Bookmark the "Performance" tab — review monthly to identify which niche pages are ranking and which queries are driving traffic. Use this signal to prioritise INTERNAL_TODO #25 (expand niche pages from 6 → 15) toward the queries already showing impressions.
+
+### Why this matters
+
+Without this, INTERNAL_TODO #8 (sitemap), #25 (niche pages), #36 (OG metadata), and #56 (robots + canonical) are technically perfect but invisible to Google for 4-8 weeks longer than necessary. Google Search Console verification is the single highest-leverage one-time SEO action available. Pairs with #29 (Plausible analytics) — Plausible measures user behaviour; GSC measures crawler behaviour and search intent.
+
+---
+
+## 43. [MARKETING] Listicle outreach — "best invoicing tools for freelancers" backlinks (added 2026-04-27 PM)
+
+**Impact:** HIGH (compounding SEO) — Google's #1 ranking signal remains backlinks from authoritative listicle articles. Searching "best invoicing software for freelancers 2026" returns the same 8-12 listicles that drive most freelancer-tool decisions. Getting QuickInvoice mentioned in even 3-5 of these articles drives sustained referral traffic for years. The pattern is well-established: a polite cold email to the article author offering a free Pro account + a one-paragraph product summary + a screenshot (now branded after #38 og-image lands) gets a "yes" rate of 15-25% on cold outreach.
+
+### Action (Master, ~6 hrs total over 2 weeks)
+
+1. **Scope the target list** (~1 hr). Search Google for: "best invoicing software for freelancers", "best invoice apps for designers", "freelance invoice tools", "Bonsai alternatives", "FreshBooks alternatives", "invoice generator review". Compile the top 20 articles into a spreadsheet with: URL, author name, author email (use Hunter.io free tier or check author byline), date last updated, current tools listed.
+2. **Filter to active authors** (~30 min). Drop any article older than 18 months (Google heavily discounts stale content). Drop any article whose author isn't reachable (anonymous bylines).
+3. **Draft a 5-line outreach email** (~30 min). Template: "Hi [name], I saw your [year] article on [topic] — really useful breakdown. I'm the founder of QuickInvoice (quickinvoice.io), a stripped-down invoicing tool for freelancers. Two things specifically that competitors don't: (a) instant Stripe Payment Link on every invoice, (b) a dead-simple Free plan (no credit card, 3 invoices). I'd love to be considered for the next refresh of your article — happy to set you up with a free Pro account so you can try it. No expectation of anything in return. — Master / @quickinvoice". Per-author personalisation (~2 min each) lifts response rate ~3x.
+4. **Send 20 outreach emails over 2 weeks** (~3 hrs incl. follow-ups). Stagger: 5 / day to avoid Gmail rate limits.
+5. **Track each response** in the same spreadsheet. For each "yes," provision a free Pro account via the Stripe Dashboard (manual subscription create — no code required). For each "yes" that results in a backlink, note the article URL.
+6. **Re-pitch every 6 months** for any author who replied positively but didn't end up linking.
+
+### Why this matters
+
+Backlinks from the right 5 listicles outperform any paid ad campaign for indie SaaS at this stage. Each linked article drives 5-50 referral visits/month for years. Compounding effect across 5 articles: 50-200 high-intent visits/month, of which 5-15% convert to free signups, of which 15-30% convert to Pro = 4-25 paying customers/month from a one-time 6-hour effort. Pairs with INTERNAL_TODO #36 (OG metadata — author screenshots in the article render as the branded card), #38 (roadmap — gives the author confidence the project is alive), and #34 (Plausible — measures the post-link traffic).
+
+---
+
+## 44. [MARKETING] LinkedIn outreach to recently-promoted Operations / Engineering Directors hiring freelancers (added 2026-04-27 PM)
+
+**Impact:** MEDIUM (B2B agency-tier funnel) — LinkedIn surfaces "started a new position" updates for Director-level operations and engineering hires. These users are about to onboard freelancers and contractors and need a way to invoice them — i.e. they're shopping for an invoicing tool RIGHT NOW. A short, non-spammy connection request + a one-line follow-up converts at 5-15% to an invitation to share more, of which 10-20% convert to a paid Agency seat. Volume: LinkedIn sales-nav free-tier search returns ~50 such promotions per week in any major metro.
+
+### Action (Master, ~3 hrs/week ongoing)
+
+1. **Set up a LinkedIn Sales Navigator free trial** (1 month free; cancel before billing). Use the Lead filter: "Job title = Operations Director / VP Engineering / Head of People", "Location = US/UK/EU", "Started in current role within last 90 days".
+2. **Send 20 connection requests/week** with a personalised note: "Hi [name], congrats on the [title] role at [company]. I run QuickInvoice (quickinvoice.io) — we make invoicing freelance contractors painless for ops teams. Happy to share a Pro plan if you ever want to try us out. — Master".
+3. **For accepted connections**, send a one-line follow-up 3-5 days later: "Thanks for connecting! If you're hiring freelancers and they're invoicing you via Word/PDF, our Agency tier ($49/mo) handles 5 contractor seats with auto-reminders + Stripe payment links. Want me to set you up with a free 30-day trial? — Master". Do NOT send a follow-up to anyone who didn't accept.
+4. **For "yes" responses**, provision a manual 30-day Agency-tier trial via the Stripe Dashboard. Master sets a calendar reminder for day 25 to check in.
+5. Track in a spreadsheet: name / company / connect-accepted / responded / trialled / converted-to-paid.
+
+### Why this matters
+
+The Agency tier ($49/mo, 5 contractor seats) has the highest LTV in the funnel but the lowest organic acquisition rate (it's not a self-serve segment — Ops Directors don't browse listicles). Cold outbound on LinkedIn is the standard B2B SaaS sales motion at this stage. Pairs with INTERNAL_TODO #9 (Agency team seats — must be live before this campaign starts) and #38 (roadmap — gives the prospect confidence the team-seats feature is actively maintained).

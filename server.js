@@ -85,6 +85,30 @@ app.get('/sitemap.xml', (req, res) => {
   res.send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`);
 });
 
+// robots.txt — instructs crawlers to index the marketing surface and avoid the
+// authed/transactional surface. The sitemap pointer uses APP_URL when set so
+// crawlers fetch the absolute URL rather than the request host (avoids cases
+// where the app is reachable via a Heroku herokuapp.com URL and a custom
+// domain — both sitemap copies should point to the canonical host).
+app.get('/robots.txt', (req, res) => {
+  const host = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+  const lines = [
+    'User-agent: *',
+    'Allow: /',
+    'Disallow: /auth/',
+    'Disallow: /billing/',
+    'Disallow: /invoices/',
+    'Disallow: /settings',
+    'Disallow: /dashboard',
+    'Disallow: /onboarding/',
+    '',
+    `Sitemap: ${host.replace(/\/+$/, '')}/sitemap.xml`,
+    ''
+  ].join('\n');
+  res.set('Content-Type', 'text/plain; charset=utf-8');
+  res.send(lines);
+});
+
 app.use((req, res) => res.status(404).redirect('/'));
 
 const PORT = process.env.PORT || 3000;

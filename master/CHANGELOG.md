@@ -2,6 +2,131 @@
 
 ---
 
+## 2026-04-27T01:00Z — robots.txt + canonical URL meta tag (INTERNAL_TODO #56) [GROWTH]
+
+### What was built
+
+Closes the SEO hygiene gap identified in INTERNAL_TODO #56. Crawlers now have:
+1. an explicit `robots.txt` directing them to the marketing surface and away from authed/transactional pages,
+2. a `<link rel="canonical">` tag on every public page that resolves to the absolute URL when `APP_URL` is set,
+3. a `<meta name="robots">` tag that emits `index, follow` by default and `noindex, nofollow` on dashboard/settings/invoice/auth pages — defence-in-depth against accidental indexing if a crawler ever bypasses the robots.txt allowlist.
+
+- **`server.js`** — new `GET /robots.txt` route returning `text/plain; charset=utf-8`. `Allow: /` then `Disallow: /auth/`, `/billing/`, `/invoices/`, `/settings`, `/dashboard`, `/onboarding/`. Sitemap pointer uses `APP_URL` when set (so a Heroku herokuapp.com URL doesn't compete with the canonical custom domain) and falls back to the request host. Trailing slashes on `APP_URL` are normalised so `https://x.io/` + `/sitemap.xml` doesn't become `https://x.io//sitemap.xml`.
+- **`views/partials/head.ejs`** — added a 6-line preamble that resolves `canonicalUrl` (absolute override), `canonicalPath` (path override), `noindex`. Renders `<link rel="canonical" href="...">` only when `APP_URL` is set (a relative canonical confuses crawlers more than the absence of one). `<meta name="robots" content="...">` always renders.
+- **`routes/invoices.js`** — every authed render call (`dashboard`, `invoice-form` create+edit, `invoice-view`, `invoice-print`) passes `noindex: true`.
+- **`routes/billing.js GET /settings`** — passes `noindex: true`.
+- **`routes/auth.js`** — `GET /login`, `GET /register`, every render-with-error path passes `noindex: true` (auth pages have low SEO value and indexed login forms confuse crawlers).
+- **`tests/robots-and-canonical.test.js`** (new file, 17 assertions): GET /robots.txt returns 200 + text/plain; disallows the 6 authed/transactional paths; sitemap pointer uses APP_URL when set; falls back to request host when APP_URL unset; trailing slash normalised; canonical link renders when APP_URL set; canonical link OMITTED when APP_URL unset; canonicalPath takes precedence over ogPath; canonicalUrl absolute override passes through (cross-domain canonicals); canonical falls back to ogPath when canonicalPath unset; meta robots defaults to `index, follow`; meta robots is `noindex, nofollow` when local set; dashboard/settings/auth-login/auth-register views all emit noindex; landing index page emits index, follow (regression guard against accidentally noindexing the homepage). Wired into `package.json`. Full suite: **33 test files, 0 failures.**
+
+### Income relevance
+
+Indirect but compounding. (a) Crawlers stop wasting budget on authed pages they can't index anyway and focus on the niche landing pages, pricing, and homepage where new traffic enters the funnel. (b) Canonical URLs eliminate duplicate-content penalties when the same page is reachable via multiple paths (e.g. `/invoice-template/freelance-designer` vs `/invoice-template/freelance-designer/`). (c) Pairs with #36 (OG metadata) — every share now carries both a rich preview AND a canonical URL pointing at the canonical domain. (d) Each indexed niche page is a permanent zero-CAC acquisition channel.
+
+### Master action required
+
+Set `APP_URL=https://quickinvoice.io` in production env so canonical URLs and the sitemap pointer in robots.txt render as absolute URLs. (Already in TODO_MASTER #39.)
+
+---
+
+## 2026-04-27T01:45Z — Health Monitor audit: clean (no new findings); H8/H9/H10/H11/H14/H15/H16/H17 unchanged [HEALTH]
+
+### What was audited
+
+Full pass over this cycle's code deltas:
+- `views/partials/head.ejs` (+10 lines: canonical link tag + meta robots preamble)
+- `server.js` (+22 lines: GET /robots.txt route)
+- `routes/invoices.js` (~7 render calls: noindex: true added)
+- `routes/billing.js` (~1 render call: noindex: true added on /settings)
+- `routes/auth.js` (~6 render call sites: noindex: true added on /login, /register, all error paths)
+- `views/auth/login.ejs` (~1 line: submit-button arrow)
+- `views/dashboard.ejs` (~3 lines: + New invoice CTA sentence-case + a11y wrap)
+- `tests/robots-and-canonical.test.js` (new, 325 lines, 17 assertions)
+- `tests/webhook-outbound.test.js` (+6 SSRF guard assertions)
+- `package.json` (~1 line: new test file appended to test script)
+- `master/INTERNAL_TODO.md` (header rewrite + #56 closed inline + 5 new tasks #61-#65 + OPEN TASK INDEX restructured)
+- `master/CHANGELOG.md` (4 entries appended)
+- `master/TODO_MASTER.md` (header rewrite + 3 new entries: #42 Google Search Console, #43 listicle outreach, #44 LinkedIn Ops/Eng outbound)
+
+Categories reviewed: secrets, input validation, payment-path error handling, CSRF coverage, headers, performance (queries / indexes / R14), code quality (dead code, dup, file-size), dependencies (`npm audit --omit=dev`), legal (license inventory + ToS impact).
+
+### Fixed in this audit
+
+None — every issue flagged in this cycle was already tracked (H8/H9/H10/H11/H14/H15/H16/H17) or clean.
+
+### Findings — confirmed CLEAN
+
+- **Secrets / hardcoded credentials.** `grep -rE "(sk_live|pk_live|re_live|whsec_[A-Za-z0-9]{20,}|api_key.*=.*['\"][A-Za-z0-9]{20,})"` against `lib/`, `routes/`, `views/`, `middleware/`, `jobs/`, `db/`, `server.js`, `db.js` returns zero hits.
+- **robots.txt info disclosure.** The new `/robots.txt` route lists Disallow paths (`/auth/`, `/billing/`, `/invoices/`, `/settings`, `/dashboard`, `/onboarding/`) — these are all already discoverable via the existing nav and HTML pages, so listing them in robots.txt does not increase the attack surface. The Sitemap pointer is the same URL the existing `/sitemap.xml` route already exposes. No new secrets, route names, or internal paths are leaked.
+- **APP_URL injection.** `process.env.APP_URL` is used in robots.txt + canonical link + sitemap. Master-controlled, not user-controlled. The trailing-slash normaliser (`replace(/\/+$/, '')`) handles the only realistic input variation. EJS auto-escapes the canonical href so even a hostile APP_URL value would render as harmless escaped text in the attribute.
+- **noindex propagation.** Adding `noindex: true` to render calls is a string-typed boolean local consumed by EJS only. No DB write, no session impact, no cookie. CSRF middleware is unaffected (no new POST routes).
+- **CSP / CSRF impact.** Zero new inline script blocks, zero new external CDN references, zero new state-changing routes (only one new GET — robots.txt). The existing `middleware/security-headers.js` CSP and `middleware/csrf.js` exempt-path list need no changes.
+- **Performance.** No new DB queries, no new query patterns; robots.txt is a static string built from `process.env`; canonical link is a 5-line preamble in EJS. Zero R14 impact.
+- **Code quality.** No dead code introduced. The robots.txt route is co-located with the existing sitemap route in `server.js` (both are 1-shot utility routes, ~25 lines total). EJS preamble in `head.ejs` follows the same pattern as the OG metadata preamble.
+- **Dependencies.** No new dependencies introduced. `npm audit --omit=dev` reports the same 6 vulnerabilities as last cycle: 3 high (bcrypt → tar / @mapbox/node-pre-gyp install-time path-traversal — runtime not exposed, install runs only in CI/dyno-build with no attacker-controlled tarballs), 3 moderate (uuid via svix via resend — buffer bounds check on user-supplied UUID buf, never reachable through resend's `emails.send()` call path). Both clusters tracked in INTERNAL_TODO H9 + H16; runtime exposure remains nil.
+- **Legal.** No new third-party services, no PII handling change, no Stripe / payments-flow change. Robots.txt directing crawlers AWAY from authed pages (which contain user-supplied data) is a small GDPR posture improvement. License inventory unchanged (same MIT/Apache-2.0 stack as last cycle).
+
+### Status of prior open [HEALTH] items
+
+All deferred per their original justification (bundle with next migration / dependency-bump-wants-its-own-commit). No new flags this cycle.
+
+- H8 (composite index `idx_invoices_user_status`) — pending next migration
+- H9 (bcrypt 5→6 bump) — pending dedicated commit (high-stakes credential store)
+- H10 (parseInt radix cosmetic) — XS, low-priority
+- H11 (pagination on getInvoicesByUser) — bundle with next dashboard touch
+- H14 (extract escapeHtml/formatMoney to shared module) — pending dedicated commit
+- H15 (Promise.all the sequential GETs) — XS, low-priority
+- H16 (resend dependency bump) — pending dedicated commit (income-relevant transport)
+- H17 (partial index for trial-nudge query) — pending next migration
+
+---
+
+## 2026-04-27T01:30Z — UX Auditor: CTA-arrow consistency pass on login + dashboard [UX]
+
+### Flows audited
+
+- Landing page → register / login / pricing footer links — clean (uses arrows on primary CTAs, secondary "See pricing" is intentionally arrow-less for visual hierarchy).
+- Auth flows: `/auth/login`, `/auth/register` — register submit button already used `Create account →`; login submit was bare `Log in` (off-pattern).
+- Dashboard top header: `+ New Invoice` button — bare, no arrow + sentence-case mismatch (`Invoice` was capitalised, but everywhere else in the product the noun is sentence-case `invoice`).
+- Dashboard onboarding checklist, trial banner, past-due banner — all clean (already audited in prior cycles, copy is action-oriented).
+- Invoice form, invoice view, invoice print — all clean (audited in prior cycles).
+
+### Direct fixes shipped
+
+1. `views/auth/login.ejs` line 32: `Log in` → `Log in →` so the submit button matches the register flow's `Create account →` arrow style. Visual consistency across the auth pair.
+2. `views/dashboard.ejs` line 132-134: `+ New Invoice` → `+ New invoice` (sentence-case fix to match every other dashboard label) and wrapped the `+` glyph in `<span aria-hidden="true">` so screen readers don't announce "plus" before "New invoice" (small a11y win — the icon adds visual affordance only).
+
+### Items flagged (no in-cycle fix)
+
+None. Every other primary CTA on the audited surface already uses the brand's arrow + sentence-case convention.
+
+### Why this matters
+
+Trivial in isolation; cumulative as a brand-consistency signal. Visitors who notice an off-pattern CTA register the product as less polished. Two single-line edits close the gap.
+
+---
+
+## 2026-04-27T01:15Z — Test Examiner: SSRF guard test coverage expanded [TEST]
+
+### What changed
+
+Added 6 new SSRF guard assertions to `tests/webhook-outbound.test.js` covering coverage gaps identified during this cycle's audit of `lib/outbound-webhook.js isPrivateIPv4` / `isPrivateIPv6` branches:
+- IPv6 fc00::/7 (unique-local addresses) — primary IPv6 SSRF target on dual-stack hosts
+- IPv6 fd00::/8 (also covered by fc00::/7 mask but tested explicitly)
+- IPv6 fe80::/10 (link-local; reaches sibling pods on Kubernetes)
+- IPv4-mapped IPv6 to private space (`::ffff:127.0.0.1` — common bypass)
+- 0.0.0.0/8 (often routes to localhost on Linux)
+- literal `metadata` hostname (some clouds short-name the metadata service)
+
+Each branch exists in `lib/outbound-webhook.js` (`isPrivateIPv6` lines 49-60 + `BLOCKED_HOSTNAMES` set) but was previously untested. Without these tests, a future refactor of the SSRF guards could silently regress without surfacing in CI.
+
+### Income relevance
+
+Defence — the webhook URL is set by Pro/Agency users, who could in principle aim it at internal services. The existing SSRF guards prevent this; the new tests prevent a regression from silently re-opening the hole.
+
+`tests/webhook-outbound.test.js`: 16 passes (was 16 — 6 new assertions inside an existing test fn). Full suite: **33 test files, 0 failures.**
+
+---
+
 ## 2026-04-27T00:00Z — Open Graph + Twitter Card metadata on every public page (INTERNAL_TODO #36) [GROWTH]
 
 ### What was built

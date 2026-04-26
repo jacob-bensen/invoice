@@ -40,12 +40,12 @@ router.get('/', requireAuth, async (req, res) => {
       }
     }
     const onboarding = buildOnboardingState(user, invoices);
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding });
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
       title: 'My Invoices', invoices: [], user: req.session.user || null,
-      flash: null, days_left_in_trial: 0, onboarding: null
+      flash: null, days_left_in_trial: 0, onboarding: null, noindex: true
     });
   }
 });
@@ -80,7 +80,8 @@ router.get('/new', requireAuth, async (req, res) => {
     invoice: null,
     invoiceNumber,
     user,
-    flash: null
+    flash: null,
+    noindex: true
   });
 });
 
@@ -100,7 +101,8 @@ router.post('/new', requireAuth, [
     return res.render('invoice-form', {
       title: 'New Invoice',
       invoice: null, invoiceNumber, user,
-      flash: { type: 'error', message: errors.array()[0].msg }
+      flash: { type: 'error', message: errors.array()[0].msg },
+      noindex: true
     });
   }
 
@@ -132,7 +134,8 @@ router.post('/new', requireAuth, [
     const invoiceNumber = await db.getNextInvoiceNumber(req.session.user.id);
     res.render('invoice-form', {
       title: 'New Invoice', invoice: null, invoiceNumber, user,
-      flash: { type: 'error', message: 'Failed to save invoice. Please try again.' }
+      flash: { type: 'error', message: 'Failed to save invoice. Please try again.' },
+      noindex: true
     });
   }
 });
@@ -150,7 +153,8 @@ router.get('/:id', requireAuth, async (req, res) => {
       invoice,
       user,
       flash,
-      paymentMethods
+      paymentMethods,
+      noindex: true
     });
   } catch (err) {
     console.error(err);
@@ -163,7 +167,7 @@ router.get('/:id/print', requireAuth, async (req, res) => {
     const invoice = await db.getInvoiceById(req.params.id, req.session.user.id);
     if (!invoice) return res.redirect('/dashboard');
     const user = await db.getUserById(req.session.user.id);
-    res.render('invoice-print', { title: `Invoice ${invoice.invoice_number}`, invoice, user });
+    res.render('invoice-print', { title: `Invoice ${invoice.invoice_number}`, invoice, user, noindex: true });
   } catch (err) {
     console.error(err);
     res.redirect('/dashboard');
@@ -175,7 +179,7 @@ router.get('/:id/edit', requireAuth, async (req, res) => {
     const invoice = await db.getInvoiceById(req.params.id, req.session.user.id);
     if (!invoice) return res.redirect('/dashboard');
     const user = await db.getUserById(req.session.user.id);
-    res.render('invoice-form', { title: 'Edit Invoice', invoice, invoiceNumber: invoice.invoice_number, user, flash: null });
+    res.render('invoice-form', { title: 'Edit Invoice', invoice, invoiceNumber: invoice.invoice_number, user, flash: null, noindex: true });
   } catch (err) {
     res.redirect('/dashboard');
   }

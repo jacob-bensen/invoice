@@ -10,13 +10,13 @@ const router = express.Router();
 router.get('/login', redirectIfAuth, (req, res) => {
   const flash = req.session.flash;
   delete req.session.flash;
-  res.render('auth/login', { title: 'Log In', flash });
+  res.render('auth/login', { title: 'Log In', flash, noindex: true });
 });
 
 router.get('/register', redirectIfAuth, (req, res) => {
   const flash = req.session.flash;
   delete req.session.flash;
-  res.render('auth/register', { title: 'Create Account', flash });
+  res.render('auth/register', { title: 'Create Account', flash, noindex: true });
 });
 
 router.post('/register', redirectIfAuth, authLimiter, [
@@ -29,7 +29,8 @@ router.post('/register', redirectIfAuth, authLimiter, [
     return res.render('auth/register', {
       title: 'Create Account',
       flash: { type: 'error', message: errors.array()[0].msg },
-      values: req.body
+      values: req.body,
+      noindex: true
     });
   }
 
@@ -39,7 +40,8 @@ router.post('/register', redirectIfAuth, authLimiter, [
       return res.render('auth/register', {
         title: 'Create Account',
         flash: { type: 'error', message: 'An account with this email already exists.' },
-        values: req.body
+        values: req.body,
+        noindex: true
       });
     }
 
@@ -56,7 +58,8 @@ router.post('/register', redirectIfAuth, authLimiter, [
     res.render('auth/register', {
       title: 'Create Account',
       flash: { type: 'error', message: 'Something went wrong. Please try again.' },
-      values: req.body
+      values: req.body,
+      noindex: true
     });
   }
 });
@@ -71,7 +74,8 @@ router.post('/login', redirectIfAuth, authLimiter, [
       return res.render('auth/login', {
         title: 'Log In',
         flash: { type: 'error', message: 'Invalid email or password.' },
-        values: { email: req.body.email }
+        values: { email: req.body.email },
+        noindex: true
       });
     }
 
@@ -84,7 +88,8 @@ router.post('/login', redirectIfAuth, authLimiter, [
     console.error('Login error:', err);
     res.render('auth/login', {
       title: 'Log In',
-      flash: { type: 'error', message: 'Something went wrong. Please try again.' }
+      flash: { type: 'error', message: 'Something went wrong. Please try again.' },
+      noindex: true
     });
   }
 });

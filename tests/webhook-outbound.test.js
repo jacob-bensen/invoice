@@ -231,9 +231,21 @@ async function testIsValidWebhookUrlSsrfGuards() {
     '192.168.0.0/16 must be blocked');
   assert.strictEqual(await isValidWebhookUrl('http://[::1]/hook'), false,
     'IPv6 ::1 loopback must be blocked');
+  assert.strictEqual(await isValidWebhookUrl('http://[fc00::1]/hook'), false,
+    'IPv6 fc00::/7 unique-local addresses must be blocked');
+  assert.strictEqual(await isValidWebhookUrl('http://[fd12:3456:789a::1]/hook'), false,
+    'IPv6 fd00::/8 unique-local addresses must be blocked');
+  assert.strictEqual(await isValidWebhookUrl('http://[fe80::1]/hook'), false,
+    'IPv6 fe80::/10 link-local addresses must be blocked');
+  assert.strictEqual(await isValidWebhookUrl('http://[::ffff:127.0.0.1]/hook'), false,
+    'IPv4-mapped IPv6 to a private address must be blocked');
+  assert.strictEqual(await isValidWebhookUrl('http://0.0.0.0/hook'), false,
+    '0.0.0.0/8 must be blocked (often routes to localhost)');
   // Blocked literal hostnames.
   assert.strictEqual(await isValidWebhookUrl('http://localhost:3000/hook'), false,
     'literal "localhost" must be blocked');
+  assert.strictEqual(await isValidWebhookUrl('http://metadata/'), false,
+    'literal "metadata" must be blocked (some clouds short-name the metadata host)');
   // DNS-rebinding: public hostname that resolves to a private IP.
   assert.strictEqual(await isValidWebhookUrl('http://rebind.example.com/hook'), false,
     'hostname resolving to a private IP must be blocked (DNS rebinding guard)');

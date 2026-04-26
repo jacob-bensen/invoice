@@ -17,7 +17,18 @@
     var __ogImagePath = locals.ogImage || '/og-image.png';
     var __ogImage = /^https?:\/\//i.test(__ogImagePath) ? __ogImagePath : (__ogAppUrl + __ogImagePath);
     var __ogUrl = __ogAppUrl + __ogPath;
+    // Canonical URL — locals.canonicalPath overrides the OG path; absolute
+    // canonical URLs (locals.canonicalUrl) pass through untouched. Only render
+    // the tag when APP_URL is set (a relative canonical confuses search engines
+    // more than the absence of one).
+    var __canonicalUrl = locals.canonicalUrl
+      || (locals.canonicalPath ? (__ogAppUrl + locals.canonicalPath) : (__ogAppUrl ? __ogUrl : ''));
+    // Indexability — pages can opt out of the index (auth, settings, dashboard,
+    // billing) by passing `noindex: true`.
+    var __robots = locals.noindex ? 'noindex, nofollow' : 'index, follow';
   %>
+  <% if (__canonicalUrl) { %><link rel="canonical" href="<%= __canonicalUrl %>"><% } %>
+  <meta name="robots" content="<%= __robots %>">
   <meta name="description" content="<%= __ogDescription %>">
   <meta property="og:title" content="<%= __ogTitle %>">
   <meta property="og:description" content="<%= __ogDescription %>">
