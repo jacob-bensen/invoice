@@ -3,6 +3,7 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { db, pool } = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const { isValidWebhookUrl, firePaidWebhook, buildPaidPayload } = require('../lib/outbound-webhook');
+const { sendPaidNotificationEmail } = require('../lib/email');
 
 const router = express.Router();
 
@@ -139,12 +140,25 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           if (!updated) {
             console.warn(`No invoice found for payment_link ${session.payment_link}`);
           } else {
-            // Fire the outbound Zapier-style webhook for Pro/Agency users.
             const owner = await db.getUserById(updated.user_id);
+            // Fire the outbound Zapier-style webhook for Pro/Agency users.
             if (owner && (owner.plan === 'pro' || owner.plan === 'agency') && owner.webhook_url) {
               firePaidWebhook(owner.webhook_url, buildPaidPayload(updated))
                 .then(r => { if (!r.ok) console.warn(`webhook ${owner.webhook_url} failed:`, r.reason || r.status); })
                 .catch(e => console.error('Outbound webhook error:', e && e.message));
+            }
+            // The "cha-ching" moment — email the freelancer the instant the
+            // client's payment cleared. Fire-and-forget so a Resend outage
+            // never blocks the webhook 200 response. `not_configured` is a
+            // safe no-op until the Resend API key is provisioned.
+            if (owner && owner.email) {
+              sendPaidNotificationEmail(updated, owner)
+                .then(r => {
+                  if (!r.ok && r.reason !== 'not_configured') {
+                    console.warn(`Paid notification to ${owner.email} failed:`, r.reason || r.error);
+                  }
+                })
+                .catch(e => console.error('Paid notification error:', e && e.message));
             }
           }
         }

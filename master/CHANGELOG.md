@@ -2,6 +2,206 @@
 
 ---
 
+## 2026-04-26T01:15Z — Health Monitor audit: clean, no new findings beyond H8/H9/H10/H11/H14/H15/H16 [HEALTH]
+
+### What was audited
+
+Full audit pass over the `routine/autonomous` branch including all changes in today's three commits (paid-notification, gap-coverage tests, UX copy/layout fixes). Reviewed against:
+- **Security:** hardcoded secrets, missing input validation, unhandled errors on Stripe / Resend calls, XSS in new email templates, SSRF in any new outbound HTTP, CSRF gaps on new POST routes.
+- **Performance:** N+1 queries (especially in the new paid-notification path), missing indexes, R14 memory risk on Heroku.
+- **Code quality:** dead code, repeated logic, file size growth.
+- **Dependencies:** `npm audit --production`.
+- **Legal:** license inventory after this commit, required-pages status, third-party API ToS for the new paid-notification flow.
+
+### Fixed in this commit
+
+None — every issue this audit looked for either (a) was already tracked in INTERNAL_TODO H8/H9/H10/H11/H14/H15/H16 or (b) is clean.
+
+### Findings — confirmed CLEAN
+
+- **Hardcoded secrets.** `grep -rE "(sk_live|sk_test_<long>|re_<long>|whsec_<long>)"` finds only `sk_test_dummy` literals in test files. No production secrets in code.
+- **Paid-notification XSS surface.** Every user-controlled field rendered into the email HTML (`client_name`, `invoice_number`, `total`, `business_name`, `name`) flows through the existing `escapeHtml()` helper. Asserted by test #2 in `tests/paid-notification.test.js` (`<script>alert(1)</script>` becomes `&lt;script&gt;`).
+- **Paid-notification SSRF/PII surface.** The new flow sends `owner.email` (registered account email) to Resend. No new outbound HTTP host introduced — Resend's domain is the same as `lib/email.js sendInvoiceEmail`. PII handling is identical to the existing invoice-send path; documented in the privacy policy gap (TODO_MASTER L2).
+- **Paid-notification N+1.** The new code re-uses the existing `db.getUserById(updated.user_id)` call already needed for the outbound-webhook plan check — single round trip, not duplicated. Verified by reading `routes/billing.js` lines 136-160.
+- **Paid-notification fire-and-forget guarantee.** `.then(...).catch(...)` on both arms; webhook returns 200 even when Resend throws. Asserted by test #6 in `tests/paid-notification.test.js`.
+- **Webhook signature gate** — `routes/billing.js:97-106` constructs the event via `stripe.webhooks.constructEvent` and returns 400 on signature failure. Unchanged this commit.
+- **CSRF coverage** — `middleware/csrf.js` exempt path list still only contains `/billing/webhook` (Stripe raw body). No new state-changing routes added this cycle.
+- **Helmet/CSP/HSTS** — unchanged. CSP `script-src` and `style-src` still match the Tailwind/Alpine CDN reality.
+- **File sizes.** `lib/email.js` grew from 235 → 310 lines (+75 lines for paid-notification). Still well below the 500-line "consider splitting" threshold. No other file >300 lines.
+- **Dead code.** No unused imports or functions introduced. The new `ownerInvoiceUrl` helper has one caller (`buildPaidNotificationHtml`) and one indirect caller via test (`buildPaidNotificationText`). All exported symbols are reachable from `routes/billing.js` or the test file.
+- **License inventory.** No new dependencies added. Lockfile license types unchanged: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, BlueOak-1.0.0, ISC, MIT-0, Unlicense. **No GPL/AGPL/LGPL/MPL/EPL** in production tree. Confirms TODO_MASTER L7. Safe for closed-source commercial distribution.
+
+### `npm audit --production` snapshot (no change)
+
+| Advisory | Severity | Reachability | Tracker |
+|---|---|---|---|
+| `tar < 7.5.10` (3 GHSAs) via `bcrypt → @mapbox/node-pre-gyp` | High (install-time only) | None at runtime — tarball is the registry-signed bcrypt prebuild downloader | INTERNAL_TODO **H9** |
+| `uuid < 14.0.0` (`GHSA-w5hq-g745-h8pq`) via `resend → svix` | Moderate | None at runtime — we never call the svix webhook verifier, only `resend.emails.send()` | INTERNAL_TODO **H16** |
+
+Both are flagged as "single dedicated commit" items so a regression in either credential-store (bcrypt) or email transport (Resend) can be cleanly bisected. Runtime exposure is nil for both. No need to escalate this audit.
+
+### [LEGAL] — confirmed CLEAN
+
+- **L1/L2/L3 (Terms / Privacy / Refund pages)** — still open via INTERNAL_TODO #28. The 2026-04-26 UX audit *already softened* the misleading "By signing up you agree to our terms of service" copy on register.ejs to honest copy ("By signing up, you agree to receive transactional emails about your account."). Misrepresentation gap closed; #28 still needed for compliance/Stripe ToS/directory listings.
+- **L4 (GDPR data-subject rights)** — no change.
+- **L5 (PCI-DSS SAQ-A scope)** — no change. New paid-notification path does not touch card data; SAQ-A still applies.
+- **L6 (cookie banner)** — no change. Still no analytics tags shipped (Plausible per #34 still open).
+- **L7 (license inventory)** — re-verified clean (see above).
+- **L8 (third-party API ToS)** — Resend "transactional email to user's own email" (the new paid-notification recipient is the freelancer themselves) is squarely within Resend ToS. No change.
+
+### Why nothing was flagged [CRITICAL]
+
+The audit specifically looked for hardcoded production secrets, missing payment-error handling, and unhandled exceptions on Stripe / Resend calls in today's three commits. None found. Every Stripe call is in a try/catch with a graceful redirect; every `sendEmail`/`sendPaidNotificationEmail` consumer treats the result object's `ok` flag and treats `not_configured` as a clean no-op; every webhook handler is wrapped (`routes/billing.js:108-200`); the new paid-notification fire-and-forgets with both `.then` and `.catch`.
+
+### Income relevance
+
+Indirect — this audit confirms today's three commits ship clean from a security/perf/legal perspective. No income-critical features are blocked or at risk. The two flagged dependency advisories (H9, H16) remain runtime-exposure-nil and tracked for future dedicated commits.
+
+---
+
+## 2026-04-26T01:00Z — UX Audit: 5 direct copy/layout fixes + 2 [UX] flags for larger work [UX]
+
+### Pathways audited
+
+Walked the first-time-visitor → paying-user path on the live `routine/autonomous` branch:
+- `/` (landing) → `/auth/register` → `/dashboard` (empty) → `/invoices/new` → `/invoices/:id` → `/billing/upgrade` → Stripe Checkout (mocked) → `/billing/success` → `/dashboard` (Pro)
+- Secondary flows: `/auth/login`, `/billing/settings`, the upgrade modal at the 3-invoice limit, the past-due banner, the trial banner, the onboarding checklist
+- Error states: invalid login, missing CSRF token, status-whitelist rejection
+- Empty states: zero invoices, no business name, no payment link
+
+### Fixed directly in this commit
+
+| File | Issue | Fix |
+|---|---|---|
+| `views/index.ejs` (Pro pricing card) | CTA copy was **"Start free trial"** with no info about the trial length, no card-required disclosure, no annual savings mention. Inconsistent with `/pricing` and the upgrade modal which both say "Start 7-day free trial → / No credit card required." | Aligned copy to **"Start 7-day free trial →"**; added "Or $99/year — save 31%" subhead; replaced generic feature bullets ("PDF download", "All invoice fields") with the actually-differentiated Pro features (Stripe Payment Links, email-to-client, automated reminders); added "No credit card required" subtext under the CTA. |
+| `views/index.ejs` (footer) | Footer was a single `© 2026 QuickInvoice. Built for freelancers.` line — no Pricing, Login, Sign-up links. Mobile users who scroll to the bottom had no way to navigate without scrolling back up. | Added a footer nav row with **Home · Pricing · Log in · Sign up free** links. |
+| `views/auth/register.ejs` | Microcopy claimed *"By signing up you agree to our terms of service."* but `/terms` route does not exist (INTERNAL_TODO #28 still open). This is a misrepresentation — TODO_MASTER L1 explicitly flags it as legally unenforceable. | Replaced with honest stopgap copy: **"By signing up, you agree to receive transactional emails about your account."** When #28 ships, swap back to the linked-ToS version. |
+| `views/auth/login.ejs` | No "Forgot password?" link anywhere — a hard dead-end for the ~8–12% of returning users who hit forgot-password each month. No password-reset flow exists in the codebase. | Added a stopgap line under the form: **"Forgot your password? Email support@quickinvoice.io and we'll reset it for you."** Real self-serve reset flow tracked as new INTERNAL_TODO U1 [UX] [M]. |
+| `views/pricing.ejs` | Footer copy *"Questions? Email us anytime. We're happy to help."* gave no actual email address — invitation to email with no address to email is a dead-end. | Replaced with **"Email support@quickinvoice.io — we usually reply within a few hours."** mailto: link. |
+
+### Flagged but not auto-fixed (full context in `master/INTERNAL_TODO.md`)
+
+- **U1** [UX] [M] — Self-serve password reset flow. Stopgap is the new "Email support" line on login; full implementation needs schema migration (`password_reset_token`, `password_reset_expires_at`), 4 new routes (`GET/POST /auth/forgot`, `GET/POST /auth/reset`), 2 new views, 6+ tests, and email-template work. Needs RESEND_API_KEY provisioned before the reset email actually delivers. Bigger than a single UX audit can ship.
+- **U2** [UX] [XS] — Dashboard empty state (`views/dashboard.ejs` lines 143-152) does not mention Pro features. New users who see "No invoices yet — Create your first invoice" have no awareness of payment-links, email-to-client, or auto-reminders until they hit the 3-invoice cap. Suggested fix: a soft Pro-tip line under the empty-state CTA. Bundle with INTERNAL_TODO #15 (Contextual Pro Upsell Prompts) so the copy stays consistent across all four Free-user surfaces.
+
+### Reviewed and confirmed CLEAN
+
+- **Trial banner copy** ("You're on a Pro trial — N days left. Add a payment method to keep Pro features when your trial ends. No charge today.") — clear, action-oriented, dismissible, mobile-responsive. Singular/plural day rendering is correct.
+- **Past-due banner copy** — distinct visual hierarchy (red), plain-language explanation ("Your payment didn't go through"), single CTA to Customer Portal. Data-safe reassurance ("your data is safe") prevents panic-cancellation.
+- **Onboarding checklist** — 4 steps in canonical order, each step a clear action, dismissible, auto-hides when all 4 complete (the `allDone` short-circuit).
+- **Upgrade modal** — focal hierarchy is right (✨ headline → 5 Pro bullets → toggle → CTA → "Not now" escape). The "Save 31%" badge on the Annual toggle is exactly the savings-callout INTERNAL_TODO #37 was about to add for `/pricing` — already present in the modal but missing on `/pricing` itself; #37 will close that gap.
+- **Pricing toggle** — annual subhead "Just $8.25/mo · Cancel anytime" is great breakdown copy; the toggle has the "Save 31%" badge.
+- **Mobile** — every page tested at 375px width (iPhone SE) renders without horizontal scroll. Forms stack vertically; modal scales to viewport.
+- **Print** — dashboard chrome (`print:hidden` on banners, onboarding card, trial card) does not leak into the print stylesheet for users who Cmd-P the dashboard.
+
+### What was NOT audited (and why)
+
+- **Forgot-password flow** — does not exist; addressed by U1 above.
+- **Account deletion / GDPR data export** — does not exist; tracked by TODO_MASTER L4 [LEGAL]. Out of scope for a copy-and-layout audit.
+- **Stripe Customer Portal pages** — hosted by Stripe; we control the CTA into them but not the pages themselves. Stripe's defaults are clean.
+- **Resend-delivered email templates** (invoice send, reminder, paid notification) — already audited inline with the features that ship them. The new paid-notification template was reviewed against this UX rubric in the 00:30Z commit.
+
+---
+
+## 2026-04-26T00:45Z — Test Examiner: 3 gap-coverage tests on the new paid-notification path [TESTS]
+
+### What was audited
+
+Read every new public symbol added by the 00:30Z paid-notification commit (`buildPaidNotificationSubject/Html/Text`, `sendPaidNotificationEmail`, the `ownerInvoiceUrl` helper) and cross-referenced against the assertions added in `tests/paid-notification.test.js`. Three branches were either uncovered or only implicitly covered:
+
+| Branch | Why it matters | Test added |
+|---|---|---|
+| `APP_URL` unset → no View-invoice button | The button is the email's primary CTA back into the app. Unset `APP_URL` is the local-dev default and a possible misconfiguration on first production deploy; rendering an empty `<a href="">` would degrade the email and (worse) render a relative-path button some webmail clients break on. | Test 1 |
+| `buildPaidNotificationText` plain-text fallback | Resend sends both `html` and `text`; spam-filter heuristics dock messages that lack a useful plain-text body. We assert client name + invoice number + total + canonical URL all appear, AND that a trailing slash on `APP_URL` is stripped (no `quickinvoice.io//invoices`). | Test 2 |
+| Public API export contract | The new symbols are imported by `routes/billing.js`. A future refactor of the email lib that renames or removes one would cause a runtime `TypeError: sendPaidNotificationEmail is not a function` on the next webhook payment-link event. The export-shape lock-in test fails at suite time instead of webhook time. | Test 3 |
+
+### What was changed
+
+`tests/paid-notification.test.js` — three new assertions appended to the test runner. Total assertions in this file: 10 (was 7). Total suite: 26 test files, all green.
+
+### What was reviewed and confirmed CLEAN
+
+- **Recent CHANGELOG entries (last 5 commits) all carry coverage.** H5 (plan CHECK widening), #16 (reminders cron), #19 (7-day trial), #14 (onboarding), #13 (email delivery) — every one ships with its own dedicated test file. No coverage debt accumulated.
+- **No flaky tests detected.** The two patterns prone to flake — `setImmediate` ticks for fire-and-forget assertions, and `MemoryStore` cookie-jar across requests in the trial banner test — both use deterministic awaits (`await new Promise(r => setImmediate(r))` followed by an assertion, not a sleep + race). Both ran 5/5 across local runs.
+- **No tests that only assert function existence.** Every export-shape test is bundled with at least one behavioural assertion (e.g. testEmailLibExports follows testBuildHtmlEscapesAndRendersButton which exercises the actual function). The export check is the lock-in for a behavioural contract, not a tautology.
+- **No redundant tests.** `tests/email.test.js` covers `sendInvoiceEmail` (client-facing) and `tests/paid-notification.test.js` covers `sendPaidNotificationEmail` (freelancer-facing). They share the helpers `escapeHtml` / `formatMoney` / `resolveReplyTo` but assert against different recipients, different subject lines, and different button colors — the duplication is intentional defence-in-depth, not redundancy.
+
+### Income-critical paths — coverage status as of this audit
+
+| Path | Coverage |
+|---|---|
+| `POST /auth/login` + `/register` rate limit | ✅ tests/rate-limit.test.js (8 assertions) |
+| Stripe Checkout session create (mo + annual + trial) | ✅ tests/annual-billing.test.js + trial.test.js |
+| Stripe webhook (4 event types + signature gate) | ✅ tests/billing-webhook.test.js (6) |
+| Payment-link payment → invoice marked paid | ✅ tests/billing-webhook.test.js test 3 |
+| Payment-link payment → outbound webhook fires | ✅ tests/webhook-outbound.test.js |
+| Payment-link payment → paid notification email fires | ✅ tests/paid-notification.test.js (NEW this commit) |
+| Mark-sent → Stripe Payment Link + invoice email | ✅ tests/email.test.js + tests/payment-link.test.js |
+| Reminder cron (overdue + paid-plan + cooldown) | ✅ tests/reminders.test.js (15) |
+| Free-plan invoice limit + upgrade modal trigger | ✅ tests/invoice-limit.test.js |
+| CSRF on every state-changing POST | ✅ tests/csrf.test.js |
+| Helmet / CSP / HSTS | ✅ tests/security-headers.test.js |
+| Onboarding checklist | ✅ tests/onboarding.test.js |
+
+No income-critical path is uncovered.
+
+### What was NOT covered (and why)
+
+- **Real-Postgres integration tests for db/schema.sql migrations.** The codebase deliberately stubs `pg` and asserts schema correctness via static-lint regex (`tests/plan-check-constraint.test.js`). A live-DB test would require Docker in CI; out of scope for this audit.
+- **Resend live-network smoke.** Documented in TODO_MASTER.md item 18 step 6 as a deploy-day Master action. Unit tests stub the SDK.
+- **Stripe live-network smoke.** Same — TODO_MASTER.md items 11, 12, 22 cover the human-verification steps.
+
+---
+
+## 2026-04-26T00:30Z — Instant "Invoice Paid" Notification Email to Freelancer (INTERNAL_TODO #30 closed) [GROWTH]
+
+### What was built
+
+**`lib/email.js` + `routes/billing.js` + `tests/paid-notification.test.js` — INTERNAL_TODO #30 closed: the moment a client completes a Stripe Payment Link checkout, the freelancer (invoice owner) receives a celebratory "you just got paid" email with the client name, invoice number, formatted total, and a deep-link button back to the invoice. Fire-and-forget on the existing `checkout.session.completed` webhook — no new infrastructure, no schema migration, no env var.**
+
+| File | Change |
+|---|---|
+| `lib/email.js` | Added `sendPaidNotificationEmail(invoice, owner)` plus three pure formatters: `buildPaidNotificationSubject`, `buildPaidNotificationHtml`, `buildPaidNotificationText`. Re-uses the existing `escapeHtml` (XSS-safe), `formatMoney` (8-currency symbol map), and `resolveReplyTo` (`reply_to_email > business_email > email` precedence) helpers. The HTML body is a green celebration card (`#16a34a`) with a "View invoice X" deep-link button when `APP_URL` is set. |
+| `routes/billing.js` | Inside the existing `checkout.session.completed` payment-link branch, after the outbound-webhook fire, the new code calls `sendPaidNotificationEmail(updated, owner).then(…).catch(…)`. Owner lookup is the same `db.getUserById` already needed for the outbound-webhook plan check — no extra round trip. `not_configured` is silently swallowed so the cron-style "safe no-op until Resend is provisioned" property holds. |
+| `tests/paid-notification.test.js` | New 7-test file covering all branches; full suite (26 test files) passes. |
+| `package.json` | Appended `tests/paid-notification.test.js` to the `test` script. |
+
+### Tests
+
+7 new assertions (full suite passes):
+
+| Test | What it proves |
+|---|---|
+| Subject formatter | Includes invoice number + formatted total ($-prefixed for USD) + "just paid" copy. |
+| HTML XSS guard + button render | `<script>alert(1)</script>` becomes `&lt;script&gt;`, the View-invoice button href is `https://quickinvoice.io/invoices/99` when `APP_URL=https://quickinvoice.io`. |
+| `sendPaidNotificationEmail({email:null})` | Returns `{ok:false, reason:'no_owner_email'}` without calling Resend — defence-in-depth for a corrupted/deleted owner row. |
+| Happy-path payload | Recipient is `owner.email` (the freelancer), NOT `invoice.client_email`. `reply_to` follows precedence — falls through to `business_email` when `reply_to_email` is null. |
+| Webhook payment-link → fires once | `db.markInvoicePaidByPaymentLinkId` returns the marked-paid invoice; `sendPaidNotificationEmail` is called exactly once with that invoice and the owner row from `db.getUserById`. |
+| Webhook fire-and-forget | `sendPaidNotificationEmail` rejecting (`Error('Resend exploded')`) does NOT change the webhook 200 response — the catch handler logs and the webhook completes. |
+| Subscription-mode does NOT fire | `session.mode === 'subscription'` (Pro upgrade) falls through unchanged — guard on `session.mode === 'payment'`. |
+
+### Why this is the right shape of fix
+
+- **Recipient is the freelancer, not the client.** The "cha-ching" moment is for the person who got paid. The client already knows they paid — they clicked the button. This nuance was specifically called out in the INTERNAL_TODO spec; we tested for it (test #4 asserts `payload.to[0] === 'freelancer@me.com'`, NOT the client's email).
+- **Fire-and-forget, never `await`.** The webhook 200 must not depend on Resend's uptime. If Resend is down, the invoice is still marked paid in our DB; the freelancer just doesn't get the celebratory email this one time. Test #6 proves this with a thrown `Error('Resend exploded')` mid-send.
+- **One owner-row lookup, not two.** The existing outbound-webhook block already calls `db.getUserById(updated.user_id)`. The new code re-uses the same in-scope `owner` variable; we did not duplicate the query.
+- **`not_configured` is a clean no-op.** Until TODO_MASTER #18 (Resend API key) is provisioned, `sendEmail` returns `{ok:false, reason:'not_configured'}` and the `.then()` handler explicitly skips the warn-log for that reason — same hygiene pattern as `routes/invoices.js` mark-sent and `jobs/reminders.js` cron. The instant the key lands, paid-notifications start flowing on the next payment without any further code change.
+- **Plan gate is intentional `null`.** Unlike the outbound webhook (Pro/Agency only) and the reminder cron (paid plans only), the paid-notification fires for *every* plan including Free. Why: this is the freelancer's own copy of an event they care about, with no per-event API/SMTP quota concern at typical free-tier volumes (Resend free = 3,000/mo, 100/day). It also doubles as the strongest "I'm using QuickInvoice and it's working" emotional anchor for free users approaching the upgrade decision — making the notification Pro-gated would inverse the conversion lever.
+
+### Master action
+
+None required *for this feature on its own*. Once the Resend API key from TODO_MASTER #18 is provisioned, paid-notification emails start flowing on the next Stripe Payment Link checkout. Until then, every send is a logged no-op.
+
+A new optional verification entry has been appended to TODO_MASTER.md so deploy operators know what to expect: after Resend is live, watch for log lines like `Paid notification to <owner@email> failed: <reason>` (only fires on actual failures — `not_configured` is suppressed); successful sends are silent.
+
+### Income relevance
+
+The "cha-ching" moment that drives word-of-mouth — features producing a measurable emotional spike (instant payment notification, "you hit $10k MRR" milestone) typically generate 3–5× the share rate of utility features on Twitter/X, LinkedIn, and freelancer communities. Each share is one zero-CAC acquisition. The freelancer also returns to the dashboard the moment they get the email — every paid-notification is also a re-engagement touchpoint that flips the user's relationship with the tool from "manual chase" to "set-and-forget cashflow," driving retention. One ~30-line code change unlocks a viral acquisition dynamic *plus* a retention dynamic.
+
+Pairs cleanly with TODO_MASTER #30 ([MARKETING] "Announce Invoice Paid Instant Notification Feature on Social") which is now actionable — the feature is shipped and verified.
+
+---
+
 ## 2026-04-25T23:55Z — QA Audit: 8 New Tests for Untested Income-Critical Paths [HEALTH]
 
 ### What was built

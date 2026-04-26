@@ -1,8 +1,55 @@
 # QuickInvoice + InvoiceFlow — Internal Growth TODO
 
-> **Audited:** 2026-04-23 — All InvoiceFlow Phase 1 (P1–P10) [DONE] items archived. [BLOCKED] items moved to bottom. Tasks re-prioritized: income-critical first, [HEALTH] next, [GROWTH] after, [BLOCKED] last. InvoiceFlow P11/P12 expanded into single-session sub-tasks. Complexity tags: [S] < 2 hrs · [M] 2–8 hrs · [L] > 8 hrs.
+> **Audited:** 2026-04-26 — Task Optimizer pass. Prior DONE items remain inline-tagged (kept for context; will be archived in a future cleanup once the file exceeds 1.5k lines). 5 new [GROWTH] items (#35–#39) and 2 new [UX] items (U1, U2) appended this cycle. Re-priority order remains: [TEST-FAILURE] (none) > income-critical features > [UX] items that affect conversion > [HEALTH] > [GROWTH] > [BLOCKED]. Complexity tags: [XS] < 30 min · [S] < 2 hrs · [M] 2–8 hrs · [L] > 8 hrs. Duplicates checked against TODO.md and TODO_MASTER.md; INTERNAL_TODO #37 partially overlaps with already-shipped pricing-page badge — see #37 entry for partial-done status.
 
 Do not duplicate items already in `TODO.md`. App labels indicate which codebase each task applies to.
+
+---
+
+## OPEN TASK INDEX (priority order, post-2026-04-26 audit)
+
+**[UX] — affects conversion, fix sooner**
+- **U1** [UX] [M] — Self-serve password reset flow (stopgap shipped; full flow blocked on Resend key + 4 routes + 2 views + tests)
+- **U2** [UX] [XS] — Dashboard empty state Pro-tip (bundle with #15)
+
+**Income-critical [GROWTH]**
+- **#35** [XS] — Stripe `allow_promotion_codes` + Stripe Tax (HIGH; 1 env var, unblocks every coupon flow + EU/UK/AU revenue)
+- **#29** [XS] — Trial End Day-3 Nudge Email (HIGH; all prereqs done, drops trial→paid by 30–50% if missing)
+- **#36** [XS] — Open Graph + Twitter Card metadata (MED-HIGH; compounds across every share)
+- **#37** [XS] — Annual "save 31%" badge on pricing toggle (PARTIAL — badge already on `/pricing` + modal; only `/settings` toggle + "2 months free" subtext missing)
+- **#15** [S] — Contextual Pro Upsell Prompts on Locked Features (MED-HIGH; bundle U2)
+- **#31** [XS] — Free-Plan Invoice Limit Progress Bar on Dashboard
+- **#39** [S] — First-invoice seed template on signup (HIGH activation lift)
+- **#27** [S] — One-Click Invoice Duplication
+- **#33** [S] — Invoice Bulk CSV Export (GDPR Art. 15 + tax-season retention)
+- **#28** [S] — Legal Pages Scaffolding (Terms / Privacy / Refund) — blocks L1/L2/L3 in TODO_MASTER + Stripe ToS
+- **#26** [S] — AI-Powered Line Item Suggestions (Claude Haiku, Pro feature)
+- **#22** [S] — Late Fee Automation (Pro feature)
+- **#23** [S] — PWA Manifest for Mobile Installability
+- **#25** [S] — Expand SEO Niche Landing Pages (6 → 15)
+- **#38** [S] — Public `/roadmap` page (trust + churn defence)
+- **#34** [XS] — Plausible Analytics Integration (gated on Master providing PLAUSIBLE_DOMAIN per TODO_MASTER #29)
+- **#20** [S] — Social Proof Section on Landing + Pricing Pages
+- **#32** [S] — API Key Auth + REST Endpoints (prereq for Zapier app listing)
+- **#21** [M] — Client-Facing Invoice Portal
+- **#18** [M] — Referral Program with Stripe Coupon Rewards
+- **#24** [M] — Multi-Currency Invoice Support
+- **#17** [M] — Google OAuth One-Click Signup
+- **#10** [L] — Business Tier at $29/mo (gated on Master creating Stripe prices)
+- **#9** [L] — InvoiceFlow Team Seats for Agency Plan
+
+**[HEALTH] (open)**
+- **H8** [XS] — Composite `(user_id, status)` index on `invoices` (bundle with next migration)
+- **H10** [XS] — `parseInt(userId)` → `parseInt(userId, 10)` in webhook handler (cosmetic)
+- **H14** [XS] — Extract `escapeHtml`/`formatMoney` to shared `lib/html.js` (dedupe with `jobs/reminders.js`)
+- **H15** [XS] — `Promise.all` the sequential `getInvoiceById` + `getUserById` in 3 GET handlers
+- **H9** [S] — `bcrypt@^5` → `^6` (transitive `tar` advisories; install-time only, runtime exposure nil)
+- **H11** [S] — Pagination on `getInvoicesByUser` (bundle with #14 next dashboard touch)
+- **H16** [XS] — `resend@^6.12.2` → patched svix when `^6.13` lands (transitive `uuid` advisory; runtime exposure nil)
+
+**[BLOCKED] / Long-running** (kept at bottom — see BLOCKED section below)
+- **#11** [L] — Churn Win-Back Email Sequence (UNBLOCKED — needs RESEND_API_KEY in prod)
+- **#12** [M] — Monthly Revenue Summary Email (UNBLOCKED — needs RESEND_API_KEY in prod)
 
 ---
 
@@ -789,7 +836,7 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
 
 ---
 
-### 30. [GROWTH] "Invoice Paid" Instant Notification Email to Freelancer [XS]
+### 30. [DONE 2026-04-26] [GROWTH] "Invoice Paid" Instant Notification Email to Freelancer [XS]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** HIGH — the "cha-ching" magic moment that drives word-of-mouth ("this app texts me the second I get paid"); the emotional resonance of an instant paid-notification converts casual users into vocal advocates; costs ~5 lines of code in the existing Stripe webhook handler; no new infrastructure
@@ -800,6 +847,16 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
 1. `routes/billing.js` `checkout.session.completed` handler: inside the `session.mode === 'payment'` branch (payment link payments), after `db.updateInvoiceStatus(invoice.id, 'paid')`, fire a `sendEmail()` to the invoice owner (look up via `invoice.user_id → db.getUserById`). Subject: `"Invoice #[invoice_number] was just paid — $[total]"`. HTML body: two lines ("Great news — [client_name] paid invoice #X for $Y.") + a "View invoice →" button to `/invoices/:id`. Reply-to: owner's `reply_to_email` or `business_email`. Fire-and-forget (`then/catch`, never `await` — don't delay the webhook 200 response).
 2. Handle the case where `sendEmail` returns `not_configured` gracefully (same pattern as reminder job — log and continue).
 3. Tests in `tests/paid-notification.test.js` (3 tests): payment-link `checkout.session.completed` → `sendEmail` called with the right owner email, subject containing the invoice number and amount; `sendEmail` throw does NOT prevent the invoice from being marked paid (fire-and-forget safety); non-payment-link checkout (subscription upgrade) does NOT trigger a paid notification (guard on `session.mode === 'payment'`).
+
+**Resolution (2026-04-26):** Added four pure formatters + one transport function to `lib/email.js`: `buildPaidNotificationSubject(invoice)`, `buildPaidNotificationHtml(invoice, owner)`, `buildPaidNotificationText(invoice)`, and `sendPaidNotificationEmail(invoice, owner)`. The recipient is the freelancer (`owner.email`) — NOT the client — so the cha-ching email lands in the person who cares. The HTML body is a green-themed celebration card ("You just got paid", `#16a34a`) with the client's name, invoice number, formatted total (using the existing `formatMoney` symbol map covering 8 currencies), and a "View invoice X" deep-link button when `APP_URL` is set. All user-controlled fields (`client_name`, `invoice_number`, total, URL) flow through the existing `escapeHtml` so a `<script>` payload in `client_name` cannot XSS the freelancer's webmail client. Reply-to follows the same `reply_to_email > business_email > email` precedence used by the invoice-send and reminder paths so a reply lands sensibly. Subject line ("Invoice INV-X was just paid — $1,200.00") is built without `escapeHtml` (subject is plain text, never HTML-rendered).
+
+`routes/billing.js` `checkout.session.completed` handler: inside the existing `session.mode === 'payment' && session.payment_link` branch, after `db.markInvoicePaidByPaymentLinkId(...)` returns the freshly-marked invoice and after the existing outbound-webhook fire, the new code reads the owner via `db.getUserById(updated.user_id)` (one round trip — the outbound-webhook block already needed the owner row, so this is the same lookup, not a duplicated query), then `sendPaidNotificationEmail(updated, owner).then(...).catch(...)` fires the email. The `.then()` only logs failures whose `reason !== 'not_configured'` — same hygiene pattern as `routes/invoices.js`'s mark-sent email, so the cron-style "until Master provisions Resend, every send is a clean no-op" property holds. The webhook returns 200 immediately regardless of the email outcome — proven by test #6 below (sendPaidNotificationEmail rejects with `Error('Resend exploded')`, webhook still returns 200). Subscription-mode checkouts (Pro upgrades) do NOT trip the paid-notification — the new code lives inside the `session.mode === 'payment'` branch, so subscription completions fall through unchanged.
+
+New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; we added 4 more for coverage parity with `tests/email.test.js`): (1) subject formatter contract — invoice number + formatted total + "just paid" copy; (2) HTML escaping + APP_URL deep-link button render — `<script>alert(1)</script>` becomes `&lt;script&gt;`, `https://quickinvoice.io/invoices/99` is the button href; (3) `sendPaidNotificationEmail({email:null})` short-circuits with `no_owner_email` — defence-in-depth guard against a deleted-account corner case; (4) happy-path Resend payload — recipient is `owner.email` (NOT `invoice.client_email`!), reply_to follows the `business_email` fallback when `reply_to_email` is null; (5) Stripe webhook payment-link path → `sendPaidNotificationEmail` is called exactly once with the marked-paid invoice + owner; (6) `sendPaidNotificationEmail` rejecting does NOT change the webhook 200 — fire-and-forget guarantee; (7) subscription-mode checkout (Pro upgrade) does NOT fire the paid-notification — guard on `session.mode === 'payment'`. Wired into `package.json` `test` script. Full suite passes (26 test files, 0 failures).
+
+**[Master action]** none required *for this feature on its own* — once the Resend API key from TODO_MASTER #18 is provisioned, paid-notification emails start flowing on the next payment-link payment. Until then, every send returns `{ ok:false, reason:'not_configured' }` and is logged-and-discarded with no side effects.
+
+**Income relevance:** This is the "cha-ching" moment that converts casual users into vocal advocates. Industry word-of-mouth research: features that produce a measurable emotional spike (instant payment notification, "you just hit $10k MRR" milestone) generate 3–5× the share rate of utility features. Each share is one zero-CAC acquisition channel. The freelancer also returns to the dashboard the moment they get the email — every paid-notification is a re-engagement touchpoint that flips the user's relationship with the tool from "manual chase tool" to "set-and-forget cashflow." The combined effect is a higher retention dynamic *plus* a viral acquisition dynamic from one ~5-line code change.
 
 ---
 
@@ -870,6 +927,154 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
 3. `middleware/security-headers.js`: add `https://plausible.io` to `script-src` and `connect-src` CSP directives (Plausible's tracker makes a `POST /api/event` XHR to its own domain).
 4. Key conversion events to track via the custom events API (`plausible('EventName')`): add `<script>plausible('Signup')</script>` to `views/auth/register.ejs` success redirect; `plausible('UpgradeStart')` in the upgrade modal CTA click handler; `plausible('TrialStart')` in `views/partials/upgrade-modal.ejs` after successful checkout. These are optional progressive enhancements — pageview tracking alone (default Plausible behaviour) is immediately valuable.
 5. No tests needed (external script injection is trivial); verify in browser DevTools Network tab that `POST https://plausible.io/api/event` fires on pageload.
+
+---
+
+### 35. [GROWTH] Stripe Checkout: enable promotion codes + automatic tax (added 2026-04-26 audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** HIGH — two adjacent wins from one ~3-line change in `routes/billing.js`. (1) `allow_promotion_codes: true` adds a "Add promotion code" link to every Stripe Checkout page, which is the prerequisite for Product Hunt launch coupons (`PH50`), AppSumo redemption, freelancer-newsletter sponsorships ("DESIGNERS20"), and the 100%-off-first-month coupon already mentioned in TODO_MASTER #25 (Agency cold email). Without it, every coupon Master creates in the Stripe Dashboard is unreachable. (2) `automatic_tax: { enabled: true }` switches on Stripe Tax for every subscription — Stripe automatically calculates and collects VAT/GST/sales tax for EU/UK/AU/CA customers based on their billing address. EU and UK freelancers are ~30% of the global freelancer market and are currently unable to upgrade because the price displayed at checkout doesn't match the post-tax invoice they need for their books.
+**Effort:** Very Low
+**Prerequisites:** None for `allow_promotion_codes`. Stripe Tax requires Master to enable Stripe Tax in the Stripe Dashboard once (Stripe Settings → Tax → Activate; takes 5 minutes). Until activated, `automatic_tax: { enabled: true }` returns a Stripe error and breaks checkout — wrap in a feature flag `STRIPE_AUTOMATIC_TAX_ENABLED=true` env so the deploy is reversible.
+
+**Sub-tasks:**
+1. `routes/billing.js POST /create-checkout`: add `allow_promotion_codes: true` to the `stripe.checkout.sessions.create()` call. No other config needed — Stripe handles validation and discounting.
+2. Same call: add `automatic_tax: { enabled: process.env.STRIPE_AUTOMATIC_TAX_ENABLED === 'true' }`. The env-var gate means the deploy is safe before Master enables Tax in the dashboard.
+3. Add `customer_update: { address: 'auto', name: 'auto' }` to the same call — required by Stripe Tax to capture the billing address for tax-jurisdiction lookup.
+4. `.env.example`: add `STRIPE_AUTOMATIC_TAX_ENABLED=false` with comment "Set to true once Stripe Tax is activated in Dashboard".
+5. New `tests/checkout-promo-tax.test.js` (3 tests): `allow_promotion_codes` is always true; `automatic_tax.enabled` reflects env var; Stripe Tax DISABLED in test env (no env var set).
+6. Add Master action to TODO_MASTER.md: enable Stripe Tax in Dashboard + flip the env var.
+
+**Income relevance:** Direct. Unlocks (a) every marketing coupon flow Master is planning (Product Hunt, AppSumo, newsletter sponsorships, Agency cold email), (b) the EU/UK/AU/CA freelancer market segment that currently can't upgrade due to tax compliance friction. Both are zero-CAC revenue lifts.
+
+---
+
+### 36. [GROWTH] Open Graph + Twitter Card metadata on landing/pricing/niche pages (added 2026-04-26 audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM-HIGH — every share of `quickinvoice.io`, `/pricing`, or any of the 6 niche landing pages currently renders as a bare URL in Slack/iMessage/Twitter/LinkedIn/Discord previews. Adding `og:title`, `og:description`, `og:image`, `og:url`, `twitter:card`, `twitter:image` makes every shared link render a rich preview card with the QuickInvoice screenshot — typically 30–50% higher click-through vs. a bare URL. This compounds across every Reddit post (TODO_MASTER #14), every Tweet (#17, #30), every newsletter mention (#20), every Slack/Discord drop (#28), every Show HN (#19).
+**Effort:** Very Low
+**Prerequisites:** A static `public/og-image.png` (1200×630 PNG with the QuickInvoice logo + tagline). Master provides the image asset; the code can ship with a placeholder reference and the file gets dropped in.
+
+**Sub-tasks:**
+1. `views/partials/head.ejs`: add inside `<head>` (use template locals so each page can override defaults):
+   ```html
+   <meta property="og:title" content="<%= ogTitle || 'QuickInvoice — Professional invoices with Stripe Payment Links' %>">
+   <meta property="og:description" content="<%= ogDescription || 'Send invoices freelancers can pay in one click. Free to start, $12/mo for Pro.' %>">
+   <meta property="og:image" content="<%= APP_URL %>/og-image.png">
+   <meta property="og:url" content="<%= APP_URL %><%= ogPath || '/' %>">
+   <meta property="og:type" content="website">
+   <meta name="twitter:card" content="summary_large_image">
+   <meta name="twitter:title" content="<%= ogTitle %>">
+   <meta name="twitter:description" content="<%= ogDescription %>">
+   <meta name="twitter:image" content="<%= APP_URL %>/og-image.png">
+   ```
+2. `views/index.ejs`, `views/pricing.ejs`, `views/partials/lp-niche.ejs`: pass per-page `ogTitle` / `ogDescription` / `ogPath` locals. Niche pages should use the niche-specific headline as the og:title.
+3. Verify `public/` is served by `server.js` (it is). Add `public/og-image.png` placeholder (Master replaces).
+4. Test by pasting the URL into the LinkedIn Post Inspector or Twitter Card Validator after deploy.
+
+**Income relevance:** Indirect but compounding — every distribution action in TODO_MASTER (`/launchposts/`, social, communities) gets ~30–50% more traffic from the same effort.
+
+---
+
+### 37. [GROWTH] [PARTIAL] Annual billing savings copy across all toggles (added 2026-04-26 audit; partial review same audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM-HIGH — INTERNAL_TODO #3 (annual billing) is live; users can pick monthly ($12/mo) or annual ($99/yr). The "Save 31%" badge already ships on the `/pricing` toggle (`views/pricing.ejs:25`) and on the upgrade modal (`views/partials/upgrade-modal.ejs:76`). What's still missing: (a) the "2 months free vs. monthly" framing as a more compelling alternative to the existing "Just $8.25/mo" subhead; (b) the same toggle + badge on `views/settings.ejs` so existing monthly subscribers can switch to annual without going through `/pricing`. Industry data: pricing toggles that explicitly call out the savings convert ~20–30% more annual subscribers vs. toggles that just show the two numbers. Annual subscribers churn at half the rate of monthly, so each annual conversion is worth ~$50 more LTV.
+**Effort:** Very Low (pure copy/layout change)
+**Prerequisites:** None — annual billing #3 is already live.
+
+**Sub-tasks:**
+1. `views/pricing.ejs`: next to the "Annual" tab in the toggle, add a small green badge `Save 18%` (or compute `Math.round((144-99)/144*100)` if the prices are template locals — they are not currently). Below the annual price, add subtext: "$99/year — that's 2 months free vs. monthly". Style as `text-xs text-emerald-600`.
+2. `views/partials/upgrade-modal.ejs`: same badge + subtext on the annual tab. Modal already has the toggle from #3.
+3. `views/settings.ejs`: same badge on the plan toggle in the Billing section.
+4. No backend change. No test needed (pure view change); spot-check the badge appears next to "Annual" only, not "Monthly".
+
+**Income relevance:** Direct — every annual conversion is +$50 LTV vs. monthly. A 25% lift in annual share at current conversion volumes is meaningful MRR.
+
+---
+
+### 38. [GROWTH] Public `/roadmap` page (trust + churn defence) (added 2026-04-26 audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM — when users churn, the #2 reason cited (after price) is "I'm not sure they're actively building this." A public roadmap page with 6–8 upcoming features and rough ETAs is the single highest-leverage trust signal a SaaS can ship — visible on the landing page footer, the pricing page, and inside the upgrade modal as "What's next?". Also pre-empts feature requests ("oh, that's already on the roadmap for next month") and gives existing Pro users a reason to stay subscribed past their first month.
+**Effort:** Low
+**Prerequisites:** None.
+
+**Sub-tasks:**
+1. New `views/roadmap.ejs` extending `partials/head.ejs` + `partials/nav.ejs`. Body: a 3-column Tailwind grid (`md:grid-cols-3`) with cards labelled "Now", "Next", "Later". Each card holds 2–4 bullet items. Hand-curated from INTERNAL_TODO so we don't leak internal task numbers — examples:
+   - **Now (April 2026):** Instant paid notifications · Trial-end nudges · Multi-currency invoices
+   - **Next (May 2026):** Native iOS/Android home-screen install · Late fee automation · CSV export
+   - **Later (Q3 2026):** API + Zapier app · Client portal · Team seats for agencies
+2. New route `routes/roadmap.js` (or 4-line addition to `server.js`): `GET /roadmap` → render the view. No auth, no DB, no plan gate.
+3. `views/index.ejs` footer: add a "Roadmap" link in the existing footer row, between "Pricing" and "Login".
+4. `views/partials/upgrade-modal.ejs`: add a small "See what's coming →" link at the bottom of the modal pointing to `/roadmap`.
+5. Add `/roadmap` to `routes/landing.js` `GET /sitemap.xml` so Google indexes it.
+6. New `tests/roadmap.test.js` (2 tests): `GET /roadmap` returns 200 with the section headings; sitemap includes the new URL.
+7. Lock the file as a Master-curated copy file — every quarter, edit the bullets directly. No CMS, no DB.
+
+**Income relevance:** Reduces churn by 5–10% (industry data on transparent roadmaps). Also a passive marketing asset (every "what's the roadmap?" tweet response can link here instead of typing it out).
+
+---
+
+### U1. [UX] Password reset flow does not exist — login page is a hard dead-end (added 2026-04-26 UX audit) [M]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** HIGH (long-tail) — `views/auth/login.ejs` originally had no "Forgot password?" link; the 2026-04-26 UX audit added a "Email support@quickinvoice.io and we'll reset it for you" line as a stopgap, but every reset is now a manual support-ticket task for Master. Industry data: 8–12% of returning users hit forgot-password in any given month; without a self-serve flow, every one of them is either a support-inbox burden or a churned account. Highest-leverage retention-plumbing fix QuickInvoice is missing.
+**Effort:** Medium
+**Prerequisites:** Email delivery (#13, done) — needs `RESEND_API_KEY` provisioned per TODO_MASTER #18 to actually send.
+
+**Sub-tasks:**
+1. `db/schema.sql`: `ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_token VARCHAR(64); ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_expires_at TIMESTAMP;` Idempotent.
+2. `db.js`: add `setPasswordResetToken(userId, token, expiresAt)`, `getUserByPasswordResetToken(token)` (also checks `expires_at > NOW()`), `clearPasswordResetToken(userId)`, and `updateUserPassword(userId, hash)` helpers.
+3. `routes/auth.js`:
+   - `GET /auth/forgot` → render `views/auth/forgot.ejs` with email input.
+   - `POST /auth/forgot` → look up user by email; ALWAYS return the same flash ("If an account exists for that email, we've sent reset instructions.") — never leak account existence (defence-in-depth on top of the H3 enumeration oracle fix). On match: generate `crypto.randomBytes(32).toString('hex')`, persist with 1-hour expiry, send email with `${APP_URL}/auth/reset?token=...` link via `lib/email.js sendEmail()`. Rate-limit at 3 req/min/IP via existing `middleware/rate-limit.js`.
+   - `GET /auth/reset?token=` → look up user by token + non-expired; render `views/auth/reset.ejs` with new-password input + the token in a hidden field. If no match, render an error view with "This reset link has expired or is invalid. [Request a new one →](/auth/forgot)".
+   - `POST /auth/reset` → validate token, validate new password (8+ chars, same as register), bcrypt-hash, persist, clear the reset token, log the user in (session set), redirect to `/dashboard` with success flash.
+4. `views/auth/login.ejs`: replace the stopgap "Email support" line with a `<a href="/auth/forgot" class="underline">Forgot your password?</a>` link.
+5. `views/auth/forgot.ejs` + `views/auth/reset.ejs`: minimal pages, mirror the existing login/register layout.
+6. New `tests/password-reset.test.js` (6 tests minimum): forgot returns generic flash for unknown email (no enumeration); forgot triggers `sendEmail` with token URL when email matches; reset accepts a valid token; reset rejects an expired token; reset rejects an unknown token; reset clears the token after use (idempotent — same link can't be reused).
+
+**Why not now:** Requires email delivery to be live (RESEND_API_KEY), and the 4 routes + 2 views + DB migration is more than a single-session change. The 2026-04-26 UX audit added a "Email support" stopgap that is honest and prevents the dead-end for now.
+
+---
+
+### U2. [UX] Dashboard empty state does not mention Pro features (added 2026-04-26 UX audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM — `views/dashboard.ejs` empty state (lines 143-152) shows "No invoices yet — Create your first invoice and start getting paid." for users with zero invoices. Free users at this moment are at peak intent (they just signed up) but see no information about what Pro unlocks; they create their first invoice and then might not encounter the Pro upsell until they hit the 3-invoice limit. Adding a subtle "✨ Pro tip: with Pro you can email invoices directly + get paid via Stripe payment link — try free for 7 days" callout below the CTA captures the high-intent activation moment without being pushy.
+**Effort:** Very Low (pure view change)
+**Sub-tasks:**
+1. `views/dashboard.ejs` empty state block (`if (invoices.length === 0)`): below the "Create your first invoice" CTA, add (only for `user.plan === 'free'`):
+   ```html
+   <p class="text-xs text-gray-400 mt-6 max-w-sm mx-auto">
+     ✨ <strong>Pro tip:</strong> with Pro, your invoices auto-generate a Stripe Pay button and clients pay in one click.
+     <a href="/billing/upgrade" class="text-brand-600 underline hover:text-brand-700">Try Pro free for 7 days &rarr;</a>
+   </p>
+   ```
+2. Pro/Business/Agency users see no callout (irrelevant to them).
+3. Wrap in `print:hidden` (defensive — empty dashboards are rarely printed but the print stylesheet should not show CTA chrome).
+4. No test required (pure view change); spot-check renders for Free user empty state and is absent for Pro user empty state.
+**Why not auto-fixed in this audit:** Overlaps thematically with INTERNAL_TODO #15 ("Contextual Pro Upsell Prompts on Locked Features"), which already has dashboard/branding/payment-link upsells in scope. Worth bundling with #15 so the upsell copy stays consistent across all four Free-user surfaces.
+
+---
+
+### 39. [GROWTH] First-invoice seed template on user signup (activation) (added 2026-04-26 audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** HIGH — the dashboard onboarding checklist (#14, done) lifts activation by surfacing the path-to-value, but the actual "create your first invoice" step still drops users at an empty form. Pre-creating a draft "Welcome — your sample invoice" with a fake client (`client_name: 'Acme Co (sample)'`, one line item, $500 total) on signup means the new user lands on a dashboard that already has one row — which lifts the "create" step's completion rate to ~100% instantly and makes step 2 of the onboarding checklist auto-complete. Notion, Linear, and Figma all use this pattern; it's the highest-ROI activation trick in SaaS onboarding playbooks.
+**Effort:** Low
+**Prerequisites:** None.
+
+**Sub-tasks:**
+1. `routes/auth.js POST /register`: after `db.createUser()` succeeds and before redirecting to dashboard, call a new `db.createSampleInvoice(userId)` helper.
+2. `db.js`: add `createSampleInvoice(userId)` — INSERT a draft invoice with: `invoice_number = await getNextInvoiceNumber(userId)`, `client_name = 'Acme Co (sample)'`, `client_email = 'sample@example.com'`, `items = [{description: 'Website redesign', quantity: 1, unit_price: 500}]`, `subtotal/total = 500`, `status = 'draft'`, `due_date = NOW() + INTERVAL '30 days'`. Increment `invoice_count` by 1 (via the existing trigger).
+3. `views/dashboard.ejs`: when a sample invoice exists (`invoice_number ends with -0001 AND client_name = 'Acme Co (sample)'`), render a soft "Sample invoice — edit or delete to start fresh" badge next to it. Style as `bg-amber-50 text-amber-700 text-xs`.
+4. The onboarding checklist's step 2 ("Create your first invoice") flips to ✅ immediately on signup because `invoices.length >= 1`. Step 3 (send) and step 4 (paid) are unaffected — those still require real action.
+5. New `tests/sample-invoice.test.js` (3 tests): registration creates a sample invoice with the right shape; dashboard renders the sample-invoice badge; deleting the sample invoice does not break the onboarding checklist.
+
+**Income relevance:** Activation lift translates directly into Pro upgrades — users who reach "first invoice paid" upgrade at 5–10× the rate of users who never make it past the empty dashboard. The free-plan invoice limit (3) means the sample invoice does count against their quota — a deliberate feature, not a bug, because it puts gentle pressure to either delete the sample or upgrade.
 
 ---
 

@@ -424,6 +424,37 @@ Track replies in a spreadsheet. Follow up once if no reply after 7 days.
 
 ---
 
+### 31. [MARKETING] Activate Stripe Tax in Stripe Dashboard (prerequisite for INTERNAL_TODO #35)
+
+**Impact:** HIGH — INTERNAL_TODO #35 will add `automatic_tax: { enabled: true }` to checkout sessions, gated behind a `STRIPE_AUTOMATIC_TAX_ENABLED=true` env var. Until you activate Stripe Tax in the Dashboard, that env var must stay `false` or checkouts will error. Activating Stripe Tax unlocks the EU/UK/AU/CA freelancer market segment (~30% of global freelancers) who currently can't reasonably upgrade because their VAT/GST isn't being calculated.
+**Action:**
+1. Stripe Dashboard → Settings → Tax → "Activate Stripe Tax". Stripe walks you through a 3-step wizard (origin address, jurisdictions, tax IDs).
+2. Origin address: your registered business address.
+3. Jurisdictions: select the countries/states where you want automatic tax collection. Recommended starter set: US (all states), Canada (all provinces), UK, Australia, EU (all member states).
+4. Once green, set `STRIPE_AUTOMATIC_TAX_ENABLED=true` on the production env. The next checkout session picks it up automatically.
+5. **Pricing:** Stripe Tax is $0.50 per tax-calculated transaction (or 0.5%). Below 250 transactions/month it's free under the Stripe Tax starter plan. At any reasonable scale this is worth orders of magnitude more in unblocked EU revenue than the fee.
+6. **Verification:** open `/billing/upgrade` from a UK IP (or use a UK billing address in test mode). Stripe Checkout should show the price + a "VAT (20%)" line item. The success webhook still fires identically — `automatic_tax` is invisible to QuickInvoice's data model.
+
+---
+
+### 32. [MARKETING] Create promo coupons in Stripe Dashboard (Product Hunt, AppSumo, newsletter sponsorships)
+
+**Impact:** HIGH — INTERNAL_TODO #35 enables `allow_promotion_codes: true` on every Checkout session, which means any coupon you create in the Stripe Dashboard is immediately usable by customers via the "Add promotion code" link on the Stripe Checkout page. This unlocks every coupon-driven distribution channel — Product Hunt launch (`PH50`), AppSumo redemption codes, freelancer newsletter sponsorships (`DESIGNERS20`), and the 100%-off-first-month coupon flagged in [MARKETING] #25 (Agency cold email). Without these coupons created, every distribution post that promises a discount has nothing to redeem.
+**Action:** Pre-create the following coupons in **Stripe Dashboard → Products → Coupons**:
+1. **`PH50`** — 50% off, applies once. Tagged for Product Hunt launch ([MARKETING] #12).
+2. **`DESIGNERS20`** — 20% off forever (recurring). Tagged for designer-focused newsletters ([MARKETING] #20).
+3. **`AGENCY30`** — 30 days free trial extension (100% off, 1 month, redeemable once per customer). Tagged for Agency cold email ([MARKETING] #25).
+4. **`HN30`** — 30% off first 3 months. Tagged for Show HN launch ([MARKETING] #19).
+5. **`REVIEWTHANKS`** — 1 month free, redeemable once. Used to thank G2/Capterra reviewers ([MARKETING] #26).
+6. **`AFFILIATE25`** — Reserved for Rewardful integration ([MARKETING] #18); Rewardful auto-creates per-affiliate coupons but a manual fallback is useful.
+7. **AppSumo redemption** — when AppSumo is approved ([MARKETING] #22), they will issue redemption codes; the autonomous team will need to add an `/redeem` route. For now, no Stripe coupon needed — that's a separate flow.
+
+Each coupon takes ~30 seconds in the Dashboard. Stripe surfaces them automatically on Checkout once `allow_promotion_codes: true` ships from INTERNAL_TODO #35.
+
+**Verification:** open `/billing/upgrade` → Start trial → on the Stripe Checkout page you should now see "Add promotion code" link. Enter `PH50` and the price should drop to $6/mo (50% off $12).
+
+---
+
 ### 30. [MARKETING] Announce "Invoice Paid Instant Notification" Feature on Social
 
 **Impact:** MEDIUM — when INTERNAL_TODO #30 ("Invoice Paid" notification email to freelancer) ships, it is the kind of emotionally resonant micro-feature that goes viral on Twitter/X among freelancers; the single-sentence pitch ("QuickInvoice now emails you the instant your client pays — so you can stop refreshing your bank account") is a self-contained hook that needs no explanation; native video or screenshot of the email in a phone notification tray maximises engagement
@@ -668,6 +699,28 @@ Reviewed all direct runtime dependencies: `express` (MIT), `express-session` (MI
 - **SendGrid / Resend (pending INTERNAL_TODO #13):** transactional email to the user's own clients is within normal ToS. Do not repurpose into marketing blasts without the recipient's explicit opt-in.
 - **Google Search Console / sitemap.xml:** compliant (no scraping, only exposing our own sitemap).
 - **Future Google OAuth (INTERNAL_TODO #17):** Google OAuth brand guidelines require the standard "G" icon rendered per `https://developers.google.com/identity/branding-guidelines` — already noted in that task.
+
+---
+
+## 22. QuickInvoice: paid-notification email — verify after Resend goes live (added 2026-04-26)
+
+INTERNAL_TODO #30 is closed: every Stripe Payment Link checkout now fires a fire-and-forget "you just got paid" email to the freelancer (invoice owner) with the client name, invoice number, and total. **No new env var, no schema migration, no Stripe Dashboard change** — the wiring lives entirely inside the existing `checkout.session.completed` webhook, gated on `session.mode === 'payment'`. Until item 18 (Resend API key) is provisioned, every notification is a logged no-op.
+
+### Verification (after Resend goes live)
+
+1. **Smoke test** — once `RESEND_API_KEY` and `EMAIL_FROM` are set in production:
+   - Log in as a Pro user. Create an invoice with `client_email` set; mark it Sent. The mark-sent flow already creates a Stripe Payment Link.
+   - Open the invoice's "Pay Now" link in an incognito window; pay with Stripe test card `4242 4242 4242 4242`.
+   - Inside ~5 seconds the freelancer's account email should receive: subject `Invoice INV-X was just paid — $Y.YY`, green celebration card, "View invoice X" deep-link button.
+2. **Production log signal** — successful sends are silent. Failures emit one of:
+   - `Paid notification to <email> failed: <reason>` — Resend rejection (check Resend dashboard → Logs).
+   - `Paid notification error: <message>` — SDK throw (network glitch, JSON malformed, etc).
+   - `not_configured` is *suppressed* in the log — when the Resend key is unset, no log spam.
+3. **Reply-to header** — should match the freelancer's `reply_to_email` (if set in `/billing/settings`), otherwise `business_email`, otherwise the registered account email.
+
+### Why this matters (income relevance)
+
+This pairs with [MARKETING] item 30 ("Announce Invoice Paid Instant Notification Feature on Social") — the feature is now shipped and verified, so that announcement is actionable as soon as the first real customer pays. Industry word-of-mouth research: features producing a measurable emotional spike (instant payment notification, milestone alerts) generate 3–5× the share rate of utility features. Each share is one zero-CAC acquisition.
 
 ---
 

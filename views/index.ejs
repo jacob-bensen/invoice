@@ -89,18 +89,20 @@
         <div class="absolute top-4 right-4 bg-white/20 text-xs font-bold px-2 py-1 rounded-full">MOST POPULAR</div>
         <h3 class="text-xl font-bold mb-1">Pro</h3>
         <div class="text-4xl font-extrabold mb-1">$12<span class="text-xl font-normal text-brand-200">/mo</span></div>
-        <p class="text-brand-200 text-sm mb-6">Billed monthly, cancel anytime</p>
+        <p class="text-brand-200 text-sm mb-1">Or $99/year — save 31%</p>
+        <p class="text-brand-200 text-sm mb-6">Cancel anytime</p>
         <ul class="space-y-3 mb-8 text-sm text-brand-100">
           <li class="flex items-center gap-2"><span class="text-white">✓</span> <strong class="text-white">Unlimited</strong> invoices</li>
-          <li class="flex items-center gap-2"><span class="text-white">✓</span> PDF download</li>
-          <li class="flex items-center gap-2"><span class="text-white">✓</span> All invoice fields</li>
-          <li class="flex items-center gap-2"><span class="text-white">✓</span> Payment tracking</li>
+          <li class="flex items-center gap-2"><span class="text-white">✓</span> Stripe payment links — clients pay in one click</li>
+          <li class="flex items-center gap-2"><span class="text-white">✓</span> Email invoices directly to clients</li>
+          <li class="flex items-center gap-2"><span class="text-white">✓</span> Automated payment reminders</li>
           <li class="flex items-center gap-2"><span class="text-white">✓</span> Business branding</li>
           <li class="flex items-center gap-2"><span class="text-white">✓</span> Priority support</li>
         </ul>
         <a href="/auth/register" class="block text-center bg-white text-brand-700 font-bold py-3 rounded-xl hover:bg-brand-50 transition">
-          Start free trial
+          Start 7-day free trial &rarr;
         </a>
+        <p class="text-center text-xs text-brand-200 mt-3">No credit card required</p>
       </div>
     </div>
   </div>
@@ -115,8 +117,17 @@
   </a>
 </section>
 
-<footer class="bg-gray-900 text-gray-400 text-center py-8 text-sm">
-  <p>© <%= new Date().getFullYear() %> QuickInvoice. Built for freelancers.</p>
+<footer class="bg-gray-900 text-gray-400 text-center py-10 text-sm">
+  <nav aria-label="Footer" class="mb-3">
+    <a href="/" class="hover:text-white px-3">Home</a>
+    <span class="text-gray-700">·</span>
+    <a href="#pricing" class="hover:text-white px-3">Pricing</a>
+    <span class="text-gray-700">·</span>
+    <a href="/auth/login" class="hover:text-white px-3">Log in</a>
+    <span class="text-gray-700">·</span>
+    <a href="/auth/register" class="hover:text-white px-3">Sign up free</a>
+  </nav>
+  <p class="text-gray-500">&copy; <%= new Date().getFullYear() %> QuickInvoice. Built for freelancers.</p>
 </footer>
 </body>
 </html>
