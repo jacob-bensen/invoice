@@ -49,6 +49,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS webhook_url TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS reply_to_email VARCHAR(255);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMP;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_dismissed BOOLEAN DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_nudge_sent_at TIMESTAMP;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_reminder_sent_at TIMESTAMP;
 
 -- INTERNAL_TODO H5: widen users.plan CHECK to allow 'business' and 'agency'.

@@ -30,8 +30,9 @@
   <div class="flex flex-wrap gap-3 mb-8">
     <% if (invoice.payment_link_url && user.plan === 'pro') { %>
       <a href="<%= invoice.payment_link_url %>" target="_blank" rel="noopener"
+        title="Open the Stripe payment page your client will see"
         class="bg-green-600 text-white font-semibold px-5 py-2.5 rounded-lg hover:bg-green-700 transition flex items-center gap-2">
-        💳 Pay Now
+        💳 Preview Pay Link
       </a>
     <% } %>
     <a href="/invoices/<%= invoice.id %>/print" target="_blank"

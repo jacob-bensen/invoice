@@ -98,5 +98,14 @@ app.listen(PORT, () => {
     } catch (err) {
       console.error('[reminders] startup failed:', err && err.message);
     }
+
+    try {
+      const { startTrialNudgeJob } = require('./jobs/trial-nudge');
+      const t = startTrialNudgeJob();
+      if (t && t.ok) console.log(`[trial-nudge] scheduled (${t.schedule})`);
+      else console.warn('[trial-nudge] not scheduled:', t && t.reason);
+    } catch (err) {
+      console.error('[trial-nudge] startup failed:', err && err.message);
+    }
   }
 });

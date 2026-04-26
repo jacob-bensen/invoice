@@ -823,3 +823,94 @@ Direct, compounding revenue lift from one ~10-line code change:
 2. **EU/UK/AU/CA market segment.** ~30% of the global freelancer market is outside the US and is required by their tax authorities to display tax-inclusive prices. Stripe Tax automation removes the compliance friction. Combined with the still-open multi-currency support (INTERNAL_TODO #24), this is the EU-launch enabler.
 
 Both are zero-CAC revenue lifts.
+
+---
+
+## 31. QuickInvoice: re-run schema migration for `trial_nudge_sent_at` (added 2026-04-26 PM)
+
+INTERNAL_TODO #29 (Trial End Day-3 Nudge Email) is closed in code. The job is wired into `server.js` and ticks at 10:00 UTC daily once `NODE_ENV !== 'test'`. It depends on a new column `users.trial_nudge_sent_at TIMESTAMP` (idempotent `ALTER TABLE … ADD COLUMN IF NOT EXISTS …` already in `db/schema.sql`).
+
+### Action
+
+A single command on production after the next deploy:
+
+```
+psql $DATABASE_URL -f db/schema.sql
+```
+
+This is the same migration command that previously landed `last_reminder_sent_at`, `trial_ends_at`, `onboarding_dismissed`, `reply_to_email`, and `webhook_url`. The schema file is fully idempotent — re-running it on a populated DB is safe (every change lives behind `IF NOT EXISTS` / `IF EXISTS`). If TODO_MASTER #21 (the `users.plan` CHECK widening) and this one have not yet been run on production, a single `psql -f` execution will land both at once. No downtime.
+
+### Verification
+
+```sql
+SELECT column_name, data_type
+  FROM information_schema.columns
+ WHERE table_name = 'users'
+   AND column_name = 'trial_nudge_sent_at';
+```
+
+Expected output: a single row with `trial_nudge_sent_at | timestamp without time zone`.
+
+To verify the cron is wired (after the next deploy with `NODE_ENV=production`), check the boot logs for:
+
+```
+[trial-nudge] scheduled (0 10 * * *)
+```
+
+If the line reads `[trial-nudge] not scheduled: cron_unavailable`, the `node-cron` dependency didn't install — re-run `npm ci`. If the line is missing entirely, the wiring in `server.js` is bypassed (likely because the dyno is running with `NODE_ENV=test` or the `app.listen` callback didn't fire — check the process manager output).
+
+### Why this matters (income relevance)
+
+This is the highest-leverage trial-cohort conversion action available to the product. Industry benchmarks (Userlist, ConvertKit, ChartMogul) consistently put a single well-timed day-3/4 trial nudge at responsible for 30–50% of trial-to-paid conversion. Without it, modal users who opened the dashboard once and didn't return silently lapse on day 7. With this column in place, every cron tick can stamp the row and prevent a duplicate send — the SQL filter is the source of idempotency. The job is also a clean no-op until the Resend API key from #18 is provisioned (`not_configured` skips the DB stamp), so this migration can land before #18 with no operational risk.
+
+---
+
+## 32. [MARKETING] Stripe App Partner profile listing (added 2026-04-26 PM)
+
+QuickInvoice is a Stripe-connected SaaS that uses Stripe for both subscription billing and invoice Payment Links. Stripe maintains an "App Partner" directory at https://stripe.com/apps where partners can list a profile with screenshots, a description, and a link back to the SaaS. Inclusion does not require a "Stripe App" build (which is the heavier path for embedded apps inside the Stripe Dashboard); the Partner directory accepts any verified Stripe-integrated SaaS.
+
+### Action (Master, ~30 min)
+
+1. Sign up at https://stripe.com/partners with the same Stripe account that processes QuickInvoice subscriptions and Payment Links.
+2. Submit the partner application: business name "QuickInvoice", category "Invoicing & Billing", short description ("Smart invoicing SaaS for freelancers — Pro plan unlocks Stripe Payment Links on every invoice and instant paid-notification emails the moment a client pays"), 3-4 screenshots (the dashboard, an invoice with the Pay Now button, the pricing page).
+3. Wait for verification (typically 5-10 business days; Stripe checks the integrated account and confirms live processing).
+4. Once approved, the listing appears at stripe.com/apps in the Invoicing category with a backlink to `quickinvoice.io` — the backlink alone is high-DA SEO juice (Stripe's domain is one of the strongest in fintech).
+
+### Why this matters (income relevance)
+
+Compounding distribution: every visitor to stripe.com/apps researching invoicing solutions sees QuickInvoice in the listing. Stripe's directory traffic is a high-quality cohort — these are SaaS owners and freelancers who already use Stripe and have credit-card-on-file with a Stripe-related vendor. Conversion rate from Stripe directory traffic is typically 2-3x the cold-traffic baseline. The backlink also lifts overall SEO authority for ranking on "Stripe-integrated invoicing", "Stripe invoice tool", and similar long-tail queries that the niche landing pages (#8) target.
+
+---
+
+## 33. [MARKETING] AppSumo / SaaS Mantra lifetime-deal listing (added 2026-04-26 PM)
+
+AppSumo and SaaS Mantra both run lifetime-deal marketplaces where SaaS founders sell a one-time-payment lifetime license to a tier of their product (typically the equivalent of 1-2 years of normal subscription revenue) in exchange for a large traffic / cash injection plus permanent customer base growth. Typical AppSumo listing for a $9-19/mo SaaS sells a Pro lifetime tier at $49-99 one-time and converts ~$10k-$50k in deal revenue across 4-6 weeks of the deal window.
+
+### Action (Master, ~2-3 hr application + ~2 weeks back-and-forth)
+
+1. Apply at https://sell.appsumo.com (and/or https://saasmantra.com/sellers). Both run a vetting process — they check for: a working product (✓), a paid plan (✓), a Stripe integration (✓), a self-serve signup (✓), and a published roadmap (gated on INTERNAL_TODO #38 — currently open). Ship #38 before applying.
+2. Pre-application: prepare a 60-90 second product walkthrough screencast (sign up → first invoice → mark paid → see the cha-ching email). AppSumo's editorial team uses this to evaluate fit.
+3. Pricing tier: "Pro lifetime" at $49 one-time (≈ 4.5 months of monthly Pro). The lifetime tier should match the existing Pro feature set; the (un-shipped) Business tier is excluded from the lifetime offer to preserve the upsell path.
+4. The deal terms: AppSumo takes 30% of gross deal revenue. SaaS Mantra takes 50% but typically drives 30-50% more units. Run both back-to-back rather than simultaneously.
+5. **Code-side prerequisite (small):** the existing `subscription_status` plumbing already accepts the values we use; for lifetime deals, we'll need a new value `'lifetime'` that bypasses the dunning checks. Add to INTERNAL_TODO as a [S] follow-up — gated on AppSumo acceptance, not the other way round.
+
+### Why this matters (income relevance)
+
+One-time cash injection: typical $10k-$50k in 4-6 weeks. More importantly, ~500-2000 lifetime users become a permanent revenue floor: they don't churn (they paid once and are sticky), they refer their freelancer networks (the cohort is heavy in the indie-hacker/freelancer niche we target), and they generate Stripe Payment Link transaction fee revenue if we ever add a "QuickInvoice take-rate on collected invoices" tier. Caveats: lifetime cohorts have higher support volume per user (~3x); they can compress the price elasticity ceiling because you can't raise lifetime prices later. Plan for 2-4 hours/week of support during the deal window.
+
+---
+
+## 34. [MARKETING] Indie Hackers / Reddit r/SaaS launch posts after Resend goes live (added 2026-04-26 PM)
+
+The Indie Hackers product directory (https://indiehackers.com/products) and r/SaaS subreddit are the two highest-quality founder-cohort distribution channels for an indie-SaaS launch. Both reward genuine builder-narrative posts ("here's how I built Y; here's what I learned"). Typical first-week traffic from a well-pitched IH launch + r/SaaS post is 2k-10k unique visitors, of which 1-3% sign up.
+
+### Action (Master, ~3 hrs writing + ~1 hr engagement)
+
+1. Wait for two prerequisites: (a) `RESEND_API_KEY` provisioned per #18 so email-driven features (invoice send, reminders, paid notification, trial nudge) actually fire end-to-end during launch traffic; (b) public roadmap (INTERNAL_TODO #38) live so the inevitable "what's next?" comments have a single linkable answer.
+2. Write the IH launch post: 600-800 words, structured as: (1) the problem ("freelancers waste 4-6 hrs/mo chasing late invoices"), (2) the build journey (concrete numbers — "shipped in 6 weeks; 23 commits this month; 28 test files"), (3) the differentiators (Stripe Payment Links + instant paid notification + 7-day no-card trial), (4) the ask ("would love feedback / what feature would you want next"). Link to pricing.
+3. r/SaaS post: 200-300 words, lighter tone, focus on one concrete numbers-backed insight from the build (e.g. "what shipping a 7-day no-card trial did to our trial-to-paid conversion") with the product mention as context, not the headline. Reddit's algorithm rewards educational content and demotes promotional posts.
+4. Follow-up: respond to every comment within 4 hours of posting for the first 24 hrs. The IH product page also accepts permanent reviews / ratings; a 4-5 star average on the IH directory is a long-tail conversion lever (every prospect who searches "QuickInvoice review" finds it).
+
+### Why this matters (income relevance)
+
+Two-week traffic spike of 2k-10k uniques lifts the funnel by 50-200 trial signups (at typical SaaS landing-page conversion). At 30-50% trial-to-paid (per #29 above) → 20-100 new Pro subscribers → +$180-$900/mo MRR per launch. The IH product directory listing also stays as a permanent SEO surface — the listing ranks well for "QuickInvoice" branded searches and captures every subsequent prospect who tries to validate the product before signing up.

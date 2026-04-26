@@ -323,6 +323,61 @@ function testDashboardOmitsCardWhenLocalUndefined() {
     'dashboard must not render checklist when onboarding local is missing');
 }
 
+// ---------- Empty-state Pro tip (CHANGELOG 2026-04-26 / closes U2) -------
+// The dashboard empty state shows a Free-only "Pro tip" callout below the
+// "Create your first invoice" CTA. This is income-critical conversion copy:
+// it's the peak-intent moment (just signed up, no invoices yet) and the only
+// surface where free users see a Pro upsell *before* hitting the 3-invoice
+// hard wall. A regression that hides the tip silently kills conversion;
+// regressions that show it to Pro/Business/Agency users degrade trust.
+
+function testEmptyStateProTipShownToFreeUsers() {
+  const html = renderDashboard({
+    invoices: [],
+    user: { plan: 'free', invoice_count: 0, subscription_status: null }
+  });
+  assert.match(html, /Pro tip:/, 'Free user empty state must include the Pro tip');
+  assert.match(html, /Try Pro free for 7 days/,
+    'Pro tip must include the "Try Pro free for 7 days" CTA copy');
+  assert.match(html, /href=["']\/billing\/upgrade["']/,
+    'Pro tip CTA must link to /billing/upgrade');
+  // Stripe Pay button language is the actual differentiator surfaced — verify
+  // we don't silently soften the value prop.
+  assert.match(html, /Stripe Pay button/,
+    'Pro tip must reference the Stripe Pay button (the concrete Pro feature)');
+}
+
+function testEmptyStateProTipHiddenForPaidPlans() {
+  for (const plan of ['pro', 'business', 'agency']) {
+    const html = renderDashboard({
+      invoices: [],
+      user: { plan, invoice_count: 0, subscription_status: 'active' }
+    });
+    assert.ok(!/Pro tip:/.test(html),
+      `${plan} users must NOT see the Pro tip in the empty state (already paid)`);
+    assert.ok(!/Try Pro free for 7 days/.test(html),
+      `${plan} users must NOT see the trial CTA in the empty state`);
+  }
+}
+
+function testEmptyStateProTipHiddenWhenInvoicesExist() {
+  // The Pro tip is bound to the "no invoices yet" empty state — once a Free
+  // user creates an invoice, the empty-state container is replaced with the
+  // stats grid, and the upsell shifts to the contextual upgrade modal /
+  // pricing page. Defence-in-depth check that the regex doesn't match
+  // anywhere outside the empty-state branch.
+  const html = renderDashboard({
+    invoices: [{
+      id: 1, invoice_number: 'INV-1', client_name: 'Acme', total: '100.00',
+      status: 'draft', issued_date: new Date(), due_date: new Date(),
+      created_at: new Date(), payment_link_url: null
+    }],
+    user: { plan: 'free', invoice_count: 1, subscription_status: null }
+  });
+  assert.ok(!/Pro tip:/.test(html),
+    'Pro tip must not appear once the user has any invoices (empty-state branch is gone)');
+}
+
 async function testDismissHandlerCallsDbAndRedirects() {
   dismissCalls.length = 0;
   const app = buildDismissApp({ id: 42, email: 'u@test.io', plan: 'free' });
@@ -393,6 +448,9 @@ async function run() {
     ['dashboard.ejs: omits checklist once all 4 steps done', testDashboardOmitsCardWhenAllDone],
     ['dashboard.ejs: omits checklist when onboarding is null (dismissed)', testDashboardOmitsCardWhenDismissed],
     ['dashboard.ejs: omits checklist when local is undefined', testDashboardOmitsCardWhenLocalUndefined],
+    ['empty state: Pro tip shown to Free users (conversion copy)', testEmptyStateProTipShownToFreeUsers],
+    ['empty state: Pro tip hidden for pro/business/agency users', testEmptyStateProTipHiddenForPaidPlans],
+    ['empty state: Pro tip hidden when invoices exist', testEmptyStateProTipHiddenWhenInvoicesExist],
     ['POST /onboarding/dismiss: persists + flags session + redirects', testDismissHandlerCallsDbAndRedirects],
     ['onboardingDismissHandler: unauth → /auth/login, no DB call', testDismissHandlerUnauthenticatedRedirectsToLogin],
     ['onboardingDismissHandler: swallows DB errors and still redirects', testDismissHandlerSwallowsDbErrors]

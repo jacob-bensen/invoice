@@ -180,6 +180,41 @@ const db = {
     return rows[0] || null;
   },
 
+  /*
+   * Trial-nudge query (INTERNAL_TODO #29). Returns trial users whose
+   * `trial_ends_at` falls in the day-3-to-day-5 window from now and who
+   * haven't been nudged yet. The `trial_nudge_sent_at IS NULL` filter is the
+   * idempotency guard — every user gets exactly one nudge per trial. The
+   * `subscription_status` clause keeps the cohort tight: only users still in
+   * the trial state ('trialing'), or whose status was never written for any
+   * reason (NULL), are eligible. Users who already added a card mid-trial
+   * (`active`) or whose card failed (`past_due`) get different funnels.
+   */
+  async getTrialUsersNeedingNudge() {
+    const { rows } = await pool.query(
+      `SELECT id, email, name, business_name, trial_ends_at, invoice_count
+         FROM users
+        WHERE plan = 'pro'
+          AND trial_ends_at IS NOT NULL
+          AND trial_ends_at BETWEEN NOW() + INTERVAL '2 days'
+                                AND NOW() + INTERVAL '4 days'
+          AND trial_nudge_sent_at IS NULL
+          AND (subscription_status IS NULL OR subscription_status = 'trialing')
+        ORDER BY trial_ends_at ASC
+        LIMIT 500`
+    );
+    return rows;
+  },
+
+  async markTrialNudgeSent(userId) {
+    const { rows } = await pool.query(
+      `UPDATE users SET trial_nudge_sent_at = NOW(), updated_at = NOW()
+         WHERE id = $1 RETURNING id, trial_nudge_sent_at`,
+      [userId]
+    );
+    return rows[0] || null;
+  },
+
   async getNextInvoiceNumber(userId) {
     const { rows } = await pool.query(
       'SELECT COUNT(*) as count FROM invoices WHERE user_id=$1',

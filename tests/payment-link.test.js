@@ -302,8 +302,14 @@ async function testInvoiceViewRendersPayButtonForPro() {
     flash: null
   }, { views: [path.join(__dirname, '..', 'views')] });
 
-  assert.ok(html.includes('💳 Pay Now'), 'Pay Now button must render');
-  assert.ok(html.includes('https://buy.stripe.com/test_42'), 'Payment URL must appear in view');
+  // The owner-facing button is labelled "Preview Pay Link" (clarifies it's
+  // the page the *client* will see — not a self-payment action). The
+  // payment URL also appears in the dedicated "Payment Link" copy-card
+  // further down the page; the test asserts both surfaces.
+  assert.ok(html.includes('💳 Preview Pay Link'),
+    'Preview Pay Link button must render for Pro user with a payment_link_url');
+  assert.ok(html.includes('https://buy.stripe.com/test_42'),
+    'Payment URL must appear in view (action button href + copy card)');
 }
 
 async function testInvoiceViewHidesPayButtonForFree() {

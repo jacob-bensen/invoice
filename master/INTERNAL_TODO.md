@@ -1,6 +1,8 @@
 # QuickInvoice + InvoiceFlow — Internal Growth TODO
 
-> **Audited:** 2026-04-26 PM — Task Optimizer pass (second of the day). This cycle's deltas: (a) #35 closed (Stripe `allow_promotion_codes` + `automatic_tax` env-gated, Master action moved to TODO_MASTER #30). (b) U2 closed (dashboard empty-state Pro tip live for free users). (c) 5 new [GROWTH] items appended (#40 Recurring Invoices for QuickInvoice — parity with InvoiceFlow P12; #41 Stripe Payment Link bank/ACH + SEPA; #42 Custom invoice numbering scheme; #43 Public read-only invoice URL `/i/:token`; #44 In-app "✨ What's new" widget). (d) Open Task Index re-prioritised. Prior DONE items remain inline-tagged (kept for context; will be archived in a future cleanup once the file exceeds 1.5k lines — currently at ~1300 lines). Re-priority order remains: [TEST-FAILURE] (none) > income-critical features > [UX] items that affect conversion > [HEALTH] > [GROWTH] > [BLOCKED]. Complexity tags: [XS] < 30 min · [S] < 2 hrs · [M] 2–8 hrs · [L] > 8 hrs. Duplicates checked against TODO.md and TODO_MASTER.md; INTERNAL_TODO #37 partially overlaps with already-shipped pricing-page badge — see #37 entry for partial-done status.
+> **Audited:** 2026-04-26 PM (third pass of the day) — Task Optimizer cycle. This cycle's deltas: (a) **#29 closed** — Trial End Day-3 Nudge Email shipped end-to-end (column + db helpers + `jobs/trial-nudge.js` + cron wiring + 17 tests; Master action #31 added for the schema migration). (b) **5 new [GROWTH] items appended (#45-#49)** from this cycle's Growth Strategist pass: #45 last-day urgency banner (XS), #48 "Powered by" public-invoice badge (XS, gated on #43), #46 pricing exit-intent modal (S), #47 monthly→annual prompt (S), #49 first-paid-invoice celebration (S). (c) **2 new [UX] items added (U3, U4)** from this cycle's UX audit: U3 authed-pages global footer (gated on #28 legal pages), U4 invoice-view "Preview Pay Link" / copy-card consolidation. (d) **3 [TEST] additions** — onboarding test suite picked up 3 dashboard empty-state Pro tip assertions (was 0; now 3). (e) **3 new [MARKETING] items in TODO_MASTER (#32-#34)** — Stripe App Partner profile, AppSumo / SaaS Mantra lifetime-deal listing (gated on #38 roadmap), Indie Hackers / r/SaaS launch posts (gated on #18 Resend + #38 roadmap). (f) **#37 partial-done status revisited** — `/pricing` toggle, `/settings` toggle, and upgrade-modal all already carry the "Save 31%" badge; the original spec called for a "2 months free" subtext line, but at current pricing ($12/mo × 12 = $144 vs $99/yr saves $45 ≈ 3.75 months free) that copy would be inaccurate. Re-tagged below as `[LIKELY DONE - verify]` pending a concrete-savings subtext decision rather than the mathematically-wrong "2 months free" framing.
+>
+> Prior DONE items remain inline-tagged (kept for context; **archive trigger remains 1.5k lines** — currently at ~1.42k lines, growing this cycle by ~110 net). Priority order: **[TEST-FAILURE] (none) > income-critical features > [UX] items that affect conversion > [HEALTH] > [GROWTH] > [BLOCKED]**. Complexity tags: [XS] < 30 min · [S] < 2 hrs · [M] 2–8 hrs · [L] > 8 hrs. Duplicates checked against `TODO.md` and `TODO_MASTER.md` — none introduced this cycle.
 
 Do not duplicate items already in `TODO.md`. App labels indicate which codebase each task applies to.
 
@@ -10,14 +12,20 @@ Do not duplicate items already in `TODO.md`. App labels indicate which codebase 
 
 **[UX] — affects conversion, fix sooner**
 - **U1** [UX] [M] — Self-serve password reset flow (stopgap shipped; full flow blocked on Resend key + 4 routes + 2 views + tests)
+- **U3** [UX] [S] — Authed pages have no global footer with pricing / settings / log-out / legal links. Once #28 (legal pages) ships, build a `views/partials/footer.ejs` and include it on `dashboard`, `invoice-view`, `invoice-form`, `settings`, and the auth pages. Currently the only footer lives on the public `/` index page. Authed users navigating from the dashboard cannot easily revisit `/pricing` or find the "Forgot password" stopgap without using browser navigation.
+- **U4** [UX] [S] — The "Pay Now" / "Preview Pay Link" action button on `views/invoice-view.ejs` is structurally redundant with the dedicated "Payment Link" copy-link card further down the page. Consolidate to one surface: keep the copy-link card (which is the freelancer's actual need — getting the URL to send to a client) and remove the button, OR move the URL-copy card into the action bar so it lives next to the other invoice actions. Currently relabeled the button (2026-04-26 PM audit) to make intent clearer, but the long-term fix is consolidation.
   *(U2 closed 2026-04-26 — Pro tip live on dashboard empty state)*
 
 **Income-critical [GROWTH]**
-- **#29** [XS] — Trial End Day-3 Nudge Email (HIGH; all prereqs done, drops trial→paid by 30–50% if missing)
 - **#41** [XS] — Stripe Payment Link bank/ACH + SEPA (HIGH margin lift on $300+ invoices; 1 env var)
 - **#36** [XS] — Open Graph + Twitter Card metadata (MED-HIGH; compounds across every share)
-- **#37** [XS] — Annual "save 31%" badge on pricing toggle (PARTIAL — badge already on `/pricing` + modal; only `/settings` toggle + "2 months free" subtext missing)
+- **#37** [XS] [LIKELY DONE - verify] — Annual "Save 31%" badge: badge live on `/pricing`, `/settings`, and upgrade-modal. Original "2 months free" subtext is mathematically wrong at current $12/mo pricing (saves ~3.75 months). Replace plan: surface a concrete "saves $45/year" line on the annual button or close as DONE.
 - **#44** [XS] — In-app "✨ What's new" changelog widget in nav (retention)
+- **#45** [XS] — Last-day urgency dashboard banner for trial users (HIGH; pairs with #29)
+- **#48** [XS] — "Powered by QuickInvoice" badge on public invoice URLs (compounds with invoice volume; gated on #43)
+- **#46** [S] — Pricing page exit-intent modal (MED-HIGH; 5-15% bounce-cohort recovery)
+- **#47** [S] — Monthly→Annual upgrade prompt on dashboard (HIGH retention/LTV)
+- **#49** [S] — First-paid-invoice celebration banner + referral email
 - **#15** [S] — Contextual Pro Upsell Prompts on Locked Features (MED-HIGH; bundle U2)
 - **#31** [XS] — Free-Plan Invoice Limit Progress Bar on Dashboard
 - **#39** [S] — First-invoice seed template on signup (HIGH activation lift)
@@ -50,6 +58,7 @@ Do not duplicate items already in `TODO.md`. App labels indicate which codebase 
 - **H9** [S] — `bcrypt@^5` → `^6` (transitive `tar` advisories; install-time only, runtime exposure nil)
 - **H11** [S] — Pagination on `getInvoicesByUser` (bundle with #14 next dashboard touch)
 - **H16** [XS] — `resend@^6.12.2` → patched svix when `^6.13` lands (transitive `uuid` advisory; runtime exposure nil)
+- **H17** [XS] — Partial index `idx_users_trial_nudge_pending ON users(trial_ends_at) WHERE trial_nudge_sent_at IS NULL` to back the new trial-nudge query (bundle with next `users` migration)
 
 **[BLOCKED] / Long-running** (kept at bottom — see BLOCKED section below)
 - **#11** [L] — Churn Win-Back Email Sequence (UNBLOCKED — needs RESEND_API_KEY in prod)
@@ -282,6 +291,20 @@ New `tests/plan-check-constraint.test.js` adds 7 static-lint assertions: (1) the
 **Fix:** `npm i resend@^6.1.3` (semver downgrade — note the audit fix's recommended version is *lower* than current because resend `6.2.0+` pulled in the affected svix range). Confirm `lib/email.js` `sendEmail` happy path still works against the downgraded SDK (the public `Resend(...).emails.send({...})` API has been stable across the 6.x line). Or: wait for `resend@^6.13` which is expected to pin the patched `svix@>=1.92`.
 **Effort:** Very Low (bump + run full `npm test` + manual mark-sent smoke).
 **Why not auto-fixed in this audit:** Same reasoning as H9 (bcrypt) — Resend is the email transport for invoice send + reminder emails (the Pro feature). A regression in the SDK's send API is income-relevant. Worth a dedicated commit so any rate-limit or payload-shape change can be cleanly attributed. Runtime exposure is nil; this is install-time/library-hygiene only.
+
+---
+
+### H17. [HEALTH] Partial index for trial-nudge query (added 2026-04-26 PM audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** TRIVIAL (today) / LOW (future) — the new `db.getTrialUsersNeedingNudge()` runs once per day via the trial-nudge cron tick. Its predicate `(plan='pro' AND trial_ends_at BETWEEN NOW()+2d AND NOW()+4d AND trial_nudge_sent_at IS NULL AND (subscription_status IS NULL OR ='trialing'))` currently runs as a sequential scan on `users`. At today's user-table scale the scan is sub-millisecond; once the user table grows past ~5k rows the scan cost becomes noticeable on the daily cron (still single-digit ms — not a user-visible problem until ~50k rows or a multi-tenant table-bloat scenario).
+**Effort:** Very Low
+**Sub-tasks:**
+1. Add to `db/schema.sql`: `CREATE INDEX IF NOT EXISTS idx_users_trial_nudge_pending ON users(trial_ends_at) WHERE trial_nudge_sent_at IS NULL;` — partial index, only covers rows that haven't been nudged yet (which is the SQL filter that benefits from the index). Idempotent.
+2. Bundle with the next migration that touches `users` so a single `psql -f db/schema.sql` lands all queued schema changes. Candidates: #47's `billing_cycle` column, #49's `first_paid_invoice_at` column.
+3. No tests needed — the query semantics are unchanged; this is purely an index hint for the planner.
+
+**Why not now:** The cron runs once a day, even a 10ms full-scan is not a user-visible problem. Bundling with the next column-add minimises Master deploy steps.
 
 ---
 
@@ -825,18 +848,41 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
 
 ---
 
-### 29. [GROWTH] Trial End Day-3 Nudge Email [XS]
+### 29. [DONE 2026-04-26 PM] [GROWTH] Trial End Day-3 Nudge Email [XS]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** HIGH — the single highest-leverage conversion action available for trial users; industry benchmarks show a day-3/4 nudge email is responsible for 30–50% of trial-to-paid conversions; without it, users who signed up but never added a card silently lapse on day 7
 **Effort:** Very Low
 **Prerequisites:** Email delivery (#13, done) + node-cron (#16, done) + `trial_ends_at` column (#19, done) — all prerequisites are live
 
-**Sub-tasks:**
-1. `db.js`: add `getTrialUsersNeedingNudge()` — single SELECT: `WHERE trial_ends_at BETWEEN NOW() + INTERVAL '2 days' AND NOW() + INTERVAL '4 days' AND plan = 'pro'`. Join on `subscription_status` if available; the intent is to catch users still in trial who haven't added a card. Add `trial_nudge_sent_at TIMESTAMP` column to `users` via idempotent `ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_nudge_sent_at TIMESTAMP;` in `db/schema.sql`. Filter on `trial_nudge_sent_at IS NULL` so each user gets exactly one nudge.
-2. `jobs/reminders.js` or new `jobs/trial-nudge.js`: add a second `node-cron` job (`'0 10 * * *'`, 10:00 UTC daily). For each row from step 1: call `sendEmail()` with subject `"Your Pro trial ends in N days — don't lose your data"` and body listing their active Pro features (payment links, auto-reminders, custom branding), a count of invoices they've created in the trial, and a single CTA button `"Keep Pro → Add payment method"` pointing to `/billing/portal`. Stamp `trial_nudge_sent_at = NOW()` on success. On `not_configured`, skip stamp so the nudge fires on the next tick once Resend is live.
-3. `server.js`: register the new job with the same `NODE_ENV !== 'test'` guard.
-4. Tests in `tests/trial-nudge.test.js` (4 tests): user with trial ending in 3 days → email sent + stamped; user already nudged (`trial_nudge_sent_at IS NOT NULL`) → skipped; user whose trial already expired → skipped; `not_configured` → not stamped so next run retries.
+**Resolution (2026-04-26 PM):** Implemented end-to-end as the highest-priority `[XS]` income-critical task in this cycle.
+
+1. **Schema.** Added idempotent `ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_nudge_sent_at TIMESTAMP;` to `db/schema.sql` immediately after the `onboarding_dismissed` column. Column is nullable — a user is "needs nudge" iff `trial_nudge_sent_at IS NULL`. This is the single source of idempotency: the SQL filter prevents the same user receiving two nudges across cron ticks even if rows are queried twice.
+
+2. **`db.js` query helpers.** Added `getTrialUsersNeedingNudge()` — single SELECT against `users` with five conditions: `plan = 'pro'`, `trial_ends_at IS NOT NULL`, `trial_ends_at BETWEEN NOW() + INTERVAL '2 days' AND NOW() + INTERVAL '4 days'`, `trial_nudge_sent_at IS NULL`, and `(subscription_status IS NULL OR subscription_status = 'trialing')`. The last clause is a tightness guard — users who already added a card mid-trial (`subscription_status = 'active'`) get a different funnel; users whose card failed (`past_due`) get the dunning banner; only true trialing users get the nudge. `LIMIT 500` matches `getOverdueInvoicesForReminders` so a runaway query never sweeps the whole table. Returns the columns needed for the email body: `id, email, name, business_name, trial_ends_at, invoice_count`. Also added `markTrialNudgeSent(userId)` — single UPDATE that sets `trial_nudge_sent_at = NOW()` and `updated_at = NOW()` (matches the `markInvoiceReminderSent` shape so a future test can swap them with one helper).
+
+3. **`jobs/trial-nudge.js`** (new file, 220 lines, mirrors `jobs/reminders.js` patterns line-for-line). Exports a pure orchestrator `processTrialNudges({ db, sendEmail, now, log })` that returns `{ found, sent, skipped, errors, notConfigured }`. Three pure formatters:
+   - `buildTrialNudgeSubject(user, now)` → `"Your Pro trial ends in N days — don't lose your data"`. Singular/plural correct (`1 day` vs `3 days`).
+   - `buildTrialNudgeHtml(user, now)` — full HTML email with a personalised greeting, day-count headline, four-bullet Pro features list (Stripe Payment Links, auto-reminders, custom branding, instant paid notifications), an invoice-count line that conditionally renders ("you've already created **3 invoices**" — omitted entirely when count is 0 to avoid the awkward "0 invoices" copy), and a "Keep Pro → Add payment method" CTA button. CTA href is `${APP_URL}/dashboard` — the dashboard's existing trial banner POSTs to `/billing/portal` (cookie-authed), so we route through the dashboard rather than emailing a link to a POST endpoint that would 405. CTA gracefully omits when `APP_URL` is unset (no broken-link buttons in dev).
+   - `buildTrialNudgeText(user, now)` — plain-text fallback with the same content shape.
+   All user-controlled fields (`name`, `business_name`) flow through `escapeHtml` so a `<script>` payload in name cannot XSS Resend's preview pane or the webmail client. The orchestrator follows the same hygiene contract as `processOverdueReminders`: `not_configured` → no stamp + retry next tick; thrown error → counts an error, batch continues, no stamp; success → stamp via `markTrialNudgeSent`.
+   `startTrialNudgeJob(opts)` schedules the orchestrator at `'0 10 * * *'` (10:00 UTC daily — staggered one hour after the reminder job at `'0 9 * * *'` so the two cron ticks don't pile DB load). `NODE_ENV=test` guard refuses to schedule during the test run unless `force:true` is passed (lets the wiring test inject a fake cron). Failures to require `node-cron` are logged and swallowed so a broken cron never takes down the web process.
+
+4. **`server.js`** — registered the new job alongside `startReminderJob` inside the existing `NODE_ENV !== 'test'` block. Each startup logs either `[trial-nudge] scheduled (0 10 * * *)` or `[trial-nudge] not scheduled: <reason>` so deploy logs surface the wiring health without a separate health endpoint.
+
+5. **`tests/trial-nudge.test.js`** (new file, 17 assertions — spec called for 4; 13 added for coverage parity with `tests/reminders.test.js`):
+   - **Pure formatters (7):** subject plural/singular; HTML escapes hostile name; HTML invoice-count plural/singular/zero-omit; HTML CTA omits gracefully when `APP_URL` unset; text fallback content; `daysLeft` arithmetic across same-day, expired, future, and garbage inputs.
+   - **Orchestrator (6):** happy path (send + stamp); skips users without email; `not_configured` → no stamp + counts notConfigured; thrown send error → counts error + batch continues; idempotency across runs (filter respects stamp); top-level query failure → `errors=1` summary, no throw.
+   - **Cron wiring (3):** `NODE_ENV=test` blocks scheduling; cron tick wires `processTrialNudges` correctly with injected fake db + email; double start refused.
+   - **Spec compliance (1):** `DEFAULT_SCHEDULE === '0 10 * * *'` (10:00 UTC daily).
+
+   Wired into `package.json` `test` script after `tests/reminders.test.js`. Full suite: **28 test files, 0 failures.**
+
+**[Master action]** Two:
+- **Schema migration on prod**: `psql $DATABASE_URL -f db/schema.sql`. Idempotent, safe to run on a populated DB. Added to TODO_MASTER.
+- **(Existing, no change)** Provision `RESEND_API_KEY` per TODO_MASTER #18. Until provisioned, the trial-nudge job runs cleanly as a no-op (`not_configured` skips the DB stamp so the nudge fires on the first tick after the key lands).
+
+**Income relevance:** This is the single highest-leverage conversion action available for the trial cohort. Industry benchmarks (Userlist, ConvertKit, ChartMogul) consistently put a single well-timed day-3/4 trial nudge at responsible for **30-50%** of trial-to-paid conversion. Without it, the modal users — those who signed up, opened the dashboard, never came back — silently lapse on day 7 with zero recovery. With it, the nudge interrupts that lapse with a feature-list reminder and a one-click path back into the funnel. At $9/mo Pro, recovering even 10 trial users a month is +$108/mo MRR; at the upper bound of the benchmark range and a higher trial cohort, this single email can be the largest single MRR contributor in the funnel.
 
 ---
 
@@ -1184,6 +1230,93 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 4. New `tests/whats-new.test.js` (3 tests): nav renders the `✨` link for logged-in users; popover lists at least 4 bullet items; popover does NOT render for anon visitors (the partial is gated on `locals.user`).
 
 **Income relevance:** Retention. Continuously visible "active development" signal counters the #2 cancellation reason ("not sure they're building this") that the roadmap (#38) addresses for prospects. The Pro-tier per-user LTV is high enough that every month of churn-deferral pays back the ~30 minutes of curation per release.
+
+---
+
+### 45. [GROWTH] Last-day urgency dashboard banner for trial users (added 2026-04-26 PM audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** HIGH — pairs with #29 (just-shipped trial nudge email) to give the trial cohort a *second* recovery surface on the most-converting day. The dashboard already renders a blue informational banner when `days_left_in_trial > 0`. On day 1, switch the banner to red/urgent styling with re-pointed copy: "Last day! Add a card before midnight to keep Pro features." Industry data on cart-abandonment urgency styling: same CTA + same copy with a red urgency frame lifts click-through 25-40% over the calm/blue equivalent.
+**Effort:** Very Low
+**Prerequisites:** None — `days_left_in_trial` is already computed and passed to the dashboard.
+
+**Sub-tasks:**
+1. `views/dashboard.ejs`: where the existing trial banner renders, branch on `days_left_in_trial === 1`. When true, swap container classes from `bg-blue-50 border-blue-200 text-blue-800` to `bg-red-50 border-red-200 text-red-800` and update copy to `"Last day of your Pro trial — add a card before midnight to keep Pro features."`. Keep the same `Add payment method` POST-to-`/billing/portal` form so the user's path is unchanged.
+2. Optional emoji prefix `⏰` to bump visual scan weight (use sparingly — one emoji per banner).
+3. Add 1 test in `tests/trial.test.js`: render dashboard with `days_left_in_trial: 1` → assert banner contains `"Last day"` and `bg-red-50` class. The existing 5-day singular/plural tests already cover the calm-state copy.
+
+**Income relevance:** Direct — the last-day cohort is the highest-converting slice of the trial funnel (users with intent who haven't pulled the trigger yet). Visual urgency on the same surface that the email nudge (#29) sends them to is a one-line change with measurable per-conversion lift.
+
+---
+
+### 46. [GROWTH] Pricing page exit-intent modal (added 2026-04-26 PM audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MED-HIGH — pricing page is the single highest-bounce page in the funnel. Industry benchmarks (Sumo, OptinMonster) show exit-intent modals lift checkout conversion 5-15% on the same audience. The "no card, 7-day free trial" hook is unusually strong for this format because the offer is reciprocal — visitor gives nothing, gets full Pro access. One-time per-session via a `bounceShown` flag in `localStorage` so we never annoy a returning shopper.
+**Effort:** Low
+**Prerequisites:** None.
+
+**Sub-tasks:**
+1. `views/pricing.ejs`: add an Alpine.js `x-data` block that listens for `mouseleave` on `document.documentElement` with `event.clientY < 10` (cursor exiting via top of the viewport — the canonical exit-intent signal). On trigger AND `localStorage.getItem('qi_bounce_shown') !== 'true'`, set a state flag to true.
+2. Modal contents: 3-line copy ("Wait — try Pro for 7 days, no credit card needed. Cancel anytime.") + a primary `Start 7-day free trial` button that POSTs to `/billing/create-checkout` (same handler as the regular CTA — re-uses existing checkout flow including the trial gate from #19) + a `No thanks` text link that closes the modal and stamps `localStorage`.
+3. Bind `Escape` key + clicking the backdrop to close + stamp.
+4. Mobile: skip — `mouseleave` is desktop-only by definition; on mobile the regular pricing CTA carries the funnel.
+5. New `tests/exit-intent.test.js` (3 tests): pricing renders the modal-trigger script tag; modal copy contains "no credit card" and the trial-CTA copy; localStorage gate key is `qi_bounce_shown` (regression guard so a key rename doesn't silently break the one-time-per-session contract).
+
+**Income relevance:** Direct — every visitor who exits the pricing page without converting is a lost trial signup. A 5% recovery rate on the bounce cohort at, say, 1000 monthly pricing visitors = 50 extra trial starts/mo, of which 30-50% convert per #29's logic, giving 15-25 extra paying customers/mo at $9 = +$135-225/mo MRR for one Alpine.js block.
+
+---
+
+### 47. [GROWTH] Monthly→Annual upgrade prompt on dashboard for monthly Pro users (added 2026-04-26 PM audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** HIGH — annual subscribers churn at roughly half the rate of monthly subscribers (industry benchmarks across SaaS). Every monthly→annual conversion roughly doubles the cohort's LTV. Current funnel only surfaces the annual price on `/pricing` (which Pro users rarely revisit) and on `/settings`'s plan section. A small dismissible dashboard banner showing "you'd save $9/year on annual" when `subscription_status='active'` and `billing_cycle='monthly'` brings the upsell to the surface with the highest engagement frequency.
+**Effort:** Low
+**Prerequisites:** Annual price (#3, done) is live.
+
+**Sub-tasks:**
+1. `db.js`: add `billing_cycle` column to users table — `ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_cycle VARCHAR(20);`. Default null. Set to `'monthly'` or `'annual'` in the `checkout.session.completed` webhook based on the price_id selected (already passed via `metadata.billing_cycle`).
+2. `routes/invoices.js` `GET /` (dashboard): when `user.plan === 'pro'` AND `user.subscription_status === 'active'` AND `user.billing_cycle === 'monthly'` AND `user.annual_prompt_dismissed_at IS NULL` (or older than 60 days), pass `show_annual_prompt: true` to the template.
+3. `views/dashboard.ejs`: small dismissible banner above the invoices grid: "💡 Switch to annual and save $9/year. You're on monthly Pro at $108/yr; annual is $99 and you keep everything." with two buttons: `Switch to annual` (POSTs to `/billing/create-checkout` with `billing_cycle=annual` — Stripe Checkout handles the proration) and `Dismiss` (POSTs to `/billing/dismiss-annual-prompt` which stamps `annual_prompt_dismissed_at = NOW()`).
+4. New route `POST /billing/dismiss-annual-prompt` in `routes/billing.js`: stamps the column, redirects back to `/dashboard`, CSRF-protected.
+5. New `tests/annual-prompt.test.js` (4 tests): banner shown for monthly Pro user; banner hidden for annual Pro user; banner hidden after dismissal; `POST /billing/dismiss-annual-prompt` writes the column and redirects.
+
+**Income relevance:** This is the single highest-leverage retention action for the existing Pro cohort. Doubling Pro LTV via halved churn is worth more than acquiring a new Pro subscriber from cold traffic. At a 5-10% conversion rate from this banner per quarter, every 100 monthly subscribers shifts ~5-10 to annual = $5-10/customer prepaid + halved future churn risk.
+
+---
+
+### 48. [GROWTH] Embeddable "Powered by QuickInvoice" badge on public invoice URLs (added 2026-04-26 PM audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM (compounding) — once #43 (public read-only invoice URL `/i/:token`) lands, every invoice paid via that surface becomes a passive acquisition touchpoint. A discreet "Sent with QuickInvoice ↗" footer with a `?ref=invoice-pay` UTM tracks attribution. Free-plan invoices already get this on the PDF (#5); the public web version of the same PDF gets a sibling treatment. Compounds with every Pro user's invoice volume — one Pro user sending 20 invoices/mo = 20 unique-eyeball acquisition surfaces.
+**Effort:** Very Low
+**Prerequisites:** #43 (public invoice URL) must ship first.
+
+**Sub-tasks:**
+1. `views/invoice-public.ejs`: footer block — `<footer><p>Sent with <a href="${APP_URL}/?ref=invoice-pay">QuickInvoice</a> · The fastest way to invoice clients.</p></footer>`. Same subtle gray styling as the existing PDF footer.
+2. Pro plan toggle: render this footer **only** when `invoice.user.plan === 'free'`. Pro/Business/Agency users get a clean unbranded public page (footer removal is a Pro feature, mirroring #5's PDF treatment).
+3. Server-side: `routes/landing.js` GET `/`: when `req.query.ref === 'invoice-pay'`, store the ref in the session so the eventual signup attributes correctly even after the user clicks around.
+4. New 1-test addition to `tests/public-invoice.test.js` (or new `tests/invoice-public-badge.test.js` if #43 lands first): public view for free user contains the "Sent with QuickInvoice" footer + ref=invoice-pay; public view for Pro user does NOT.
+
+**Income relevance:** Compounding — the badge cost is one EJS partial; the lift accrues with every invoice volume tick. This is the same passive acquisition mechanic that drove Mailchimp, Calendly, and Typeform's growth in their early years.
+
+---
+
+### 49. [GROWTH] First-paid-invoice celebration banner + email (added 2026-04-26 PM audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM — peak emotional moment in the user's relationship with the product is the first invoice they collect on. The instant paid-notification email (#30) handles the cha-ching for *every* paid invoice; this is a *one-shot* milestone celebration on the lifetime first paid invoice with a different ask: "share QuickInvoice with another freelancer." Industry benchmarks: peak-emotion-moment referral asks convert 5-10x better than steady-state asks.
+**Effort:** Low
+**Prerequisites:** Email delivery (#13, done).
+
+**Sub-tasks:**
+1. `db/schema.sql`: `ALTER TABLE users ADD COLUMN IF NOT EXISTS first_paid_invoice_at TIMESTAMP;`. Stamped on the first transition of any invoice for this user from non-paid to paid.
+2. `routes/billing.js` `checkout.session.completed` payment-link branch (where the paid notification already fires): after `markInvoicePaidByPaymentLinkId`, check if `owner.first_paid_invoice_at IS NULL`. If so, stamp it AND send a one-shot email "🎉 You just got your first paid invoice — congrats!" with two paragraphs: (1) celebrate the milestone + the amount, (2) "Know another freelancer who hates invoicing? Share QuickInvoice with them and we'll give you both 1 month free." and a sharable referral URL `${APP_URL}/?ref=u<user_id>`.
+3. `views/dashboard.ejs`: when `user.first_paid_invoice_at` is within the last 7 days, render a small dismissible green banner: "🎉 You just collected your first payment! [Share with another freelancer →]" linking to a `/share` page.
+4. New `views/share.ejs` (single static page): one-line copy + the referral URL with copy-to-clipboard button + Twitter/X / LinkedIn share buttons with pre-filled copy.
+5. New `tests/first-paid-celebration.test.js` (4 tests): first paid invoice for a user → `first_paid_invoice_at` stamped + celebration email sent; second paid invoice for the same user → stamp NOT updated, no email; dashboard banner renders for users within the 7-day window; dashboard banner hidden for older users / new users.
+
+**Income relevance:** Indirect-acquisition — a single referral signup that converts to Pro is +$108-$108/yr ARR for ~zero CAC. The peak-emotional-moment gating (first paid invoice, not first invoice created) is what makes this materially better than a steady-state referral nag.
 
 ---
 

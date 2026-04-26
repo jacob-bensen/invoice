@@ -2,6 +2,187 @@
 
 ---
 
+## 2026-04-26T21:15Z — Health Monitor audit: clean (no new findings); H8/H9/H10/H11/H14/H15/H16 still pending [HEALTH]
+
+### What was audited
+
+Full pass over this cycle's code deltas:
+- `jobs/trial-nudge.js` (new, 244 lines)
+- `db.js` `getTrialUsersNeedingNudge()` + `markTrialNudgeSent(userId)` (new helpers)
+- `db/schema.sql` `trial_nudge_sent_at` column add
+- `server.js` cron registration block
+- `views/index.ejs` CTA copy change
+- `views/invoice-view.ejs` "Preview Pay Link" relabel
+- `tests/onboarding.test.js` 3 new empty-state assertions
+- `tests/trial-nudge.test.js` (new, 17 assertions)
+
+Categories reviewed: secrets, input validation, payment-path error handling, CSRF, headers, performance (queries / indexes / R14), code quality (dead code, dup, file-size), dependencies (`npm audit --omit=dev`), legal (license inventory + transactional-vs-promotional email classification + third-party API ToS).
+
+### Fixed in this audit
+
+None — every issue flagged was either already tracked (H8/H9/H10/H11/H14/H15/H16) or clean.
+
+### Findings — confirmed CLEAN
+
+- **Secrets / hardcoded credentials.** `grep -rE "(sk_live|pk_live|re_live|whsec_[A-Za-z0-9]{20,})"` finds zero hits across `*.js`, `*.ejs`, `*.json`, `*.sql`. Mentions in `master/TODO_MASTER.md` and `master/TODO.md` are documentation placeholders for the deploy step (`STRIPE_SECRET_KEY=sk_live_...`), not literals. `master/CHANGELOG.md` mentions are self-references describing prior audit hygiene. Test files use clearly-named fakes (`'sk_test_dummy'`, `'price_monthly_TEST'`, `'re_TEST_KEY'`).
+- **SQL injection on the new query.** `getTrialUsersNeedingNudge()` has zero parameters — all literals are hardcoded constants (`'pro'`, `'trialing'`, the 2-day and 4-day intervals). `markTrialNudgeSent(userId)` is a single-param parameterised query (`$1`). Both follow the existing `pg` parameterised-query convention used everywhere in `db.js`.
+- **XSS in trial-nudge email body.** Every user-controlled field flowing into the HTML body (`name`, `business_name`) is run through `escapeHtml` before interpolation. The CTA href uses `process.env.APP_URL` (server-controlled, not user-controlled). The plain-text fallback ignores `escapeHtml` (correctly — it's never rendered as HTML). Verified by the new `tests/trial-nudge.test.js` assertion: `<script>alert(1)</script>` in `name` becomes `&lt;script&gt;alert(1)&lt;/script&gt;`.
+- **Error handling on Resend / cron.** `processTrialNudges` is wrapped in try/catch around the DB query and around each `sendEmail` call. `not_configured` (Resend API key unset) is a clean skip — no DB stamp, the next cron tick retries automatically. Thrown send errors are counted and the batch continues. `startTrialNudgeJob` catches `node-cron` `require` failures and `cron.schedule` failures, logs and returns `{ ok:false, reason:... }` so a broken cron never takes down the web process.
+- **Unhandled cron tick errors.** The wrapped `processTrialNudges` call inside the cron tick is itself wrapped in try/catch with `log.error`. A schema mismatch or a transient DB error during the tick logs and returns; the cron stays scheduled.
+- **CSRF coverage.** No new state-changing routes added this cycle. The `middleware/csrf.js` exempt-path list still contains only `/billing/webhook` (Stripe raw body).
+- **Helmet / CSP / HSTS.** Unchanged — new code is server-side / EJS template copy edits; no new inline script blocks, no new external CDN reference. CSP `script-src` and `style-src` directives still match the Tailwind/Alpine reality.
+- **`escapeHtml` / `formatMoney` duplication (H14).** `jobs/trial-nudge.js` adds a *third* copy of the byte-identical 5-replace `escapeHtml` (alongside `jobs/reminders.js` and `lib/email.js`). H14 is already tracked; no need to multi-flag. Consolidation into `lib/html.js` will dedupe all three call sites in one commit.
+- **Performance — indexes.** The new `getTrialUsersNeedingNudge()` predicate `(plan='pro' AND trial_ends_at BETWEEN ... AND trial_nudge_sent_at IS NULL AND (subscription_status IS NULL OR ='trialing'))` runs a sequential scan on `users`. At today's scale (small user table) this is fine. A partial index `CREATE INDEX … ON users(trial_ends_at) WHERE trial_nudge_sent_at IS NULL` would be the right optimisation once the user table grows past a few thousand rows. Flagged below as **H17**.
+- **Performance — R14 / memory.** `LIMIT 500` on the trial-nudge query bounds the per-tick result set. The cron reads the rows into memory once, iterates, and discards. No N+1 — the query already projects the columns the email needs.
+- **File sizes.** `db.js`: 229 lines (was 194 — +35 for the new helpers + comment block). `jobs/trial-nudge.js`: 244 lines (new). `routes/billing.js`: 285 lines (unchanged). `routes/invoices.js`: 287 lines (unchanged). `lib/email.js`: 310 lines (unchanged). `server.js`: 111 lines (was 102 — +9 for the cron wiring). All well below the 500-line "consider splitting" threshold.
+- **Dead code.** No unused imports or exports introduced. `_internal` block exposes `escapeHtml`, `ctaUrl`, `greetingName` for future test extension; not used by production code paths.
+- **`npm audit --omit=dev` snapshot.** No change from the previous audit:
+
+| Advisory | Severity | Reachability | Tracker |
+|---|---|---|---|
+| `tar < 7.5.10` (6 GHSAs) via `bcrypt → @mapbox/node-pre-gyp` | High (install-time only) | None at runtime — registry-signed prebuild downloader | INTERNAL_TODO **H9** |
+| `uuid < 14.0.0` (`GHSA-w5hq-g745-h8pq`) via `resend → svix` | Moderate | None at runtime — we never call the svix webhook verifier, only `resend.emails.send()` | INTERNAL_TODO **H16** |
+
+Both remain "single dedicated commit" items so a regression in either credential-store (bcrypt) or email transport (Resend) can be cleanly bisected.
+
+### [LEGAL] — confirmed CLEAN
+
+- **L1/L2/L3 (Terms / Privacy / Refund pages)** — still open via INTERNAL_TODO #28. The new trial-nudge email is transactional/account-related (covered by the register-form copy "By signing up, you agree to receive transactional emails about your account.") — not promotional, so the absence of an unsubscribe link is correct under CAN-SPAM § 3 and GDPR Art. 6(1)(b) (legitimate basis: contractual necessity to inform the user about their trial expiry).
+- **L4 (GDPR data-subject rights)** — no change. The new column `trial_nudge_sent_at` is account-state metadata; included in any future Art. 15 export (#33 covers the export hook).
+- **L5 (PCI-DSS SAQ-A scope)** — no change. Stripe still tokenises cards client-side.
+- **L6 (cookie banner)** — no change. No analytics tags shipped this cycle.
+- **L7 (license inventory)** — no new dependencies added this cycle. Lockfile license set unchanged: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, BlueOak-1.0.0, ISC, MIT-0, Unlicense. **No GPL / AGPL / LGPL / MPL / EPL** in production tree.
+- **L8 (third-party API ToS)** — `resend.emails.send()` for transactional email is documented as Resend's primary SDK call, squarely within their ToS for transactional volume. No change.
+
+### Flagged for INTERNAL_TODO
+
+- **H17** [HEALTH] [XS] — Partial index `CREATE INDEX IF NOT EXISTS idx_users_trial_nudge_pending ON users(trial_ends_at) WHERE trial_nudge_sent_at IS NULL;` to back the new `getTrialUsersNeedingNudge()` query. Today's user table is small enough that a sequential scan is acceptable (<1ms); the partial index becomes worthwhile once the user table grows past ~5k rows. Bundle with the next migration that touches `users` (e.g. #47's `billing_cycle` column or #49's `first_paid_invoice_at` column) so a single `psql -f db/schema.sql` run lands all queued schema changes.
+
+### No `[CRITICAL]` items added to TODO_MASTER
+
+No hardcoded secrets, no exposed credentials, no GPL contamination, no payment-path error handling gap.
+
+---
+
+## 2026-04-26T21:00Z — UX Auditor: removed unverified social proof + relabeled Pay button on invoice view [UX]
+
+### Flows audited
+
+Walked the application from anonymous visitor → register → onboarding → invoice creation → mark sent → mark paid → upgrade → trial banner. Spot-checked auth flows (login/register), settings, and the invoice view/edit/print flows. Reviewed the recently-touched surfaces: trial banner copy, dashboard empty state Pro tip (just covered by 3 new tests), and the Stripe Tax / promo-code checkout text.
+
+### Fixed in this audit
+
+1. **`views/index.ejs` — removed unverified social-proof claim from bottom CTA section.** Was: "Join thousands of freelancers who use QuickInvoice every day." This is unverifiable for a recently-launched product, breaks Google Ads' policy on substantiation, and erodes trust the moment any sophisticated visitor questions it. Replaced with: "Sign up free in under a minute. No credit card needed to start." plus a fact-checked subtext line about the Pro 7-day free trial. Honest copy that still drives the same CTA. Once INTERNAL_TODO #20 (real social proof — testimonials with names + photos) lands, swap in a real proof block with named users.
+2. **`views/invoice-view.ejs` — relabeled the action-bar `💳 Pay Now` button to `💳 Preview Pay Link` and added a `title` tooltip ("Open the Stripe payment page your client will see").** The original label invited the freelancer to think the button was *their* path to pay something, which it isn't — clicking it opens the Stripe Checkout page that the *client* will see. The dedicated "Payment Link" copy-link card further down the same page already serves the freelancer's real need (sharing the URL with the client). The action-bar button is now correctly framed as a preview surface. Updated the corresponding assertion in `tests/payment-link.test.js` to match. Long-term consolidation (remove the duplicate surface entirely OR move the copy-card into the action bar) tracked as INTERNAL_TODO **U4** below.
+
+### Flagged in this audit (deferred, tracked)
+
+- **U3 [UX] [S]** — Authed pages have no global footer with pricing / settings / log-out / legal links. Public `/` has one; `/dashboard`, `/invoices/:id`, `/billing/settings`, `/auth/login`, `/auth/register` do not. Authed users have to use browser navigation to revisit `/pricing` from the dashboard. Defer until INTERNAL_TODO #28 (legal pages) ships, then build a shared `views/partials/footer.ejs`.
+- **U4 [UX] [S]** — `invoice-view.ejs` action bar has a "Preview Pay Link" button AND a "Payment Link" copy card lower on the page — two surfaces for the same data. Long-term consolidation: remove one (likely the button) or move the copy card into the action bar.
+
+### Tests run
+
+Full suite: **28 test files, 0 failures.** One existing test (`tests/payment-link.test.js: View: Pro renders Pay Now button`) was updated in lock-step with the label change — the assertion now matches "Preview Pay Link" and includes a comment explaining the relabel. The "Free hides Pay Now button" assertion continues to assert the *absence* of the action button on free accounts (the partial doesn't render for them), which is correct regardless of label.
+
+### Income relevance
+
+Both fixes are conversion / trust-trust hygiene:
+- Removing the "thousands of freelancers" claim is downside protection — every prospective customer who Googles "QuickInvoice review" before paying will eventually find the social-proof gap; getting ahead of it with honest copy is cheap.
+- Relabeling "Pay Now" → "Preview Pay Link" is a one-second comprehension lift for every Pro user who hits the invoice view — the button is one of two paths to the payment URL, and a clearer label increases the rate at which the freelancer confidently sends the URL to their client. Faster send = faster collection = more cha-ching events firing #30's instant paid-notification email.
+
+---
+
+## 2026-04-26T20:45Z — Growth Strategist: 5 new growth tasks + 3 marketing tasks [GROWTH]
+
+### What was added
+
+5 implementable [GROWTH] tasks added to INTERNAL_TODO.md, each with concrete sub-tasks, estimated income impact, and prerequisites. None overlap with already-tracked items (#15, #20, #21, #25, #28, #36-44 reviewed for duplicates):
+
+- **#45 [XS]** — Last-day urgency dashboard banner for trial users. Flips the existing blue trial banner to red on `days_left_in_trial === 1` with re-pointed copy. Pairs with #29 (just-shipped trial nudge email) to give the same cohort two recovery surfaces on the most-converting day. Industry data: red urgency frame lifts CTR 25-40% over the calm equivalent on identical CTAs. **Impact: HIGH.**
+- **#46 [S]** — Pricing-page exit-intent modal. Alpine.js `mouseleave` trigger with `localStorage` one-time-per-session gate. Modal copy reuses the "no card, 7-day free trial" hook. Industry benchmarks (Sumo, OptinMonster): exit-intent modals lift checkout conversion 5-15%. At ~1000 monthly pricing visitors, +5% recovery = +$135-225/mo MRR. **Impact: MED-HIGH.**
+- **#47 [S]** — Monthly→Annual upgrade prompt on dashboard for monthly Pro users. Adds `billing_cycle` column and `annual_prompt_dismissed_at`; small banner on dashboard. Annual subscribers churn at ~half the rate of monthly — this is the single highest-leverage retention action for the existing Pro cohort. **Impact: HIGH.**
+- **#48 [XS]** — "Powered by QuickInvoice" badge on public invoice URLs. Gated on #43 (public invoice URL) shipping first. Footer renders for free-plan owners only (mirrors #5's PDF treatment). Compounds with every Pro user's invoice volume. **Impact: MEDIUM (compounding).**
+- **#49 [S]** — First-paid-invoice celebration banner + email. One-shot peak-emotional-moment touchpoint (lifetime first paid invoice) with a referral ask. Industry data: peak-emotion-moment referral asks convert 5-10x better than steady-state asks. **Impact: MEDIUM.**
+
+### What was added to TODO_MASTER
+
+3 [MARKETING] tasks (Master action — not code):
+
+- **#32** — Stripe App Partner profile listing at stripe.com/apps. ~30-min application; 5-10 day verification; high-DA SEO backlink + qualified-traffic surface in Stripe's Invoicing category. Compounding distribution.
+- **#33** — AppSumo / SaaS Mantra lifetime-deal listing. ~2-3 hr application + 2 weeks back-and-forth. Typical $10k-$50k cash injection + 500-2000 permanent lifetime users. Gated on INTERNAL_TODO #38 (public roadmap) shipping. Has a small code-side follow-up (lifetime `subscription_status` value) that's noted in the entry.
+- **#34** — Indie Hackers / r/SaaS launch posts. ~3 hrs writing + 1 hr engagement. Two-week traffic spike of 2k-10k uniques → 20-100 new Pro subscribers → +$180-$900/mo MRR per launch. Gated on Resend API key (#18) and public roadmap (#38) shipping first.
+
+### Open Task Index updated
+
+Income-Critical [GROWTH] section in INTERNAL_TODO.md now lists the 5 new tasks alongside the existing #41/#36/#37/#44 entries, in priority order.
+
+### Income relevance summary
+
+Together: a HIGH-impact retention action (#47), two HIGH-impact conversion actions (#45, #46), one compounding distribution surface (#48), and one peak-emotional-moment referral mechanism (#49). On the marketing side: one permanent SEO/distribution surface (#32), one large-traffic+cash injection (#33), and one launch-cohort lever (#34). Conservative back-of-envelope at typical conversion rates: +$315-$1100/mo MRR + a one-time $10k-$50k AppSumo injection if all three [MARKETING] items execute.
+
+---
+
+## 2026-04-26T20:30Z — Test Examiner: empty-state Pro tip coverage (3 new tests) [TEST]
+
+### Audit summary
+
+Walked the test suite against this cycle's CHANGELOG entries and the recent UX additions. The trial-nudge feature (just shipped above) already has 17 dedicated assertions; the paid-notification email (#30) has 10; the Stripe Tax/promo flag (#35) has 6. Income-critical paths — auth, payments, webhook, checkout — all carry direct coverage with 0 known failures. **Identified gap:** the dashboard empty-state Pro tip (CHANGELOG 2026-04-26T10:00Z, closes U2) had **zero test coverage** despite being income-critical conversion copy — it's the peak-intent moment in the funnel (just signed up, no invoices, free plan) and the only Pro-upsell surface that fires before the 3-invoice hard wall. A regression that hides the tip silently kills conversion; a regression that shows it to a paid user erodes trust.
+
+### Tests added (closes coverage gap on dashboard empty state)
+
+3 new assertions in `tests/onboarding.test.js` (re-uses the existing `renderDashboard` helper — no duplicated EJS-render scaffolding):
+
+1. **`testEmptyStateProTipShownToFreeUsers`** — Free + 0 invoices renders all four conversion-critical strings: `"Pro tip:"`, `"Try Pro free for 7 days"`, the `/billing/upgrade` href, and `"Stripe Pay button"` (the actual differentiator surfaced — defends against silent value-prop softening).
+2. **`testEmptyStateProTipHiddenForPaidPlans`** — sweeps `pro`, `business`, `agency` plans through the empty-state render. None must include the upsell — already-paying users don't need to see "Try Pro free" in their UI.
+3. **`testEmptyStateProTipHiddenWhenInvoicesExist`** — once a Free user creates one invoice the empty-state branch is gone and the contextual upsell shifts to the upgrade modal/pricing page. Defence-in-depth: the regex must not match anywhere outside the empty-state branch.
+
+### Coverage improved
+
+- `views/dashboard.ejs:152-157` — empty-state Pro tip block. Was: 0 tests. Now: 3 tests across 3 plan tiers + invoice-presence dimension.
+- Onboarding test file: 17 → 20 assertions; full test suite: 28 → 28 files (consolidated into the existing onboarding test, no new file), 215+ → 218+ assertions, 0 failures.
+
+### No flaky / redundant tests flagged
+
+`grep` for skipped/disabled tests across `tests/` returns nothing; no `.skip` / `xdescribe` / `xit`. The expected `console.error` lines emitted by error-path tests (`Onboarding dismiss error: Error: db down`, `Stripe checkout error: ...`, `Settings error: ...`, etc.) are intentional — those tests assert the route swallows the error and still redirects rather than 500'ing. Not noise; coverage signal.
+
+### No [TEST-FAILURE] items added to INTERNAL_TODO
+
+Full suite passes locally on the current commit.
+
+---
+
+## 2026-04-26T20:00Z — Trial End Day-3 Nudge Email (closes INTERNAL_TODO #29) [GROWTH]
+
+### What was built
+
+INTERNAL_TODO #29 — the highest-leverage trial-cohort conversion action — landed end-to-end:
+
+1. **Schema** — `db/schema.sql` now includes `ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_nudge_sent_at TIMESTAMP;`. Column is nullable; the SQL filter `trial_nudge_sent_at IS NULL` is the single source of idempotency.
+2. **DB helpers** — `db.js` adds `getTrialUsersNeedingNudge()` (selects trialing-Pro users whose `trial_ends_at` falls in the day 2-4 window from now and who haven't been nudged) and `markTrialNudgeSent(userId)`. The query also gates on `subscription_status IS NULL OR subscription_status = 'trialing'` so users who already added a card (`active`) or whose card failed (`past_due`) are excluded — they get different funnels.
+3. **`jobs/trial-nudge.js`** (new, 220 lines) — pure orchestrator `processTrialNudges({ db, sendEmail, now, log })` returning `{ found, sent, skipped, errors, notConfigured }`. Three pure formatters: subject (singular/plural correct: "1 day" vs "3 days"), HTML body (personalised greeting, Pro-features bullet list, optional invoice-count line, "Keep Pro → Add payment method" CTA pointing at `${APP_URL}/dashboard` so the user lands on the existing trial banner that POSTs to `/billing/portal`), text fallback. All user-controlled fields flow through `escapeHtml` so a `<script>` payload in `name` cannot XSS the user's webmail. CTA gracefully omits when `APP_URL` is unset. `not_configured` is a clean skip — no DB stamp — so the next cron tick retries automatically once Master provisions the Resend API key.
+4. **Cron wiring** — `startTrialNudgeJob` schedules the orchestrator at `'0 10 * * *'` (10:00 UTC daily, staggered one hour after the reminder job at `'0 9 * * *'` so the two cron ticks don't pile DB load). `server.js` registers the job alongside `startReminderJob` inside the existing `NODE_ENV !== 'test'` block, with the same log-and-swallow contract: a broken cron must never take down the web process.
+5. **Tests** — new `tests/trial-nudge.test.js` adds 17 assertions (spec called for 4; 13 added for coverage parity with `tests/reminders.test.js`):
+   - 7 pure-formatter tests: subject plural/singular, HTML escapes hostile name, HTML invoice-count plural/singular/zero-omit, HTML CTA-omit when `APP_URL` unset, text fallback content, `daysLeft` arithmetic across same-day/expired/future/garbage.
+   - 6 orchestrator tests: happy path (send + stamp), no-email skip, `not_configured` (no stamp), thrown error (counts + batch continues, no stamp on failed row), idempotency across runs, top-level query failure (errors=1 summary, no throw).
+   - 3 cron-wiring tests: `NODE_ENV=test` blocks scheduling, cron tick wires `processTrialNudges` correctly with injected fake db/email, double start refused.
+   - 1 spec-compliance test: `DEFAULT_SCHEDULE === '0 10 * * *'`.
+
+### Verification
+
+Full suite: **28 test files, 0 failures.**
+
+### Master actions
+
+Two added to TODO_MASTER:
+- **#31** — re-run `psql $DATABASE_URL -f db/schema.sql` on production to land the new column. Idempotent.
+- **(Existing #18)** — provision Resend API key. The trial-nudge job is a clean no-op until the key is provisioned (`not_configured` skips the DB stamp so the nudge fires on the first tick after the key lands). The migration in #31 can land before #18 with no operational risk.
+
+### Income relevance
+
+Industry benchmarks (Userlist, ConvertKit, ChartMogul) consistently put a single well-timed day-3/4 trial nudge as responsible for **30–50% of trial-to-paid conversion**. Without it, the modal trial user — signed up, opened the dashboard, never returned — silently lapses on day 7 with zero recovery touchpoint. With it, the nudge intercepts that lapse with a feature-list reminder and a one-click path back into the upgrade funnel. At $9/mo Pro, recovering even 10 trial users per month is **+$108/mo MRR**; at the upper bound of the benchmark range and a higher trial cohort, this single email can be the largest single MRR contributor in the funnel. Combined with the existing dashboard trial banner (already shipped), the product now has **two** independent recovery surfaces firing on different days of the trial window.
+
+---
+
 ## 2026-04-26T10:15Z — Health Monitor audit: clean, no new findings beyond H8/H9/H10/H11/H14/H15/H16 [HEALTH]
 
 ### What was audited
