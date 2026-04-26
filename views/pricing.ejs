@@ -57,10 +57,14 @@
       <div class="text-4xl font-extrabold mb-1" x-show="cycle === 'annual'" x-cloak>
         $99<span class="text-xl font-normal text-brand-200">/yr</span>
       </div>
-      <p class="text-brand-200 text-sm mb-6">
+      <p class="text-brand-200 text-sm mb-1">
         <span x-show="cycle === 'monthly'">Billed monthly · Cancel anytime</span>
-        <span x-show="cycle === 'annual'" x-cloak>Billed yearly · Just $8.25/mo · Cancel anytime</span>
+        <span x-show="cycle === 'annual'" x-cloak>Just $8.25/mo · billed yearly · cancel anytime</span>
       </p>
+      <p class="text-emerald-200 text-xs font-semibold mb-6" x-show="cycle === 'annual'" x-cloak>
+        Save $45/year vs. monthly
+      </p>
+      <p class="text-brand-200 text-sm mb-6" x-show="cycle === 'monthly'">&nbsp;</p>
       <ul class="space-y-3 text-sm text-brand-100 mb-8">
         <li class="flex items-center gap-2"><span class="text-white font-bold">✓</span> <strong class="text-white">Unlimited</strong> invoices</li>
         <li class="flex items-center gap-2"><span class="text-white">✓</span> PDF download</li>

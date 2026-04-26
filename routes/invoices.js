@@ -2,7 +2,10 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { db } = require('../db');
 const { requireAuth } = require('../middleware/auth');
-const { createInvoicePaymentLink } = require('../lib/stripe-payment-link');
+const stripePaymentLinkLib = require('../lib/stripe-payment-link');
+const { createInvoicePaymentLink } = stripePaymentLinkLib;
+// Test stubs may omit parsePaymentMethods — fall back to card-only.
+const parsePaymentMethods = stripePaymentLinkLib.parsePaymentMethods || (() => ['card']);
 const { firePaidWebhook, buildPaidPayload } = require('../lib/outbound-webhook');
 const { sendInvoiceEmail } = require('../lib/email');
 
@@ -141,7 +144,14 @@ router.get('/:id', requireAuth, async (req, res) => {
     const user = await db.getUserById(req.session.user.id);
     const flash = req.session.flash;
     delete req.session.flash;
-    res.render('invoice-view', { title: `Invoice ${invoice.invoice_number}`, invoice, user, flash });
+    const paymentMethods = parsePaymentMethods(process.env.STRIPE_PAYMENT_METHODS);
+    res.render('invoice-view', {
+      title: `Invoice ${invoice.invoice_number}`,
+      invoice,
+      user,
+      flash,
+      paymentMethods
+    });
   } catch (err) {
     console.error(err);
     res.redirect('/dashboard');

@@ -914,3 +914,65 @@ The Indie Hackers product directory (https://indiehackers.com/products) and r/Sa
 ### Why this matters (income relevance)
 
 Two-week traffic spike of 2k-10k uniques lifts the funnel by 50-200 trial signups (at typical SaaS landing-page conversion). At 30-50% trial-to-paid (per #29 above) → 20-100 new Pro subscribers → +$180-$900/mo MRR per launch. The IH product directory listing also stays as a permanent SEO surface — the listing ranks well for "QuickInvoice" branded searches and captures every subsequent prospect who tries to validate the product before signing up.
+
+---
+
+## 35. QuickInvoice: enable bank-debit payment methods on Stripe Payment Links (added 2026-04-26 PM)
+
+INTERNAL_TODO #41 shipped the code-side wiring for low-fee bank-debit Payment Link methods (ACH, SEPA, BECS, BACS, ACSS). The new env var `STRIPE_PAYMENT_METHODS` is read by `lib/stripe-payment-link.js` and forwarded as `payment_method_types` to `stripe.paymentLinks.create()`. Default stays `card` only — the deploy is reversible and safe to release before activating any new methods in Stripe.
+
+### Action (Master, ~3-5 min per method)
+
+1. In Stripe Dashboard → **Settings → Payments → Payment methods**, enable each method you want offered:
+   - **ACH Direct Debit** (US bank transfer): 0.8% capped at **$5** vs. cards at 2.9% + $0.30 — saves the freelancer **~$53 per $2,000 invoice**.
+   - **SEPA Direct Debit** (EU): 0.8% capped at **€5**.
+   - **BECS Direct Debit** (AU) / **BACS Direct Debit** (UK) / **ACSS Debit** (Canada): similar margin profile in their respective regions.
+   No Stripe review required — instant activation per method.
+2. On the deployed app, set the env var to the comma-separated list of activated methods. Safe values:
+   ```
+   STRIPE_PAYMENT_METHODS=card,us_bank_account,sepa_debit
+   ```
+   Unknown values are silently dropped by `parsePaymentMethods()`; an empty/invalid value falls back to `['card']` so Stripe never receives an empty array.
+3. Redeploy. Next Pro user who marks an invoice `sent` gets a Payment Link that surfaces all enabled methods on the Stripe-hosted page. The invoice-view template's "Clients can pay via X" tooltip auto-updates to reflect the activated methods.
+4. (Optional) Note that ACH/SEPA settle in 3-5 business days vs. card's instant authorisation. The freelancer-facing UI already says "Stripe Payment Link" without promising instant settlement; if you want to surface settlement-time copy, INTERNAL_TODO can pick that up as a follow-up.
+
+### Why this matters (income relevance)
+
+Two compounding effects on the existing Pro cohort:
+- **Margin lift.** Every invoice ≥$300 that the client pays via ACH/SEPA instead of card saves the freelancer 1-2% in fees they currently absorb. On a typical $1500 retainer invoice, the savings is ~$30 per invoice. This is direct freelancer-side value the freelancer feels every month — the kind of "this tool just paid for itself" moment that drives Pro retention.
+- **Higher conversion on B2B invoices.** Many AP departments prefer ACH for their books (paper trail + lower bank fees). Industry data: B2B invoices with bank-transfer enabled show 5-8% higher payment-completion rates than card-only. Combined with the instant paid-notification email (#30), this also feeds the cha-ching word-of-mouth loop.
+
+---
+
+## 36. [MARKETING] Free "Invoice Generator" lead-magnet landing page link-building (added 2026-04-26 PM-2)
+
+**Impact:** MEDIUM-HIGH (long-tail SEO + backlink building) — the existing `/invoice-generator` and `/invoice-template/<niche>` landing pages are content marketing assets that target high-intent keywords ("freelance designer invoice template", etc.). To rank, they need backlinks. The single highest-leverage outreach channel is to small-business / freelancer roundup posts: Medium and Substack bloggers regularly write "Top 10 invoice templates for freelancers in 2026" listicles that include 5-10 outbound links to template generators. Getting QuickInvoice listed in just 5-10 of these listicles is worth more domain authority than a Product Hunt launch and lasts indefinitely.
+
+### Action (Master, ~3-4 hrs identification + ~1 hr per outreach)
+
+1. Search Google for: `"invoice template" "freelance" 2025 OR 2026 -site:quickinvoice.io`. Filter to results from past 12 months. Identify 15-20 listicle-style posts on Medium / Substack / freelancer-blog domains (Upwork blog, Fiverr Workspace, Bonsai blog, Freshbooks blog are too large to reach; target solo bloggers and mid-size sites).
+2. For each post, find the author's contact email or Twitter / X DM handle. Send a short personalised note: "Hi [name], saw your great post on freelance invoice templates. We just shipped QuickInvoice, a free invoice generator with built-in Stripe payment links — would love to be considered for the list if you ever update it. Here's a screenshot: [link]." No ask for payment, no pressure. Track responses in a simple spreadsheet.
+3. For posts where the author lets readers submit tools (often via a "submit your tool" form or `add@` email), submit through that channel instead of cold email.
+4. Track replies for 4 weeks; about 20-30% of cold outreach to small bloggers converts to a backlink. 5 successful backlinks at DA 20-40 is enough to lift the niche pages from page 2-3 to page 1 for their target keywords.
+
+### Why this matters (income relevance)
+
+Page-1 organic ranking on a freelancer-niche query is worth ~50-200 visits/month per query at zero CAC. With 6 niche pages live (more after #25 ships), that's 300-1,200 monthly organic visitors compounding indefinitely. At a 2% landing → trial conversion and 30-50% trial → Pro conversion (per #29), this is +$30-$300/mo MRR per query that ranks. Five queries on page 1 = a foundational organic-traffic stream that does not depend on any single distribution event.
+
+---
+
+## 37. [MARKETING] Accountant / Bookkeeper partner program (added 2026-04-26 PM-2)
+
+**Impact:** HIGH (B2B referral channel) — accountants and bookkeepers each serve 20-100 freelance clients. Every accountant who recommends QuickInvoice represents 20-100 prospective Pro signups with extremely high trust (the recommendation comes from the client's existing trusted financial professional). Setting up a simple "refer a client, get 1 month free Pro" partner program targets this segment specifically. Industry data: SaaS that builds a strong accountant-referral channel sees 25-40% of new revenue come through that channel within 12 months.
+
+### Action (Master, ~4-6 hrs setup + ongoing engagement)
+
+1. Create a one-page `views/partners.ejs` (or have INTERNAL_TODO add a code task — pure copy + form) explaining the partner offer: accountants who refer 5+ clients get a 50% lifetime discount on a Pro account they use to manage their own freelance projects, plus a co-branded "QuickInvoice Certified Accountant" badge. The 5-client threshold filters out single-referral attempts and incentivises ongoing engagement.
+2. Build a target list of 50-100 accountants who specialise in freelancers / solopreneurs. Sources: LinkedIn search "accountant freelancer", QuickBooks ProAdvisor directory (accountants who serve small clients but might want a simpler invoicing tool to recommend), local small-business CPA listings.
+3. Send a personalised outreach email to each: "Hi [name], saw you specialise in freelance clients on [LinkedIn / their site]. We just launched QuickInvoice — a Stripe-native invoicing tool we built specifically for solo freelancers. Would you be open to recommending it to clients who don't need full QuickBooks-level accounting? We'll comp your account and add you to our partner directory." Personal email > automated drip.
+4. Track responses in a simple Google Sheet. For accountants who reply positively, set up the Stripe coupon (`PARTNER50` valid forever) and add them to a `views/partner-directory.ejs` page (creates a useful SEO surface in addition to the partner channel itself).
+5. Quarterly check-in email to active partners with a "what's new in QuickInvoice" recap and a request to share with one more client.
+
+### Why this matters (income relevance)
+
+The accountant-referral channel is the single highest-trust distribution channel in B2B SaaS — a freelancer who hears "QuickInvoice handles your invoicing" from their CPA converts at 5-10x the rate of cold organic traffic. Five active partner accountants each referring 2-5 clients per quarter = 40-100 new Pro signups per year per partner cohort, at ~zero ongoing CAC. The compounding effect over 12-18 months can produce a recurring revenue floor that is more stable than any single launch event.

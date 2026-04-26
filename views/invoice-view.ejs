@@ -160,9 +160,18 @@
 
     <!-- Payment Link (Pro) -->
     <% if (invoice.payment_link_url && user.plan === 'pro') { %>
+      <%
+        const methods = (typeof paymentMethods !== 'undefined' && Array.isArray(paymentMethods)) ? paymentMethods : ['card'];
+        const labelFor = { card: 'card', us_bank_account: 'US bank transfer (ACH)', sepa_debit: 'SEPA Direct Debit', au_becs_debit: 'BECS Direct Debit', bacs_debit: 'BACS Direct Debit', acss_debit: 'Pre-authorised debit', link: 'Stripe Link' };
+        const labels = methods.map(m => labelFor[m] || m);
+        const methodCopy = labels.length === 1
+          ? labels[0]
+          : labels.slice(0, -1).join(', ') + ' or ' + labels[labels.length - 1];
+      %>
       <div class="border-t border-gray-100 pt-6 mb-6" x-data="{ copied: false }">
         <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Payment Link</p>
-        <p class="text-gray-500 text-sm mb-3">Send this secure Stripe link to your client so they can pay in one click.</p>
+        <p class="text-gray-500 text-sm mb-1">Send this secure Stripe link to your client so they can pay in one click.</p>
+        <p class="text-gray-400 text-xs mb-3">Clients can pay via <%= methodCopy %>.</p>
         <div class="flex items-center gap-2">
           <input type="text" readonly value="<%= invoice.payment_link_url %>"
             class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-gray-50 font-mono" />

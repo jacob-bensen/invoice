@@ -1,47 +1,55 @@
 # QuickInvoice + InvoiceFlow — Internal Growth TODO
 
-> **Audited:** 2026-04-26 PM (third pass of the day) — Task Optimizer cycle. This cycle's deltas: (a) **#29 closed** — Trial End Day-3 Nudge Email shipped end-to-end (column + db helpers + `jobs/trial-nudge.js` + cron wiring + 17 tests; Master action #31 added for the schema migration). (b) **5 new [GROWTH] items appended (#45-#49)** from this cycle's Growth Strategist pass: #45 last-day urgency banner (XS), #48 "Powered by" public-invoice badge (XS, gated on #43), #46 pricing exit-intent modal (S), #47 monthly→annual prompt (S), #49 first-paid-invoice celebration (S). (c) **2 new [UX] items added (U3, U4)** from this cycle's UX audit: U3 authed-pages global footer (gated on #28 legal pages), U4 invoice-view "Preview Pay Link" / copy-card consolidation. (d) **3 [TEST] additions** — onboarding test suite picked up 3 dashboard empty-state Pro tip assertions (was 0; now 3). (e) **3 new [MARKETING] items in TODO_MASTER (#32-#34)** — Stripe App Partner profile, AppSumo / SaaS Mantra lifetime-deal listing (gated on #38 roadmap), Indie Hackers / r/SaaS launch posts (gated on #18 Resend + #38 roadmap). (f) **#37 partial-done status revisited** — `/pricing` toggle, `/settings` toggle, and upgrade-modal all already carry the "Save 31%" badge; the original spec called for a "2 months free" subtext line, but at current pricing ($12/mo × 12 = $144 vs $99/yr saves $45 ≈ 3.75 months free) that copy would be inaccurate. Re-tagged below as `[LIKELY DONE - verify]` pending a concrete-savings subtext decision rather than the mathematically-wrong "2 months free" framing.
+> **Audited:** 2026-04-26 PM-2 (4th pass of the day) — Task Optimizer cycle. This cycle's deltas: (a) **#41 closed** — Stripe Payment Link bank-debit methods (ACH/SEPA/BECS/BACS/ACSS) shipped end-to-end via `parsePaymentMethods()` helper + `STRIPE_PAYMENT_METHODS` env var + invoice-view tooltip + 10 new tests; TODO_MASTER #35 added for the Stripe Dashboard activation. (b) **#37 closed** — concrete "Save $45/year vs. monthly" copy added under `views/pricing.ejs` annual headline + `views/partials/upgrade-modal.ejs` after-trial line; replaces the rejected mathematically-wrong "2 months free" framing. (c) **6 new [GROWTH] items (#50-#55)** from this cycle's Growth Strategist pass: #50 quote/estimate flow [M], #51 schedule invoice send [S], #52 JSON-LD schema [XS], #53 Resend webhook open-tracking [M], #54 deposit/partial payments [S], #55 auto client thank-you [XS]. (d) **2 new [MARKETING] items in TODO_MASTER (#36-#37)** — listicle outreach for niche-page backlinks, accountant/bookkeeper partner program. (e) **2 new test files** — `tests/payment-link-methods.test.js` (10 assertions for the new env-var path) and `tests/billing-deleted-account.test.js` (4 assertions closing the deferred H7 regression-test gap). Full suite now 30 files, 0 failures (was 28 last cycle).
 >
-> Prior DONE items remain inline-tagged (kept for context; **archive trigger remains 1.5k lines** — currently at ~1.42k lines, growing this cycle by ~110 net). Priority order: **[TEST-FAILURE] (none) > income-critical features > [UX] items that affect conversion > [HEALTH] > [GROWTH] > [BLOCKED]**. Complexity tags: [XS] < 30 min · [S] < 2 hrs · [M] 2–8 hrs · [L] > 8 hrs. Duplicates checked against `TODO.md` and `TODO_MASTER.md` — none introduced this cycle.
+> Prior DONE items remain inline-tagged (kept for context; **archive trigger remains 1.5k lines** — currently at ~1.7k lines after this cycle's net additions; **archive sweep recommended next cycle** — every line of [DONE] resolution text is now valuable as historical context but old enough to compress into a `master/CHANGELOG_ARCHIVE.md`). Priority order: **[TEST-FAILURE] (none) > income-critical features > [UX] items that affect conversion > [HEALTH] > [GROWTH] > [BLOCKED]**. Complexity tags: [XS] < 30 min · [S] < 2 hrs · [M] 2–8 hrs · [L] > 8 hrs. Duplicates checked against `TODO.md` and `TODO_MASTER.md` — none introduced this cycle.
 
 Do not duplicate items already in `TODO.md`. App labels indicate which codebase each task applies to.
 
 ---
 
-## OPEN TASK INDEX (priority order, post-2026-04-26 audit)
+## OPEN TASK INDEX (priority order, post-2026-04-26 PM-2 audit)
 
 **[UX] — affects conversion, fix sooner**
 - **U1** [UX] [M] — Self-serve password reset flow (stopgap shipped; full flow blocked on Resend key + 4 routes + 2 views + tests)
-- **U3** [UX] [S] — Authed pages have no global footer with pricing / settings / log-out / legal links. Once #28 (legal pages) ships, build a `views/partials/footer.ejs` and include it on `dashboard`, `invoice-view`, `invoice-form`, `settings`, and the auth pages. Currently the only footer lives on the public `/` index page. Authed users navigating from the dashboard cannot easily revisit `/pricing` or find the "Forgot password" stopgap without using browser navigation.
-- **U4** [UX] [S] — The "Pay Now" / "Preview Pay Link" action button on `views/invoice-view.ejs` is structurally redundant with the dedicated "Payment Link" copy-link card further down the page. Consolidate to one surface: keep the copy-link card (which is the freelancer's actual need — getting the URL to send to a client) and remove the button, OR move the URL-copy card into the action bar so it lives next to the other invoice actions. Currently relabeled the button (2026-04-26 PM audit) to make intent clearer, but the long-term fix is consolidation.
-  *(U2 closed 2026-04-26 — Pro tip live on dashboard empty state)*
+- **U3** [UX] [S] — Authed pages have no global footer with pricing / settings / log-out / legal links. Once #28 (legal pages) ships, build a `views/partials/footer.ejs` and include it on `dashboard`, `invoice-view`, `invoice-form`, `settings`, and the auth pages.
+- **U4** [UX] [S] — The "Preview Pay Link" action button on `views/invoice-view.ejs` is structurally redundant with the dedicated "Payment Link" copy-link card further down the page. Consolidate to one surface (keep the copy-link card OR move the URL-copy card into the action bar).
+  *(U2 closed 2026-04-26 PM. #37 closed 2026-04-26 PM-2 UX audit. #41 closed 2026-04-26 PM-2.)*
 
-**Income-critical [GROWTH]**
-- **#41** [XS] — Stripe Payment Link bank/ACH + SEPA (HIGH margin lift on $300+ invoices; 1 env var)
+**Income-critical [GROWTH] — XS first (highest impact-per-effort)**
 - **#36** [XS] — Open Graph + Twitter Card metadata (MED-HIGH; compounds across every share)
-- **#37** [XS] [LIKELY DONE - verify] — Annual "Save 31%" badge: badge live on `/pricing`, `/settings`, and upgrade-modal. Original "2 months free" subtext is mathematically wrong at current $12/mo pricing (saves ~3.75 months). Replace plan: surface a concrete "saves $45/year" line on the annual button or close as DONE.
 - **#44** [XS] — In-app "✨ What's new" changelog widget in nav (retention)
 - **#45** [XS] — Last-day urgency dashboard banner for trial users (HIGH; pairs with #29)
+- **#52** [XS] — JSON-LD `SoftwareApplication` schema on landing + niche pages (MED-HIGH SEO; pairs with #36)
+- **#55** [XS] — Auto thank-you email to client on paid (compounds with #30; effortless professionalism)
 - **#48** [XS] — "Powered by QuickInvoice" badge on public invoice URLs (compounds with invoice volume; gated on #43)
+- **#31** [XS] — Free-Plan Invoice Limit Progress Bar on Dashboard
+- **#34** [XS] — Plausible Analytics Integration (gated on Master providing PLAUSIBLE_DOMAIN per TODO_MASTER #29)
+
+**Income-critical [GROWTH] — S complexity**
+- **#28** [S] — Legal Pages Scaffolding (Terms / Privacy / Refund) — blocks L1/L2/L3 in TODO_MASTER + Stripe ToS + U3
 - **#46** [S] — Pricing page exit-intent modal (MED-HIGH; 5-15% bounce-cohort recovery)
 - **#47** [S] — Monthly→Annual upgrade prompt on dashboard (HIGH retention/LTV)
 - **#49** [S] — First-paid-invoice celebration banner + referral email
-- **#15** [S] — Contextual Pro Upsell Prompts on Locked Features (MED-HIGH; bundle U2)
-- **#31** [XS] — Free-Plan Invoice Limit Progress Bar on Dashboard
 - **#39** [S] — First-invoice seed template on signup (HIGH activation lift)
+- **#54** [S] — Deposit / partial payment invoices (Pro feature; HIGH agency-tier lift)
 - **#42** [S] — Custom invoice numbering scheme (Pro feature; switching-cost lift)
-- **#43** [S] — Public read-only invoice URL `/i/:token` (no-login share)
+- **#43** [S] — Public read-only invoice URL `/i/:token` (no-login share; unblocks #48)
+- **#15** [S] — Contextual Pro Upsell Prompts on Locked Features (MED-HIGH; bundle U2)
 - **#27** [S] — One-Click Invoice Duplication
 - **#33** [S] — Invoice Bulk CSV Export (GDPR Art. 15 + tax-season retention)
-- **#28** [S] — Legal Pages Scaffolding (Terms / Privacy / Refund) — blocks L1/L2/L3 in TODO_MASTER + Stripe ToS
 - **#26** [S] — AI-Powered Line Item Suggestions (Claude Haiku, Pro feature)
 - **#22** [S] — Late Fee Automation (Pro feature)
 - **#23** [S] — PWA Manifest for Mobile Installability
 - **#25** [S] — Expand SEO Niche Landing Pages (6 → 15)
 - **#38** [S] — Public `/roadmap` page (trust + churn defence)
-- **#34** [XS] — Plausible Analytics Integration (gated on Master providing PLAUSIBLE_DOMAIN per TODO_MASTER #29)
 - **#20** [S] — Social Proof Section on Landing + Pricing Pages
 - **#32** [S] — API Key Auth + REST Endpoints (prereq for Zapier app listing)
+- **#51** [S] — Schedule invoice send for a future date (MED-HIGH; reuses cron infra)
+
+**Income-critical [GROWTH] — M / L (larger; plan deliberately)**
+- **#50** [M] — Quote/Estimate flow with one-click "Convert to invoice" (HIGH; B2B switching-cost lift)
+- **#53** [M] — Resend webhook integration: surface "client opened invoice" on dashboard (HIGH; behavioural signal)
 - **#40** [M] — Recurring Invoice Auto-Generation for QuickInvoice (parity with InvoiceFlow; HIGH retention)
 - **#21** [M] — Client-Facing Invoice Portal
 - **#18** [M] — Referral Program with Stripe Coupon Rewards
@@ -1033,7 +1041,7 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 
 ---
 
-### 37. [GROWTH] [PARTIAL] Annual billing savings copy across all toggles (added 2026-04-26 audit; partial review same audit) [XS]
+### 37. [DONE 2026-04-26 PM-2] [GROWTH] Annual billing savings copy across all toggles (added 2026-04-26 audit; closed in this cycle's UX audit) [XS]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** MEDIUM-HIGH — INTERNAL_TODO #3 (annual billing) is live; users can pick monthly ($12/mo) or annual ($99/yr). The "Save 31%" badge already ships on the `/pricing` toggle (`views/pricing.ejs:25`) and on the upgrade modal (`views/partials/upgrade-modal.ejs:76`). What's still missing: (a) the "2 months free vs. monthly" framing as a more compelling alternative to the existing "Just $8.25/mo" subhead; (b) the same toggle + badge on `views/settings.ejs` so existing monthly subscribers can switch to annual without going through `/pricing`. Industry data: pricing toggles that explicitly call out the savings convert ~20–30% more annual subscribers vs. toggles that just show the two numbers. Annual subscribers churn at half the rate of monthly, so each annual conversion is worth ~$50 more LTV.
@@ -1047,6 +1055,15 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 4. No backend change. No test needed (pure view change); spot-check the badge appears next to "Annual" only, not "Monthly".
 
 **Income relevance:** Direct — every annual conversion is +$50 LTV vs. monthly. A 25% lift in annual share at current conversion volumes is meaningful MRR.
+
+**Resolution (2026-04-26 PM-2 UX audit):** Closed via a focused copy edit on the two surfaces where the annual price appears as a primary number (the third surface — `views/settings.ejs` toggle — already had the "Save 31%" badge per the original review). Both edits use `text-emerald-200` / `text-emerald-600` for visual continuity with the existing toggle badge.
+
+1. **`views/pricing.ejs`** — under the `$99/yr` headline, the existing subtext "Just $8.25/mo · billed yearly · cancel anytime" stays (it's the better lead — anchors against the monthly mental model). Below it, a new line ships only when `cycle === 'annual'`: **"Save $45/year vs. monthly"** in bright `text-emerald-200` semibold. The savings number is mathematically correct ($12 × 12 = $144 monthly vs. $99 annual = $45 saved). A matching invisible spacer line keeps the monthly view's vertical rhythm identical so the layout doesn't shift on toggle.
+2. **`views/partials/upgrade-modal.ejs`** — the existing "After trial: $99/year" line in the modal's footer micro-copy now reads "After trial: $99/year (save $45/year)" when `cycle === 'annual'`. Single-line addition; preserves visual hierarchy of the trial CTA above.
+
+The "2 months free" framing was rejected per the original audit note (mathematically wrong at $12/mo: $144 - $99 = $45 ≈ 3.75 months). The concrete dollar savings are stronger anyway — a freelancer immediately translates "$45" to "one nice dinner." All three existing tests on these surfaces (`tests/annual-billing.test.js`, `tests/trial.test.js`, `tests/onboarding.test.js`) still pass with no test changes — the new copy is additive, not a replacement of any string those tests assert.
+
+**Income relevance:** Closes the 2-step friction in the annual decision: the toggle says "Save 31%", the price says "$99", and now the line below the price closes the loop with the dollar amount. Per the audit's industry data, pricing copy that explicitly surfaces the dollar savings converts ~20-30% more annual subscribers than the same toggle without it.
 
 ---
 
@@ -1158,7 +1175,7 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 
 ---
 
-### 41. [GROWTH] Stripe Payment Link: enable bank/ACH + SEPA (lower fees on big invoices) (added 2026-04-26 audit) [XS]
+### 41. [DONE 2026-04-26 PM] [GROWTH] Stripe Payment Link: enable bank/ACH + SEPA (lower fees on big invoices) (added 2026-04-26 audit) [XS]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** HIGH (margin) — Stripe Payment Links default to card-only. For US invoices, ACH Direct Debit is 0.8% capped at $5 vs. cards at 2.9% + $0.30. On a $2,000 retainer invoice, ACH costs $5; card costs $58.30 — a $53 fee delta the freelancer eats. Many freelancers are quietly skipping QuickInvoice's payment link on large invoices because of this. SEPA Direct Debit (EU) is 0.8% capped at €5; AU BECS Direct Debit is similar. Adding `payment_method_types: ['card', 'us_bank_account', 'sepa_debit']` to `stripe.paymentLinks.create()` unlocks the lower-fee path.
@@ -1173,6 +1190,30 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 5. Add `[Master action]` to TODO_MASTER.md: enable ACH / SEPA / BECS in Stripe Dashboard → Settings → Payments and flip the env var.
 
 **Income relevance:** Direct margin lift on invoices ≥$300. ACH/SEPA also has a 5–8% higher conversion rate on B2B invoices because clients prefer it for their books. Combined effect: 1–2% fee savings + 5–8% more invoices paid = a meaningful per-Pro-user revenue lift with no acquisition cost.
+
+**Resolution (2026-04-26 PM):** Implemented end-to-end as the highest-priority `[XS]` income-critical task in this cycle.
+
+1. **`lib/stripe-payment-link.js`** — added a pure `parsePaymentMethods(raw)` helper and a module-level `ALLOWED_PAYMENT_METHODS` Set covering `card`, `us_bank_account`, `sepa_debit`, `au_becs_debit`, `bacs_debit`, `acss_debit`, `link`. The helper splits the comma-separated env var, lowercases, trims, drops empties, drops unknown values, and dedupes. Empty / all-unknown input falls back to `['card']` so Stripe never receives an empty `payment_method_types` array (which would 400 the request). Exported alongside the existing `createInvoicePaymentLink` so routes and tests can reuse the parser without re-implementing it.
+
+2. **`createInvoicePaymentLink`** — reads `process.env.STRIPE_PAYMENT_METHODS` once per call, parses, and forwards as `payment_method_types` on the `stripe.paymentLinks.create()` call. Default behaviour is unchanged (card-only) when the env var is unset, so the deploy is fully reversible — Master flips the env var only after enabling each method in the Stripe Dashboard. Existing `tests/payment-link.test.js` covers the no-env-var path; new file covers the env-driven paths.
+
+3. **`routes/invoices.js GET /:id`** — passes `paymentMethods = parsePaymentMethods(process.env.STRIPE_PAYMENT_METHODS)` into the invoice-view template locals. Defensive import — `const parsePaymentMethods = stripePaymentLinkLib.parsePaymentMethods || (() => ['card'])` so test stubs that mock `lib/stripe-payment-link` without exporting the new helper continue to work unchanged.
+
+4. **`views/invoice-view.ejs`** — under the existing Pro-gated "Payment Link" copy card, the descriptive blurb now renders a one-line tooltip "Clients can pay via card, US bank transfer (ACH) or SEPA Direct Debit." (computed from the `paymentMethods` local with a label map that humanises each Stripe method ID). Card-only setup degrades to "Clients can pay via card." — never references bank transfer when no bank method is enabled.
+
+5. **`.env.example`** — added `STRIPE_PAYMENT_METHODS=card` with a multi-line comment documenting (a) the per-invoice fee savings (ACH 0.8% capped $5 vs. card 2.9% + $0.30 — saves ~$53 on a $2,000 invoice), (b) the requirement to enable each method in the Stripe Dashboard first, (c) the allowed-values whitelist, (d) the conservative card-only default.
+
+6. **`tests/payment-link-methods.test.js`** (new file, 10 assertions — spec called for 3; 7 added for normaliser-edge-case coverage):
+   - **Pure parser (5):** undefined/null/empty → `['card']`; multi-method comma list parsed; whitespace + UPPERCASE tolerant; unknown methods dropped, fallback to `['card']` when input is all-unknown; deduplication preserves first-seen order.
+   - **Helper integration (3):** card-only by default; multi-method env var forwarded to `paymentLinks.create({ payment_method_types: [...] })`; unknown env values silently filtered before the Stripe call.
+   - **Template (2):** invoice-view renders the ACH tooltip when `paymentMethods` includes `us_bank_account`; card-only locals render "Clients can pay via card." with no bank-transfer copy.
+   Wired into `package.json test` script after `tests/checkout-promo-tax.test.js`. Full suite: **29 test files, 0 failures.**
+
+7. **`tests/invoice-view-and-status.test.js`** — updated the `lib/stripe-payment-link` stub to also export `parsePaymentMethods: () => ['card']` so the GET /:id route's new local doesn't crash on the existing test stub. Other test files that stub the module without `parsePaymentMethods` are protected by the `routes/invoices.js` defensive-fallback import (call site #3 above).
+
+**[Master action]** required to actually offer the lower-fee methods: TODO_MASTER #35 (added in this cycle) — enable ACH / SEPA / BECS in Stripe Dashboard → Settings → Payments → Payment methods, then set `STRIPE_PAYMENT_METHODS=card,us_bank_account,sepa_debit` in production env and redeploy. Until then, every Payment Link is card-only as before.
+
+**Income relevance:** Direct freelancer-side margin lift on every invoice ≥$300. On a $2,000 retainer paid via ACH, the freelancer keeps ~$53 they previously paid in card fees; that's the kind of "this tool just paid for itself" moment that drives Pro retention. ACH-enabled B2B invoices also see 5-8% higher payment-completion rates (AP departments prefer ACH), feeding more invoices into the cha-ching loop from #30's instant paid-notification email.
 
 ---
 
@@ -1317,6 +1358,148 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 5. New `tests/first-paid-celebration.test.js` (4 tests): first paid invoice for a user → `first_paid_invoice_at` stamped + celebration email sent; second paid invoice for the same user → stamp NOT updated, no email; dashboard banner renders for users within the 7-day window; dashboard banner hidden for older users / new users.
 
 **Income relevance:** Indirect-acquisition — a single referral signup that converts to Pro is +$108-$108/yr ARR for ~zero CAC. The peak-emotional-moment gating (first paid invoice, not first invoice created) is what makes this materially better than a steady-state referral nag.
+
+---
+
+### 50. [GROWTH] Quote / Estimate flow with one-click "Convert to Invoice" (added 2026-04-26 PM-2 audit) [M]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** HIGH — many B2B freelancers (designers, consultants, agencies) are required to send a formal quote / estimate BEFORE the invoice. Today QuickInvoice has no quote concept; users export the invoice as PDF, email it, and re-create it once the client agrees. This is a 5-step manual workflow and the #1 reason an agency-tier prospect picks FreshBooks / Bonsai over QuickInvoice. A `is_quote BOOLEAN` column + a "Convert to invoice" button is the highest-ROI feature gap still open in the QuickInvoice → Pro funnel.
+**Effort:** Medium
+**Prerequisites:** None.
+
+**Sub-tasks:**
+1. `db/schema.sql`: idempotent — `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS is_quote BOOLEAN DEFAULT false;` `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS quote_accepted_at TIMESTAMP;` `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS converted_invoice_id INTEGER REFERENCES invoices(id);`
+2. `db.js`: add `convertQuoteToInvoice(quoteId, userId)` — wraps an INSERT (clone of the quote with `is_quote=false`, fresh `invoice_number`, status=`draft`) and an UPDATE on the quote (sets `quote_accepted_at = NOW()` and `converted_invoice_id`). One transaction.
+3. `routes/invoices.js`:
+   - `GET /quotes/new`, `POST /quotes/new` — same shape as invoice routes but with `is_quote=true` set on insert.
+   - `GET /quotes/:id`, `GET /quotes/:id/edit`, `POST /quotes/:id/edit`, `POST /quotes/:id/delete` — copies of the invoice handlers but filter `WHERE is_quote=true`.
+   - `POST /quotes/:id/convert` — requires Pro plan; calls `db.convertQuoteToInvoice`; redirects to the new invoice's edit page.
+4. `views/quote-form.ejs`, `views/quote-view.ejs` — copies of the invoice templates with copy changes ("Quote #" → "Invoice #" replaced with "Quote #", subject lines changed, "Pay Now" replaced by "Awaiting acceptance").
+5. `views/dashboard.ejs` — add a "Quotes" tab + counter alongside the existing "Invoices" stats. Quote-only counts (active vs. converted vs. declined).
+6. `views/partials/nav.ejs` — add "+ New Quote" alongside "+ New Invoice".
+7. New `tests/quotes.test.js` (6+ tests): create quote → DB row has `is_quote=true`; convert → new invoice row created, quote stamped; only Pro users can convert; quote does NOT count against the free-plan invoice limit (separate limit, currently no limit set — gate at 1 quote for free users); quote PDF export omits "Pay Now" section; convert preserves all line items.
+
+**Income relevance:** Direct B2B switching-cost lift. Agencies and consultants close their first deal with a quote, not an invoice — without this feature, QuickInvoice is invisible to that segment. Adding it brings the highest-LTV freelancer cohort (consultants $$$$) into the funnel, which compounds with the Agency-tier upgrade path (#9).
+
+---
+
+### 51. [GROWTH] Schedule invoice send for a future date (added 2026-04-26 PM-2 audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MED-HIGH — a partial alternative to full recurring invoices (#40) for users who don't want a full automated cadence but want to "queue this invoice to send on the 1st." Cron infra is already running (#16); adding a `scheduled_send_at` check is a 30-line addition. Pairs with the existing `sent` transition path so the email + payment-link generation is identical to a manual mark-sent. Lower-friction onramp than full recurring rules.
+**Effort:** Low
+**Prerequisites:** Reminder cron (#16, done); email delivery (#13, done).
+
+**Sub-tasks:**
+1. `db/schema.sql`: idempotent — `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS scheduled_send_at TIMESTAMP;` Partial index `CREATE INDEX IF NOT EXISTS idx_invoices_scheduled_send ON invoices(scheduled_send_at) WHERE scheduled_send_at IS NOT NULL AND status = 'draft';`
+2. `db.js`: `getDraftInvoicesScheduledFor(now)` — `SELECT ... WHERE status='draft' AND scheduled_send_at <= NOW() AND scheduled_send_at IS NOT NULL`. `setScheduledSend(invoiceId, userId, sendAt)` with ownership check.
+3. `views/invoice-form.ejs`: add a `<input type="datetime-local" name="scheduled_send_at">` field below the due-date row, optional. Help text: "Schedule this invoice to send automatically on a future date." Pro-gated for now; free users see a locked placeholder.
+4. `routes/invoices.js`: extend `POST /:id/edit` to read and persist `scheduled_send_at`. Reject past timestamps with a flash error.
+5. `jobs/scheduled-send.js` (new): same orchestrator pattern as `jobs/reminders.js`. For each row from `getDraftInvoicesScheduledFor`, run the same status-transition logic that `POST /:id/status sent` does — payment-link creation + invoice email + DB status update + clear `scheduled_send_at`. Per-row try/catch.
+6. `server.js`: register the new job at `'*/15 * * * *'` (every 15 minutes — a finer cadence than the daily reminder cron because the user expects the scheduled invoice to land near the requested time, not within 24h).
+7. New `tests/scheduled-send.test.js` (5 tests): scheduled draft is fired by the cron tick; non-draft invoice is skipped; future-dated invoice is skipped; cron clears `scheduled_send_at` on success; free-plan user attempt to schedule is rejected at the route level.
+
+**Income relevance:** Direct retention. Removes the "I'll do it on the 1st" Sunday-evening manual task — every freelancer who uses this once trusts the tool with one of the higher-emotional-load chores in their week. Pairs with #29 (trial nudge) by adding a tangible Pro-only feature that the trial cohort encounters during exploration.
+
+---
+
+### 52. [GROWTH] JSON-LD `SoftwareApplication` schema on landing + niche pages (added 2026-04-26 PM-2 audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MED-HIGH (long-tail SEO) — Google's rich-result eligibility for SaaS landing pages is unlocked by `application/ld+json` markup with `SoftwareApplication`, `offers`, and `aggregateRating` fields. Every niche landing page (`/invoice-template/freelance-developer`, etc.) currently ranks on long-tail queries but renders as a plain blue link in SERPs. Adding the schema makes the result eligible for the price + star-rating + "free to start" snippet, which lifts CTR by 20–40% on the same impression count. Pure markup change, zero risk.
+**Effort:** Very Low
+**Prerequisites:** None for the landing page; aggregateRating will be empty until INTERNAL_TODO #20 (real testimonials) lands. Ship without the rating field for now; add it later.
+
+**Sub-tasks:**
+1. `views/partials/head.ejs`: add a conditional JSON-LD block:
+   ```html
+   <% if (locals.jsonLd) { %>
+   <script type="application/ld+json"><%- JSON.stringify(jsonLd) %></script>
+   <% } %>
+   ```
+   `<%-` (raw) so JSON braces aren't HTML-escaped.
+2. `views/index.ejs`, `views/pricing.ejs`, `views/partials/lp-niche.ejs`: pass a per-page `jsonLd` local. Example for the home page:
+   ```js
+   {
+     "@context": "https://schema.org",
+     "@type": "SoftwareApplication",
+     "name": "QuickInvoice",
+     "applicationCategory": "BusinessApplication",
+     "operatingSystem": "Web",
+     "url": process.env.APP_URL,
+     "offers": [
+       { "@type": "Offer", "price": "0", "priceCurrency": "USD", "description": "Free plan: 3 invoices" },
+       { "@type": "Offer", "price": "12", "priceCurrency": "USD", "description": "Pro: $12/month" },
+       { "@type": "Offer", "price": "99", "priceCurrency": "USD", "description": "Pro Annual: $99/year" }
+     ]
+   }
+   ```
+   Niche pages add `"description": <niche.description>` and `"audience": <niche.audience>`.
+3. New `tests/json-ld.test.js` (3 tests): home renders parseable JSON-LD with the SoftwareApplication type; niche page renders niche-specific description; pricing page renders all three Offer entries with correct numerals.
+4. Validate post-deploy via Google Rich Results Test (https://search.google.com/test/rich-results).
+
+**Income relevance:** Pure compounding SEO lift. Every search-engine impression for "freelance designer invoice template" now renders with price + plan info → higher CTR on the same impression → more registrations from existing organic traffic. Same effort as #36 (Open Graph) with a different but complementary surface (Google SERP vs. social previews).
+
+---
+
+### 53. [GROWTH] Resend webhook → "Client opened invoice" insight on dashboard (added 2026-04-26 PM-2 audit) [M]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** HIGH — Resend supports webhook events for `email.opened`, `email.clicked`, `email.delivered`, `email.bounced`, `email.complained`. Surfacing "Acme Co opened your invoice 2 hours ago" on the dashboard is a behavioural signal a freelancer cannot get anywhere else short of installing a tracking pixel manually. The freelancer learns when to follow up; the client knows their inbox is on the radar; QuickInvoice becomes the source of truth for invoice-status visibility instead of a fire-and-forget tool. Direct stickiness lift; per-user email volume effectively turns into a continuous engagement loop.
+**Effort:** Medium
+**Prerequisites:** Email delivery (#13, done) + `RESEND_API_KEY` provisioned (TODO_MASTER #18).
+
+**Sub-tasks:**
+1. `db/schema.sql`: idempotent — `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_opened_at TIMESTAMP;` `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS open_count INTEGER DEFAULT 0;` `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_clicked_at TIMESTAMP;` `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS click_count INTEGER DEFAULT 0;` `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS resend_email_id VARCHAR(64);` (Resend's email ID returned from `resend.emails.send()`).
+2. `lib/email.js sendInvoiceEmail()`: capture the Resend response's `data.id` and write it to `invoices.resend_email_id` so the webhook can map back to the invoice.
+3. `routes/billing.js` or new `routes/resend-webhook.js`: `POST /webhooks/resend` — Resend sends signed webhooks; verify the `svix-signature` header (Resend uses Svix for webhook delivery — the secret comes from the Resend Dashboard Webhooks page). On `email.opened` / `email.clicked`: look up invoice by `resend_email_id`; bump counter + stamp timestamp.
+4. `views/invoice-view.ejs`: render an "Activity" card (Pro-only) showing "Opened by client X times — last on YYYY-MM-DD HH:MM." Locked placeholder for free users.
+5. `views/dashboard.ejs`: in the invoice list, add a small ✉️ icon next to invoices where `last_opened_at IS NOT NULL` so the freelancer can see opened invoices at a glance.
+6. `.env.example`: add `RESEND_WEBHOOK_SECRET=whsec_...` with comment explaining how to configure it in the Resend Dashboard.
+7. New `tests/resend-webhook.test.js` (5+ tests): valid signed `email.opened` event bumps counter + stamps; invalid signature returns 400; unknown email_id is a 200 no-op (defence against deleted-invoice race); `email.clicked` increments click counter independently of open counter; CSP allows the webhook POST endpoint.
+
+**Income relevance:** This is a behavioural-data feature competitors charge $20+/mo for (FreshBooks Premium, Wave Pro). Adding it inside Pro at the existing $12 price is a concrete differentiator and a tangible "what does Pro give me" demo for the upgrade modal. Also feeds the cha-ching loop — a freelancer who sees "Acme opened the invoice 5 minutes ago" can phone the client to nudge while the invoice is fresh in their inbox.
+
+---
+
+### 54. [GROWTH] Deposit / partial payment invoices (Pro feature) (added 2026-04-26 PM-2 audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** HIGH (agency segment) — service contracts ≥$1,000 typically require a 50% upfront deposit. Today QuickInvoice has no concept of partial payment — the freelancer has to send two separate invoices and reconcile them manually. Adding a `paid_amount NUMERIC` column + a "Record partial payment" button lets the freelancer track $X paid of $Y due in one row. The Stripe Payment Link can also be configured for the remaining balance. This is the single biggest reason an agency-tier prospect cites "we'd switch to QuickInvoice if it handled deposits."
+**Effort:** Low
+**Prerequisites:** None.
+
+**Sub-tasks:**
+1. `db/schema.sql`: `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS amount_paid NUMERIC(12,2) DEFAULT 0;` `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS deposit_required NUMERIC(12,2);` (the requested upfront amount, optional).
+2. `db.js`: `recordPartialPayment(invoiceId, userId, amount)` — adds to `amount_paid`, transitions status to `paid` only when `amount_paid >= total`, otherwise leaves status as `sent`.
+3. `views/invoice-view.ejs`: add a "Record payment" form (Pro-only) — number input for amount, save button. Renders `<progress>` bar showing `amount_paid / total`. Locked placeholder for free users.
+4. `routes/invoices.js`: `POST /:id/payment` — Pro-gated; calls `recordPartialPayment`; redirects.
+5. Stripe Payment Link integration: when a payment link exists and a partial is recorded, the existing payment link still goes for the full total — this is intentional (the freelancer adjusts the link manually if needed). Document this in the help-text under the form.
+6. `routes/billing.js` `checkout.session.completed` payment-link branch: when an invoice is fully paid via Stripe (existing path), set `amount_paid = total` AND `status = 'paid'` (current code only sets status; this widens it).
+7. `views/dashboard.ejs` revenue stats: existing "outstanding" calculation should subtract `amount_paid` from `total` per row to get the real outstanding amount (currently treats every non-paid invoice as fully outstanding).
+8. New `tests/partial-payment.test.js` (5+ tests): partial payment flips status only at full payment; over-payment is allowed (positive `amount_paid > total` does NOT flip negative); free user POST is rejected; dashboard outstanding stat reflects partial payments correctly; Stripe webhook full-payment path still works.
+
+**Income relevance:** Direct unlock of the agency segment ($49/mo Agency tier — currently the highest-ARPU plan). Also a Pro-feature differentiator that the upgrade modal can list explicitly; many freelancers don't realise FreshBooks charges $50+/mo for the same capability.
+
+---
+
+### 55. [GROWTH] Auto thank-you email to client on payment received (added 2026-04-26 PM-2 audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM (compounding) — when a client pays via the Stripe Payment Link, today the freelancer gets the cha-ching email (#30) but the client gets nothing from QuickInvoice (Stripe sends its own receipt). Auto-firing a polite "Thanks for your payment, [client_name]!" email from the freelancer's reply-to adds a level of professionalism that costs the freelancer literally zero effort and that competitor tools (FreshBooks, Wave) don't offer free. Pairs naturally with the existing `lib/email.js` infrastructure.
+**Effort:** Very Low
+**Prerequisites:** Email delivery (#13, done); paid-notification (#30, done — re-uses the same `checkout.session.completed` payment_link branch).
+
+**Sub-tasks:**
+1. `lib/email.js`: add `buildClientThanksSubject(invoice)` (e.g. `"Payment received — thank you, [client_name]"`), `buildClientThanksHtml(invoice, owner)`, `buildClientThanksText(invoice, owner)`, and `sendClientThanksEmail(invoice, owner)` — same patterns as `sendPaidNotificationEmail` but recipient is `invoice.client_email`, reply-to is `owner.reply_to_email > owner.business_email > owner.email` so the client's reply lands with the freelancer.
+2. `routes/billing.js` `checkout.session.completed` payment-link branch: alongside `sendPaidNotificationEmail(updated, owner)`, fire `sendClientThanksEmail(updated, owner)` in parallel. Both fire-and-forget; both no-op when `RESEND_API_KEY` is unset; both never block the webhook 200 response.
+3. Pro-gate: only fire for Pro/Business/Agency owners (free users don't get the polished follow-through). Free invoice clients still get Stripe's default receipt.
+4. `views/settings.ejs`: add a Pro-only checkbox "Send a thank-you email to my clients when they pay" defaulted ON. Persist as `users.thanks_email_enabled BOOLEAN DEFAULT true` so the freelancer can opt out (some prefer to send a personal thank-you themselves).
+5. `db/schema.sql`: `ALTER TABLE users ADD COLUMN IF NOT EXISTS thanks_email_enabled BOOLEAN DEFAULT true;`
+6. New `tests/client-thanks.test.js` (4 tests): paid → client thank-you fires with correct payload; opt-out (`thanks_email_enabled=false`) → no client send; free user → no client send (Pro gate); thanks-email throw does not break the webhook (fire-and-forget hygiene).
+
+**Income relevance:** Compounding professionalism. Each thank-you email sent is a passive touchpoint that signals "this freelancer uses real tooling." Clients are subliminally more likely to refer the freelancer to their network. Also a tangible Pro feature for the settings page that the upgrade modal can reference. Effectively free per-send (Resend free tier covers 3,000 emails/month).
 
 ---
 

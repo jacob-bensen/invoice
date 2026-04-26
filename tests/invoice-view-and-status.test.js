@@ -109,7 +109,8 @@ require.cache[require.resolve('../lib/stripe-payment-link')] = {
       if (paymentLinkShouldThrow) throw new Error('Stripe connection refused');
       createdLinks.push({ invoice_id: invoice.id, plan: user.plan });
       return { id: `plink_test_${invoice.id}`, url: `https://buy.stripe.com/test_${invoice.id}` };
-    }
+    },
+    parsePaymentMethods() { return ['card']; }
   }
 };
 
