@@ -45,7 +45,13 @@ router.post('/create-checkout', requireAuth, async (req, res) => {
 
     const { cycle, priceId } = resolvePriceId(req.body && req.body.billing_cycle);
 
-    const session = await stripe.checkout.sessions.create({
+    // Stripe Tax is opt-in: until Master flips STRIPE_AUTOMATIC_TAX_ENABLED in
+    // production env (after activating Stripe Tax in the Dashboard), the call
+    // ships with automatic_tax.enabled=false so checkout never breaks. The env
+    // gate makes the deploy safe + reversible.
+    const automaticTaxEnabled = process.env.STRIPE_AUTOMATIC_TAX_ENABLED === 'true';
+
+    const sessionParams = {
       customer: customerId,
       payment_method_types: ['card'],
       line_items: [{
@@ -56,10 +62,24 @@ router.post('/create-checkout', requireAuth, async (req, res) => {
       // 7-day no-card-required Pro trial. Stripe auto-cancels via
       // customer.subscription.deleted if no payment method is added by day 8.
       subscription_data: { trial_period_days: 7 },
+      // Surface a "Add promotion code" link on the Stripe Checkout page so
+      // every coupon Master creates (Product Hunt PH50, AppSumo, newsletter
+      // sponsorships, Agency cold-email 100%-off-first-month) is reachable.
+      allow_promotion_codes: true,
+      automatic_tax: { enabled: automaticTaxEnabled },
       metadata: { billing_cycle: cycle, user_id: String(user.id) },
       success_url: `${process.env.APP_URL}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.APP_URL}/billing/upgrade`
-    });
+    };
+
+    // Stripe Tax requires a billing address for jurisdiction lookup. Auto-
+    // capture address and name onto the customer record so subsequent
+    // invoices and tax calculations stay consistent.
+    if (automaticTaxEnabled) {
+      sessionParams.customer_update = { address: 'auto', name: 'auto' };
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionParams);
 
     res.redirect(303, session.url);
   } catch (err) {

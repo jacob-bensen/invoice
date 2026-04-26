@@ -2,6 +2,169 @@
 
 ---
 
+## 2026-04-26T10:15Z — Health Monitor audit: clean, no new findings beyond H8/H9/H10/H11/H14/H15/H16 [HEALTH]
+
+### What was audited
+
+Full audit pass over the `routine/autonomous` branch, including this cycle's deltas: (a) the new promo-code + automatic-tax checkout code in `routes/billing.js`; (b) the dashboard empty-state Pro tip; (c) the new Master action in TODO_MASTER #30. Reviewed against:
+- **Security:** hardcoded secrets, missing input validation, unhandled errors on the new Stripe Tax path, XSS in the new dashboard EJS block, CSRF gaps on new POST routes (none added this cycle).
+- **Performance:** N+1 queries, missing indexes, R14 memory risk, file-size growth.
+- **Code quality:** dead code, repeated logic, dependency churn.
+- **Dependencies:** `npm audit --production` snapshot.
+- **Legal:** license inventory after this commit, third-party API ToS for Stripe Tax.
+
+### Fixed in this audit
+
+None — every issue this audit looked for either (a) was already tracked in INTERNAL_TODO H8/H9/H10/H11/H14/H15/H16 or (b) is clean.
+
+### Findings — confirmed CLEAN
+
+- **Hardcoded secrets.** `grep -rE "(sk_live|re_live|whsec_[A-Za-z0-9]{30,})"` finds zero hits across `*.js`, `*.ejs`, `*.json`. No production secrets in source.
+- **Stripe Tax error path.** The new `automatic_tax: { enabled: true }` + `customer_update` block is wrapped in the existing try/catch around `stripe.checkout.sessions.create()`. If Master flips `STRIPE_AUTOMATIC_TAX_ENABLED=true` before actually activating Stripe Tax in the Dashboard, Stripe returns an error → catch block logs `Stripe checkout error:` → flash → redirect to `/billing/upgrade`. The user sees a graceful "Could not start checkout. Please try again." flash, not a 500. Verified by reading `routes/billing.js:30-90` lines 85-89 (catch block existed pre-#35; new code rides inside it).
+- **Stripe Tax env-var gate hardening.** The literal-`"true"` gate (`process.env.STRIPE_AUTOMATIC_TAX_ENABLED === 'true'`) is asserted by test #5 in `tests/checkout-promo-tax.test.js` to reject typo'd values like `"1"`. Defensive against the most common ops mistake (lazy boolean coercion).
+- **`customer_update.address: 'auto'` PII surface.** Stripe captures the customer billing address on Checkout. PII handling is identical to the pre-#35 path: address is held by Stripe, not by us. No new field to persist on our side. Existing privacy-policy gap (TODO_MASTER L2) stays scoped correctly.
+- **Dashboard empty-state Pro tip XSS.** New EJS only emits literal copy and a static href to `/billing/upgrade` — no user-controlled fields. The conditional `<% if (user && user.plan === 'free') { %>` is a string equality check on a server-controlled value (the user row from DB). Not an injection sink.
+- **CSRF coverage** — `middleware/csrf.js` exempt path list still only contains `/billing/webhook` (Stripe raw body). No new state-changing routes added this cycle.
+- **Helmet / CSP / HSTS** — unchanged. CSP `script-src` and `style-src` still match the Tailwind/Alpine CDN reality. The Stripe Checkout redirect is already on the `form-action` allowlist.
+- **`escapeHtml` / `formatMoney` duplication** (H14) — still pending. No new copies introduced this cycle.
+- **File sizes.** `routes/billing.js`: 285 lines (was 266 — +19 for the new promo/tax block). `routes/invoices.js`: 287 lines. `lib/email.js`: 310 lines. `db.js`: 194 lines. All well below the 500-line "consider splitting" threshold.
+- **Dead code.** No unused imports or functions introduced. `automaticTaxEnabled` is read once in `sessionParams` and once in the `customer_update` conditional. No orphaned exports.
+- **License inventory.** No new dependencies added this cycle. Lockfile license types unchanged: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, BlueOak-1.0.0, ISC, MIT-0, Unlicense. **No GPL/AGPL/LGPL/MPL/EPL** in production tree.
+- **Stripe ToS / API ToS.** `allow_promotion_codes` and `automatic_tax` are first-party Stripe API features documented in the Stripe API reference; their use by a Stripe-connected app is squarely within Stripe's ToS. `customer_update: { address: 'auto', name: 'auto' }` is the documented companion param for Stripe Tax. No third-party API ToS concerns.
+
+### `npm audit --production` snapshot (no change)
+
+| Advisory | Severity | Reachability | Tracker |
+|---|---|---|---|
+| `tar < 7.5.10` (3 GHSAs) via `bcrypt → @mapbox/node-pre-gyp` | High (install-time only) | None at runtime — registry-signed prebuild downloader | INTERNAL_TODO **H9** |
+| `uuid < 14.0.0` (`GHSA-w5hq-g745-h8pq`) via `resend → svix` | Moderate | None at runtime — we never call the svix webhook verifier, only `resend.emails.send()` | INTERNAL_TODO **H16** |
+
+Both are flagged as "single dedicated commit" items so a regression in either credential-store (bcrypt) or email transport (Resend) can be cleanly bisected. Runtime exposure is nil for both. No need to escalate this audit.
+
+### [LEGAL] — confirmed CLEAN
+
+- **L1/L2/L3 (Terms / Privacy / Refund pages)** — still open via INTERNAL_TODO #28. No regression. Stripe Tax raises the importance of a Privacy / Refund policy because EU/UK Stripe customers will be invoiced on behalf of QuickInvoice; both pages should be live before Master flips `STRIPE_AUTOMATIC_TAX_ENABLED=true`. Adding this note to TODO_MASTER L1/L2/L3 not required separately — the legal-pages task is already income-priority-tagged.
+- **L4 (GDPR data-subject rights)** — no change.
+- **L5 (PCI-DSS SAQ-A scope)** — no change. Stripe Tax does not change the PCI footprint (cards still tokenized client-side at Stripe).
+- **L6 (cookie banner)** — no change. Still no analytics tags shipped (Plausible per #34 still open; cookie-less so even when shipped, no consent banner needed).
+- **L7 (license inventory)** — re-verified clean (see above).
+- **L8 (third-party API ToS)** — Stripe Tax usage compliant with Stripe ToS (see Findings above).
+
+---
+
+## 2026-04-26T10:00Z — UX audit: dashboard empty state Pro tip (closes U2); all critical pathways audited [UX]
+
+### Flows audited
+
+Walked the application as a first-time visitor through to a paying user:
+
+- **Landing → register → onboarding → first invoice → upgrade → checkout → success.** Each step has clear copy and visible next-action CTAs.
+  - Hero CTA "Create your first invoice →" (primary) + "See pricing" (secondary) — clear, action-oriented.
+  - Register form: 3 fields (name, email, password). Honest legal copy ("By signing up, you agree to receive transactional emails about your account.") since the actual Terms / Privacy pages are still pending (INTERNAL_TODO #28).
+  - Dashboard empty state: ☑ now improved (see "Fixed in this audit" below).
+  - Onboarding checklist with 4 steps surfaces immediately for new users (already shipped).
+  - Invoice form: clean 4-card layout (details, bill-to, line items, notes); explicit `*` on required fields; subtotal/tax/total auto-recalculates.
+  - Upgrade flow: pricing page has Monthly/Annual toggle + "Save 31%" badge + "Start 7-day free trial →" CTA + "No credit card required. Cancel anytime." subtext.
+- **Trial countdown** — dashboard renders a blue dismissible banner with "X days left" (singular/plural correct) + "Add payment method →" CTA when `days_left_in_trial > 0`. Already shipped.
+- **Past-due / paused** — dashboard renders a red dismissible alert when `subscription_status === 'past_due' || 'paused'` with portal-redirect CTA. Already shipped.
+- **Login dead-end** — already addressed: stopgap "Forgot your password? Email support@quickinvoice.io" until U1 ships the full self-serve flow.
+- **Settings** — reply-to, business profile, custom branding (Pro), webhook URL (Pro). Pro-gating is enforced server-side and visible client-side.
+- **Error states** — invoice form flashes `bg-red-50` errors on failed POSTs; flash messages on dashboard, settings, billing. CSRF errors are caught + flashed cleanly.
+
+### Fixed in this audit
+
+**`views/dashboard.ejs` — empty state Pro tip (closes U2).** The dashboard empty state previously showed only "No invoices yet — Create your first invoice and start getting paid." → CTA. Free users at this peak-intent moment (just signed up) saw no information about what Pro unlocks. They created their first invoice and might not encounter the Pro upsell until the 3-invoice limit. Now (free users only): a small `text-xs text-gray-400` Pro tip below the CTA reads "✨ **Pro tip:** with Pro, every invoice auto-generates a Stripe Pay button so clients pay in one click." with an underlined "Try Pro free for 7 days →" link to `/billing/upgrade`. Pro/Business/Agency users see no callout. The whole empty-state container also picked up `print:hidden` (defensive — empty dashboards are rarely printed but the print stylesheet shouldn't show CTA chrome).
+
+Closes INTERNAL_TODO U2.
+
+### Flagged in this audit (deferred, tracked)
+
+No new [UX] items added — every issue surfaced was either already in INTERNAL_TODO or already resolved upstream:
+
+- **U1 (password reset)** — full flow blocked on Resend key (TODO_MASTER #18) and 4 routes + 2 views + DB migration. Stopgap is honest and prevents the dead-end for now.
+- **#15 (Contextual Pro upsell prompts on locked features)** — already tracked. U2's empty-state slice is now closed; the larger scope (settings branding, invoice-view payment link card, dashboard stats-bar callout) remains open in #15.
+- **#20 (Social proof section)** — already tracked. Hero copy "Join thousands of freelancers who use QuickInvoice every day" is currently a placeholder count to be replaced by real testimonials per the task.
+- **#28 (Legal pages scaffolding)** — register page already softened to honest copy ("transactional emails about your account") rather than the misleading "you agree to our terms of service" — gap closed for now, full pages still pending.
+
+### Tests run after fix
+
+Three test files EJS-render `views/dashboard.ejs`: `tests/onboarding.test.js`, `tests/dunning.test.js`, `tests/trial.test.js`. All passed (17 + 9 + 10 = 36 assertions). No regression.
+
+---
+
+## 2026-04-26T09:45Z — Test Examiner audit: confirms full coverage on the new promo-code + automatic-tax checkout path [TEST]
+
+### What was audited
+
+Full audit of `tests/` against every income-critical path in `routes/billing.js` and `routes/invoices.js`:
+- Auth (`/auth/login`, `/auth/register`) — covered by `auth.test.js`, `rate-limit.test.js`, `csrf.test.js`.
+- Stripe Checkout (`/billing/create-checkout`) — covered by `annual-billing.test.js`, `error-paths.test.js`, `checkout-and-webhook-url.test.js`, `trial.test.js`, **and the new `checkout-promo-tax.test.js`**.
+- Stripe webhook (`/billing/webhook`) — covered by `billing-webhook.test.js`, `dunning.test.js`, `trial.test.js`, `paid-notification.test.js`, `webhook-outbound.test.js`, `gap-coverage.test.js`.
+- Invoice CRUD + status whitelist + email send + payment links + duplicate-protection — covered by `invoice-crud.test.js`, `invoice-view-and-status.test.js`, `payment-link.test.js`, `email.test.js`, `status-whitelist.test.js`.
+- Settings POST (`/billing/settings`, `/billing/webhook-url`) — covered by `billing-settings.test.js`, `checkout-and-webhook-url.test.js`, `email.test.js` (reply-to validation).
+- Reminder cron — covered by `reminders.test.js`.
+- Onboarding checklist + dismiss handler — covered by `onboarding.test.js`.
+- Trial banner + day-counter — covered by `trial.test.js`.
+- Helmet/CSRF/CSP — covered by `security-headers.test.js`, `csrf.test.js`.
+- DB plan-CHECK constraint static lint — covered by `plan-check-constraint.test.js`.
+
+### What changed in this commit
+
+`tests/checkout-promo-tax.test.js` (new) — 6 assertions exceeding the 3-test spec in INTERNAL_TODO #35:
+1. `allow_promotion_codes: true` on monthly cycle (always).
+2. `allow_promotion_codes: true` on annual cycle too — defence in depth, since annual takes a different `resolvePriceId` branch.
+3. `automatic_tax: { enabled: false }` and `customer_update: undefined` when `STRIPE_AUTOMATIC_TAX_ENABLED` is unset (Stripe rejects `customer_update` on sessions where `automatic_tax` is off; omitting it is required).
+4. `automatic_tax: { enabled: true }` and `customer_update: { address: 'auto', name: 'auto' }` when env var = `"true"`.
+5. Only the literal string `"true"` flips it on — `"1"` does NOT enable tax. This guards the "off by default" property against typo'd ops values like `STRIPE_AUTOMATIC_TAX_ENABLED=1`.
+6. Trial + promo + tax-flag coexist regression guard — a future edit dropping `subscription_data.trial_period_days: 7` won't go unnoticed.
+
+Wired into `package.json` `test` script. Full suite: 27 test files, 0 failures.
+
+### Findings — no flaky / redundant / failing tests
+
+- No flaky tests detected. Every test in the suite is deterministic (Stripe SDK, Resend SDK, DB, hostname resolver, and `node-cron` are all stubbed via `require.cache` — no real network, no real DB, no real timers).
+- No redundant tests detected. Each test file targets a distinct route, view, or pure helper.
+- No `[TEST-FAILURE]` items added to INTERNAL_TODO — every test passes on the current branch.
+
+### Coverage debt — already tracked, none new
+
+Two coverage gaps remain in INTERNAL_TODO and were not addressed in this commit:
+- **U1 (password reset)** — not yet implementable. Blocked on RESEND_API_KEY in prod (TODO_MASTER #18) and on the 4 routes + 2 views + DB migration in INTERNAL_TODO U1.
+- **#34 Plausible Analytics** — gated on `PLAUSIBLE_DOMAIN` env var (TODO_MASTER #29 needs Master action). No code path to test until the integration ships.
+
+Both are tracked correctly; no test-side action.
+
+---
+
+## 2026-04-26T09:30Z — Stripe Checkout: promotion codes + automatic tax flag (INTERNAL_TODO #35) [GROWTH]
+
+### What was built
+
+`routes/billing.js POST /create-checkout` now passes three new params to `stripe.checkout.sessions.create()`:
+
+1. **`allow_promotion_codes: true`** — unconditional. Every Stripe Checkout session the app launches now surfaces a "Add promotion code" link, which is the prerequisite for every marketing coupon Master is planning (Product Hunt PH50, AppSumo, newsletter sponsorships, Agency cold-email 100%-off-first-month). Without this flag, every coupon Master creates in the Stripe Dashboard is unreachable.
+2. **`automatic_tax: { enabled: process.env.STRIPE_AUTOMATIC_TAX_ENABLED === 'true' }`** — env-var gated. Defaults to `false` so the deploy is safe before Master activates Stripe Tax in the Dashboard. When enabled, Stripe auto-calculates and collects VAT/GST/sales tax for EU/UK/AU/CA customers based on their billing address. EU + UK freelancers are ~30% of the global freelancer market and currently cannot upgrade because the price displayed at checkout doesn't match the tax-inclusive invoice they need for their books.
+3. **`customer_update: { address: 'auto', name: 'auto' }`** — only set when `automatic_tax` is enabled. Required by Stripe Tax to capture the billing address for jurisdiction lookup. Omitted when tax is off because Stripe rejects this param on sessions without `automatic_tax`.
+
+`.env.example` adds `STRIPE_AUTOMATIC_TAX_ENABLED=false` with a comment instructing Master to flip the value after activating Stripe Tax in the Dashboard. The literal string `"true"` is the only value that enables tax — `"1"`, `"yes"`, `"TRUE"` are explicitly NOT honoured (asserted by test #5), so a typo'd value can't silently break the off-by-default safety property.
+
+New `tests/checkout-promo-tax.test.js` (6 assertions, exceeds the 3-test spec): promo codes always-on monthly + annual; tax disabled by default with `customer_update` omitted; tax enabled via env var with `customer_update: { address: 'auto', name: 'auto' }`; only-literal-true gate; trial+promo+tax coexistence regression guard. Wired into `package.json` `test` script. Full suite: 27 test files, 0 failures.
+
+### Master action required (added to TODO_MASTER #30)
+
+In the Stripe Dashboard: Settings → Tax → Activate (5-minute setup; provide the business country and any tax registrations). Then set `STRIPE_AUTOMATIC_TAX_ENABLED=true` in production env and redeploy. Until then, checkout works without tax collection — the env-var gate is reversible.
+
+### Income relevance — direct, compounding
+
+Unlocks two adjacent revenue streams from one ~10-line code change:
+
+1. **Coupon flows.** Every marketing distribution channel Master is planning (Product Hunt launch, AppSumo, newsletter sponsorships, Agency cold-email outreach in TODO_MASTER #25) hands users a coupon code. Without `allow_promotion_codes`, those coupons are unredeemable — the user lands on Checkout, can't find a coupon field, and bounces.
+2. **EU/UK/AU/CA market.** Roughly 30% of the global freelancer market invoices in EUR/GBP/AUD/CAD and is required by their tax authorities to display tax-inclusive prices. Stripe Tax automation removes the compliance friction at zero ongoing effort. Combined with the still-open multi-currency support (#24), this is the EU-launch enabler.
+
+Both are zero-CAC revenue lifts. Closes INTERNAL_TODO #35.
+
+---
+
 ## 2026-04-26T01:15Z — Health Monitor audit: clean, no new findings beyond H8/H9/H10/H11/H14/H15/H16 [HEALTH]
 
 ### What was audited

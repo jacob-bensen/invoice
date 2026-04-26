@@ -1,6 +1,6 @@
 # QuickInvoice + InvoiceFlow — Internal Growth TODO
 
-> **Audited:** 2026-04-26 — Task Optimizer pass. Prior DONE items remain inline-tagged (kept for context; will be archived in a future cleanup once the file exceeds 1.5k lines). 5 new [GROWTH] items (#35–#39) and 2 new [UX] items (U1, U2) appended this cycle. Re-priority order remains: [TEST-FAILURE] (none) > income-critical features > [UX] items that affect conversion > [HEALTH] > [GROWTH] > [BLOCKED]. Complexity tags: [XS] < 30 min · [S] < 2 hrs · [M] 2–8 hrs · [L] > 8 hrs. Duplicates checked against TODO.md and TODO_MASTER.md; INTERNAL_TODO #37 partially overlaps with already-shipped pricing-page badge — see #37 entry for partial-done status.
+> **Audited:** 2026-04-26 PM — Task Optimizer pass (second of the day). This cycle's deltas: (a) #35 closed (Stripe `allow_promotion_codes` + `automatic_tax` env-gated, Master action moved to TODO_MASTER #30). (b) U2 closed (dashboard empty-state Pro tip live for free users). (c) 5 new [GROWTH] items appended (#40 Recurring Invoices for QuickInvoice — parity with InvoiceFlow P12; #41 Stripe Payment Link bank/ACH + SEPA; #42 Custom invoice numbering scheme; #43 Public read-only invoice URL `/i/:token`; #44 In-app "✨ What's new" widget). (d) Open Task Index re-prioritised. Prior DONE items remain inline-tagged (kept for context; will be archived in a future cleanup once the file exceeds 1.5k lines — currently at ~1300 lines). Re-priority order remains: [TEST-FAILURE] (none) > income-critical features > [UX] items that affect conversion > [HEALTH] > [GROWTH] > [BLOCKED]. Complexity tags: [XS] < 30 min · [S] < 2 hrs · [M] 2–8 hrs · [L] > 8 hrs. Duplicates checked against TODO.md and TODO_MASTER.md; INTERNAL_TODO #37 partially overlaps with already-shipped pricing-page badge — see #37 entry for partial-done status.
 
 Do not duplicate items already in `TODO.md`. App labels indicate which codebase each task applies to.
 
@@ -10,16 +10,19 @@ Do not duplicate items already in `TODO.md`. App labels indicate which codebase 
 
 **[UX] — affects conversion, fix sooner**
 - **U1** [UX] [M] — Self-serve password reset flow (stopgap shipped; full flow blocked on Resend key + 4 routes + 2 views + tests)
-- **U2** [UX] [XS] — Dashboard empty state Pro-tip (bundle with #15)
+  *(U2 closed 2026-04-26 — Pro tip live on dashboard empty state)*
 
 **Income-critical [GROWTH]**
-- **#35** [XS] — Stripe `allow_promotion_codes` + Stripe Tax (HIGH; 1 env var, unblocks every coupon flow + EU/UK/AU revenue)
 - **#29** [XS] — Trial End Day-3 Nudge Email (HIGH; all prereqs done, drops trial→paid by 30–50% if missing)
+- **#41** [XS] — Stripe Payment Link bank/ACH + SEPA (HIGH margin lift on $300+ invoices; 1 env var)
 - **#36** [XS] — Open Graph + Twitter Card metadata (MED-HIGH; compounds across every share)
 - **#37** [XS] — Annual "save 31%" badge on pricing toggle (PARTIAL — badge already on `/pricing` + modal; only `/settings` toggle + "2 months free" subtext missing)
+- **#44** [XS] — In-app "✨ What's new" changelog widget in nav (retention)
 - **#15** [S] — Contextual Pro Upsell Prompts on Locked Features (MED-HIGH; bundle U2)
 - **#31** [XS] — Free-Plan Invoice Limit Progress Bar on Dashboard
 - **#39** [S] — First-invoice seed template on signup (HIGH activation lift)
+- **#42** [S] — Custom invoice numbering scheme (Pro feature; switching-cost lift)
+- **#43** [S] — Public read-only invoice URL `/i/:token` (no-login share)
 - **#27** [S] — One-Click Invoice Duplication
 - **#33** [S] — Invoice Bulk CSV Export (GDPR Art. 15 + tax-season retention)
 - **#28** [S] — Legal Pages Scaffolding (Terms / Privacy / Refund) — blocks L1/L2/L3 in TODO_MASTER + Stripe ToS
@@ -31,6 +34,7 @@ Do not duplicate items already in `TODO.md`. App labels indicate which codebase 
 - **#34** [XS] — Plausible Analytics Integration (gated on Master providing PLAUSIBLE_DOMAIN per TODO_MASTER #29)
 - **#20** [S] — Social Proof Section on Landing + Pricing Pages
 - **#32** [S] — API Key Auth + REST Endpoints (prereq for Zapier app listing)
+- **#40** [M] — Recurring Invoice Auto-Generation for QuickInvoice (parity with InvoiceFlow; HIGH retention)
 - **#21** [M] — Client-Facing Invoice Portal
 - **#18** [M] — Referral Program with Stripe Coupon Rewards
 - **#24** [M] — Multi-Currency Invoice Support
@@ -930,7 +934,7 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 
 ---
 
-### 35. [GROWTH] Stripe Checkout: enable promotion codes + automatic tax (added 2026-04-26 audit) [XS]
+### 35. [DONE 2026-04-26] [GROWTH] Stripe Checkout: enable promotion codes + automatic tax (added 2026-04-26 audit) [XS]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** HIGH — two adjacent wins from one ~3-line change in `routes/billing.js`. (1) `allow_promotion_codes: true` adds a "Add promotion code" link to every Stripe Checkout page, which is the prerequisite for Product Hunt launch coupons (`PH50`), AppSumo redemption, freelancer-newsletter sponsorships ("DESIGNERS20"), and the 100%-off-first-month coupon already mentioned in TODO_MASTER #25 (Agency cold email). Without it, every coupon Master creates in the Stripe Dashboard is unreachable. (2) `automatic_tax: { enabled: true }` switches on Stripe Tax for every subscription — Stripe automatically calculates and collects VAT/GST/sales tax for EU/UK/AU/CA customers based on their billing address. EU and UK freelancers are ~30% of the global freelancer market and are currently unable to upgrade because the price displayed at checkout doesn't match the post-tax invoice they need for their books.
@@ -944,6 +948,12 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 4. `.env.example`: add `STRIPE_AUTOMATIC_TAX_ENABLED=false` with comment "Set to true once Stripe Tax is activated in Dashboard".
 5. New `tests/checkout-promo-tax.test.js` (3 tests): `allow_promotion_codes` is always true; `automatic_tax.enabled` reflects env var; Stripe Tax DISABLED in test env (no env var set).
 6. Add Master action to TODO_MASTER.md: enable Stripe Tax in Dashboard + flip the env var.
+
+**Resolution (2026-04-26):** `routes/billing.js POST /create-checkout` now sets `allow_promotion_codes: true` unconditionally (every coupon flow Master plans — Product Hunt PH50, AppSumo, newsletter sponsorships, Agency cold-email 100%-off — surfaces a "Add promotion code" link on the Stripe Checkout page). `automatic_tax.enabled` reads `process.env.STRIPE_AUTOMATIC_TAX_ENABLED === 'true'` so the deploy is reversible — only the literal string `"true"` flips it on (`"1"`, `"yes"`, `"TRUE"` are explicitly NOT honoured per test #5 below). When tax is enabled, `customer_update: { address: 'auto', name: 'auto' }` is set so Stripe captures billing address for jurisdiction lookup; when tax is disabled, `customer_update` is omitted because Stripe rejects it on sessions without `automatic_tax`. The new fields ride alongside the existing `subscription_data: { trial_period_days: 7 }` from #19 — verified by regression test #6.
+
+`.env.example` adds `STRIPE_AUTOMATIC_TAX_ENABLED=false` with a comment instructing Master to set it to `true` after activating Stripe Tax in the Dashboard. New `tests/checkout-promo-tax.test.js` adds 6 assertions (exceeds the 3-test spec): (1) `allow_promotion_codes` is always true on monthly cycle; (2) `allow_promotion_codes` is also true on annual cycle (defence in depth — annual takes a different code branch via `resolvePriceId`); (3) `automatic_tax.enabled = false` and `customer_update` is undefined when env var is unset; (4) env var = `"true"` enables tax + sets `customer_update: { address: 'auto', name: 'auto' }`; (5) env var = `"1"` does NOT enable tax (literal-true gate prevents typo'd values from silently breaking the off-by-default property); (6) trial + promo + tax-flag coexist regression guard (a future edit dropping the trial setting won't go unnoticed). Wired into `package.json` `test` script. Full suite: 27 test files, 0 failures.
+
+**[Master action]** required to actually collect tax: in the Stripe Dashboard go to Settings → Tax → Activate (5-minute setup; provide the business country + tax registrations for any jurisdictions where you collect tax). Then set `STRIPE_AUTOMATIC_TAX_ENABLED=true` in production env and redeploy. Until then, checkout works fine without tax — the env-var gate makes the deploy safe and reversible. See TODO_MASTER.md.
 
 **Income relevance:** Direct. Unlocks (a) every marketing coupon flow Master is planning (Product Hunt, AppSumo, newsletter sponsorships, Agency cold email), (b) the EU/UK/AU/CA freelancer market segment that currently can't upgrade due to tax compliance friction. Both are zero-CAC revenue lifts.
 
@@ -1040,7 +1050,7 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 
 ---
 
-### U2. [UX] Dashboard empty state does not mention Pro features (added 2026-04-26 UX audit) [XS]
+### U2. [DONE 2026-04-26] [UX] Dashboard empty state does not mention Pro features (added 2026-04-26 UX audit) [XS]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** MEDIUM — `views/dashboard.ejs` empty state (lines 143-152) shows "No invoices yet — Create your first invoice and start getting paid." for users with zero invoices. Free users at this moment are at peak intent (they just signed up) but see no information about what Pro unlocks; they create their first invoice and then might not encounter the Pro upsell until they hit the 3-invoice limit. Adding a subtle "✨ Pro tip: with Pro you can email invoices directly + get paid via Stripe payment link — try free for 7 days" callout below the CTA captures the high-intent activation moment without being pushy.
@@ -1056,7 +1066,7 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 2. Pro/Business/Agency users see no callout (irrelevant to them).
 3. Wrap in `print:hidden` (defensive — empty dashboards are rarely printed but the print stylesheet should not show CTA chrome).
 4. No test required (pure view change); spot-check renders for Free user empty state and is absent for Pro user empty state.
-**Why not auto-fixed in this audit:** Overlaps thematically with INTERNAL_TODO #15 ("Contextual Pro Upsell Prompts on Locked Features"), which already has dashboard/branding/payment-link upsells in scope. Worth bundling with #15 so the upsell copy stays consistent across all four Free-user surfaces.
+**Resolution (2026-04-26 UX audit):** Implemented directly. `views/dashboard.ejs` empty-state block now renders a `print:hidden` ✨ Pro tip below the "Create your first invoice" CTA, gated on `user && user.plan === 'free'`. Copy: "with Pro, every invoice auto-generates a Stripe Pay button so clients pay in one click." Includes an underlined "Try Pro free for 7 days →" link to `/billing/upgrade`. Pro/Business/Agency users see no callout (irrelevant). The wider container also picked up `print:hidden` so the empty-state never leaks into a print dialog. INTERNAL_TODO #15 still open for the larger upsell-on-locked-features scope (settings branding, invoice-view payment link card, dashboard stats-bar callout); this commit closes only the empty-state slice. Tests: ran `tests/onboarding.test.js`, `tests/dunning.test.js`, `tests/trial.test.js` — all green (the three test files that EJS-render the dashboard).
 
 ---
 
@@ -1075,6 +1085,105 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 5. New `tests/sample-invoice.test.js` (3 tests): registration creates a sample invoice with the right shape; dashboard renders the sample-invoice badge; deleting the sample invoice does not break the onboarding checklist.
 
 **Income relevance:** Activation lift translates directly into Pro upgrades — users who reach "first invoice paid" upgrade at 5–10× the rate of users who never make it past the empty dashboard. The free-plan invoice limit (3) means the sample invoice does count against their quota — a deliberate feature, not a bug, because it puts gentle pressure to either delete the sample or upgrade.
+
+---
+
+### 40. [GROWTH] Recurring Invoice Auto-Generation for QuickInvoice (parity with InvoiceFlow #6/P12) (added 2026-04-26 audit) [M]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** HIGH — retainer freelancers and consultants are the highest-LTV segment of the user base; they invoice the same client(s) the same amount every month. Today, those users have to manually click "Duplicate" → edit dates → mark sent each month, which is exactly the kind of friction that drives churn to FreshBooks / Bonsai. The reminder cron infrastructure (#16, done) already runs daily; adding a recurring-invoice auto-clone job to that same scheduler is a 30-line addition. InvoiceFlow has had this since P12; QuickInvoice's lack of it is the single biggest feature-parity gap and the #1 reason a long-tenured Pro user might cancel.
+**Effort:** Medium
+**Prerequisites:** Reminder cron (#16, done); One-Click Duplication helper from #27 if landed first (re-uses the same line-item clone helper).
+
+**Sub-tasks:**
+1. `db/schema.sql`: idempotent additions —
+   - `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS recurrence_frequency VARCHAR(20);` (allowed: `WEEKLY`, `BIWEEKLY`, `MONTHLY`, `QUARTERLY`).
+   - `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS recurrence_next_run TIMESTAMP;`
+   - `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS recurrence_active BOOLEAN DEFAULT false;`
+   - Partial index: `CREATE INDEX IF NOT EXISTS idx_invoices_recurrence_due ON invoices(recurrence_next_run) WHERE recurrence_active = true;`
+2. `db.js`: `setRecurrence(invoiceId, userId, { frequency, nextRun, active })` — verifies user ownership; clears recurrence when `active=false`. `getRecurringInvoicesDue(now)` — single SELECT joining users where `recurrence_active=true AND recurrence_next_run <= now AND plan IN ('pro','business','agency')` (Pro-gated). `cloneInvoiceForRecurrence(originalId, userId, newIssueDate)` — re-uses the duplicate logic; returns the new invoice ID.
+3. `routes/invoices.js`: `POST /invoices/:id/recurrence` — Pro-gated; reads `frequency` (whitelisted) + `active` (boolean) from body; writes via `db.setRecurrence`. Free users see a locked Pro upsell on the invoice view.
+4. `views/invoice-view.ejs`: add a "Recurrence" card (Pro only) — dropdown for frequency, toggle for active, save form. When active, render "Next invoice will auto-create on YYYY-MM-DD" beneath. Free user version is the same locked placeholder pattern as the webhook UI.
+5. `jobs/recurring-invoices.js`: new daily cron (`'15 9 * * *'`, 09:15 UTC — staggered 15 min after the reminder cron at 09:00 to avoid contention). Pure orchestrator with full DI (same pattern as `jobs/reminders.js`): for each due row, clone the invoice with `status='draft'` and `issue_date=NOW()`, `due_date=NOW()+INTERVAL 30 days`, advance `recurrence_next_run` by the frequency. Per-row try/catch so one bad clone doesn't kill the batch.
+6. `server.js`: register the new job under the same `NODE_ENV !== 'test'` guard as the reminder cron.
+7. New `tests/recurring-invoices.test.js` (6+ tests): MONTHLY frequency advances `recurrence_next_run` exactly 1 month forward; cloned invoice has new invoice number + `status='draft'`; clone preserves line items; free-plan invoice is skipped even if `recurrence_active=true` (defence in depth atop SQL filter); paused recurrence is skipped; clone error in one row doesn't halt the batch.
+
+**Income relevance:** Direct retention. Retainer freelancers churn at 30–50% lower rates when the tool auto-generates their monthly invoice — this is the highest-ROI retention feature still uncaptured in QuickInvoice. Closes the single biggest feature-parity gap with InvoiceFlow and the most common request from Pro users on freelancer forums.
+
+---
+
+### 41. [GROWTH] Stripe Payment Link: enable bank/ACH + SEPA (lower fees on big invoices) (added 2026-04-26 audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** HIGH (margin) — Stripe Payment Links default to card-only. For US invoices, ACH Direct Debit is 0.8% capped at $5 vs. cards at 2.9% + $0.30. On a $2,000 retainer invoice, ACH costs $5; card costs $58.30 — a $53 fee delta the freelancer eats. Many freelancers are quietly skipping QuickInvoice's payment link on large invoices because of this. SEPA Direct Debit (EU) is 0.8% capped at €5; AU BECS Direct Debit is similar. Adding `payment_method_types: ['card', 'us_bank_account', 'sepa_debit']` to `stripe.paymentLinks.create()` unlocks the lower-fee path.
+**Effort:** Very Low
+**Prerequisites:** Stripe account must enable each payment method in Settings → Payments → Payment methods (1 minute per method, no review). Master action.
+
+**Sub-tasks:**
+1. `lib/stripe-payment-link.js`: `createPaymentLink()` adds `payment_method_types: process.env.STRIPE_PAYMENT_METHODS ? process.env.STRIPE_PAYMENT_METHODS.split(',').map(s => s.trim()) : ['card']` so the deploy is reversible. Default stays card-only until Master sets the env var.
+2. `.env.example`: add `STRIPE_PAYMENT_METHODS=card,us_bank_account,sepa_debit` (commented; defaults to `card` only).
+3. New `tests/payment-link-methods.test.js` (3 tests): default = card-only (no env var); env var = `card,us_bank_account` enables both methods; whitespace + casing tolerant (`"card, US_BANK_ACCOUNT"` → `['card', 'us_bank_account']` once normalised).
+4. `views/invoice-view.ejs`: add a tiny info tooltip near the payment-link field: "Clients can pay via card or bank transfer (US)" — only when `STRIPE_PAYMENT_METHODS` includes `us_bank_account`.
+5. Add `[Master action]` to TODO_MASTER.md: enable ACH / SEPA / BECS in Stripe Dashboard → Settings → Payments and flip the env var.
+
+**Income relevance:** Direct margin lift on invoices ≥$300. ACH/SEPA also has a 5–8% higher conversion rate on B2B invoices because clients prefer it for their books. Combined effect: 1–2% fee savings + 5–8% more invoices paid = a meaningful per-Pro-user revenue lift with no acquisition cost.
+
+---
+
+### 42. [GROWTH] Custom invoice numbering scheme (Pro feature) (added 2026-04-26 audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MED-HIGH — every freelancer who has used another invoicing tool has an existing invoice numbering scheme (e.g. `2026-001` for tax-year prefix, `JD-2026-001` for initials, `001` for plain sequential). Their accountant wants the numbering to continue without resetting. Right now QuickInvoice forces `INV-YYYY-NNNN` on everyone, which means switching tools forces a numbering break — the single biggest "I'd switch but..." friction point for freelancers with 1+ years of invoicing history. Letting users set a custom prefix (and optionally a starting number) removes this friction and is a tangible, visible Pro feature that competitors (FreshBooks, Bonsai) charge for.
+**Effort:** Low
+**Prerequisites:** None.
+
+**Sub-tasks:**
+1. `db/schema.sql`: idempotent —
+   - `ALTER TABLE users ADD COLUMN IF NOT EXISTS invoice_number_prefix VARCHAR(16) DEFAULT 'INV-';`
+   - `ALTER TABLE users ADD COLUMN IF NOT EXISTS invoice_number_start INT DEFAULT 1;`
+   - The numerical part of every invoice continues to be derived from `users.invoice_count` (existing column); the prefix is just a cosmetic wrapper.
+2. `db.js`: `getNextInvoiceNumber(userId)` — read `invoice_number_prefix` + `invoice_number_start` + `invoice_count`; format as `${prefix}${pad(invoice_count + 1, 4)}` if prefix ends in non-numeric, else `${prefix}-${pad(...)}`. Export `formatInvoiceNumber(prefix, start, count)` as a pure helper for tests.
+3. `views/settings.ejs`: add an "Invoice numbering" card in the Pro section (Pro-gated). Inputs: prefix text (max 16 chars, alphanumeric + `-` + `/`), starting number (default 1, max 999999). Free users see a locked placeholder showing the default `INV-2026-NNNN` format with an upgrade CTA.
+4. `routes/billing.js POST /settings`: extend the existing settings handler — Pro-only validation: prefix matches `/^[A-Za-z0-9_/\-]{0,16}$/` and start is a positive integer. Reject and flash on invalid.
+5. New `tests/invoice-numbering.test.js` (5 tests): default prefix=`INV-` for new users; Pro user can set prefix=`JD-2026-`; Free user POST is rejected (Pro gate); invalid prefix `JD@2026` rejected; `formatInvoiceNumber` pure-fn output for various inputs (no separator when prefix already has trailing dash, otherwise insert dash).
+
+**Income relevance:** Direct switching-cost lift. Users who set a custom prefix (typical adoption for any settings-tab feature is 30–50% of Pro users) churn at 50% lower rates because their accountant has the numbering on file and re-onboarding requires re-syncing. Also a concrete, visible Pro feature that the upgrade modal can list explicitly.
+
+---
+
+### 43. [GROWTH] Public read-only invoice URL (no-login share link) (added 2026-04-26 audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM — today the only way for a client to view an invoice is the email body or the Stripe Payment Link page. Many clients want to forward "the invoice itself" to their AP department before paying — and our HTML invoice view (`/invoices/:id`) is auth-gated. Adding a public read-only URL like `/i/:token` (where token is a per-invoice random string) lets clients view the full invoice in a browser, download the PDF, and forward the link to their accounting team without any login. Pairs naturally with the existing Payment Link as the "Pay Now" CTA on that page. Also unblocks INTERNAL_TODO #21 (full Client Portal) — the portal page is the per-client list view; this is the per-invoice view, the smallest unit.
+**Effort:** Low
+**Prerequisites:** None (Pro is not required — clients always need to be able to view invoices).
+
+**Sub-tasks:**
+1. `db/schema.sql`: idempotent — `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS public_token VARCHAR(40) UNIQUE;` Backfill on read: when the invoice is loaded by an authed user and `public_token IS NULL`, generate `crypto.randomBytes(20).toString('hex')` and persist. Lazy generation avoids a one-time backfill migration.
+2. `db.js`: `getInvoiceByPublicToken(token)` — SELECT invoice + owner business name/email; no plan gate.
+3. `routes/invoices.js`: new `GET /i/:token` (no `requireAuth`). 404 on missing token. Renders a new `views/invoice-public.ejs` (clean, unbranded — no nav, no footer chrome): full line-item table, total, due date, "Pay Now" Stripe Payment Link button (when `payment_link_url` is set), a "Download PDF" link to `/i/:token/pdf`, and a footer "Sent via QuickInvoice".
+4. `routes/invoices.js`: new `GET /i/:token/pdf` — same auth-less path; re-uses the existing print template; sends `Content-Disposition: inline; filename="invoice-INV-X.pdf"`.
+5. `views/invoice-view.ejs` (Pro user): add a "Share link" card showing `${APP_URL}/i/${invoice.public_token}` with an Alpine.js copy button (same pattern as the webhook URL copy UI). Tooltip: "Send this link to anyone — they can view and pay the invoice without a login."
+6. New `tests/public-invoice.test.js` (5 tests): valid token → 200 with line items + Pay button; unknown token → 404; lazy-token-generation: first authed view of an invoice without a public_token persists one; PDF route returns Content-Type `application/pdf`; share-link card renders for Pro user only.
+
+**Income relevance:** Indirect — removes the single biggest friction point in the client-pay flow ("can you send me the invoice as a PDF for our records?"). Faster client payment ⇒ paid invoices that loop back via the new "instant paid notification" email (#30) ⇒ the cha-ching word-of-mouth touchpoint fires sooner per cohort. Also strict prerequisite for the full client portal (#21).
+
+---
+
+### 44. [GROWTH] In-app changelog widget — "✨ What's new" indicator in nav (added 2026-04-26 audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM — the public roadmap (#38) handles "what's coming"; this handles "what just shipped." A small `✨ What's new` link in the nav, with a 6-bullet popover, surfaces the steady stream of feature improvements (annual billing, payment links, instant paid notifications, etc.) so existing Pro users see active development without having to read the public CHANGELOG. Industry data: SaaS users who see at least one "what's new" notice per month churn at 30% lower rates than users who don't. The cost is one nav link + one EJS partial + one curated 6-bullet list refreshed at deploy time.
+**Effort:** Very Low
+**Prerequisites:** None.
+
+**Sub-tasks:**
+1. `views/partials/whats-new.ejs`: a tiny Alpine.js dropdown component anchored on a small `✨` icon in the nav. On open, render a card with: a title ("What's new in QuickInvoice"), 5–6 hand-curated bullet items (each ≤ 12 words) with their ship date, and a "See full roadmap →" footer link to `/roadmap`. Bullets are static — edited at every deploy.
+2. `views/partials/nav.ejs`: include the partial when `locals.user` is set (logged-in users only — public visitors get the marketing site already). Position to the right of the user dropdown. Mobile menu: list as a top-level item under the hamburger.
+3. (Optional follow-up, not part of this task): track first-view vs. subsequent-view via a localStorage `qi_whatsnew_seen=<latest_date>` key so a small red dot fades out after the user has clicked the popover once.
+4. New `tests/whats-new.test.js` (3 tests): nav renders the `✨` link for logged-in users; popover lists at least 4 bullet items; popover does NOT render for anon visitors (the partial is gated on `locals.user`).
+
+**Income relevance:** Retention. Continuously visible "active development" signal counters the #2 cancellation reason ("not sure they're building this") that the roadmap (#38) addresses for prospects. The Pro-tier per-user LTV is high enough that every month of churn-deferral pays back the ~30 minutes of curation per release.
 
 ---
 

@@ -1,6 +1,6 @@
 # Actions Required from Master
 
-> **Audited:** 2026-04-23 — All items reviewed against CHANGELOG. Items 1–8 are human deployment/configuration actions; none are resolved by code commits. No items tagged [LIKELY DONE - verify]. Fixed numbering (item 8 was listed before item 7). Code for all P1–P10 features is complete; deployment is the only remaining blocker to revenue.
+> **Audited:** 2026-04-26 PM — Task Optimizer re-pass. All items reviewed against CHANGELOG (which now spans 2026-04-22 → 2026-04-26 PM). Two new items added this cycle: **#30** (activate Stripe Tax + flip env var, paired with INTERNAL_TODO #35 which closed the code-side wiring) and **#33** (LinkedIn outreach to listicle authors, [MARKETING] channel for compounding SEO traffic). No items tagged [LIKELY DONE - verify] this cycle — every Master action remains pending its respective external step (Stripe Dashboard config, Resend API key, Plausible domain, etc.). Items 1–8 are human deployment/configuration actions; none are resolved by code commits. Code for all P1–P10 features and every shipped INTERNAL_TODO item is complete; deployment + the listed Stripe / Resend / domain / analytics provisioning are the remaining blockers to scale-revenue.
 
 ---
 
@@ -455,6 +455,26 @@ Each coupon takes ~30 seconds in the Dashboard. Stripe surfaces them automatical
 
 ---
 
+### 33. [MARKETING] LinkedIn outreach to top "Best Invoicing Software for Freelancers 2026" listicle authors (added 2026-04-26)
+
+**Impact:** MEDIUM-HIGH — Google's top 3–5 results for "best invoicing software for freelancers" are SEO-driven listicles (G2, Capterra-syndicated, blogger roundups). Each receives ~5,000–20,000 monthly visits with high purchase intent. Getting QuickInvoice added to even one of these articles is a permanent zero-CAC traffic source compounding monthly. The authors are individual people (not committees) and are reachable on LinkedIn.
+**Action:**
+1. Search Google for the following queries, capture the top 5 results for each:
+   - `best invoicing software for freelancers 2026`
+   - `freelance invoice software reviews`
+   - `invoicing tools for designers 2026`
+   - `best invoicing app for consultants`
+2. Identify the article author for each (usually in the byline or "About the author" footer). Find them on LinkedIn.
+3. Send a short LinkedIn connection note (under 300 chars):
+   > Hi [Name] — your roundup of [list name] was helpful when I was researching this space. I built QuickInvoice (quickinvoice.io) — Stripe Payment Links auto-generated on every invoice + 7-day free trial. Would you consider adding it to the next refresh? Happy to give you a free Pro account to try first.
+4. After they connect, follow up with a 1-message pitch: 1 screenshot of the invoice editor, 1-line description, the free Pro account offer. Do NOT send a press kit — these authors are individual creators, not journalists.
+5. Track responses in a spreadsheet. Aim: 3 article inclusions over 60 days. Each ranking #1–3 article is worth ~$200/mo in compounding LTV.
+6. **Prerequisite:** The product must be live with a real domain, the 7-day trial (#19, done) live, and at least one real testimonial on the landing page (after [MARKETING] #21 collects testimonials).
+
+**Income relevance:** Direct top-of-funnel traffic that compounds across every article inclusion, every month, indefinitely. Highest ROI per hour spent of any [MARKETING] action — one well-pitched message can secure a permanent referral source.
+
+---
+
 ### 30. [MARKETING] Announce "Invoice Paid Instant Notification" Feature on Social
 
 **Impact:** MEDIUM — when INTERNAL_TODO #30 ("Invoice Paid" notification email to freelancer) ships, it is the kind of emotionally resonant micro-feature that goes viral on Twitter/X among freelancers; the single-sentence pitch ("QuickInvoice now emails you the instant your client pays — so you can stop refreshing your bank account") is a self-contained hook that needs no explanation; native video or screenshot of the email in a phone notification tray maximises engagement
@@ -761,3 +781,45 @@ If the output still shows the narrow `('free', 'pro')` pair, the migration didn'
 ### Why this matters
 
 Indirect income lift: this is the prerequisite plumbing for #9 (Agency team seats at $49/mo, the highest-ARPU tier in `master/APP_SPEC.md`) and #10 (Business tier at $29/mo, raises ARPU ceiling from $12 to $29 per power user). Both tasks would have hit a 23514 the first time any user upgrade tried to persist `plan='agency'` or `plan='business'`. With the constraint widened, both tiers can ship without re-touching the schema.
+
+---
+
+## 30. QuickInvoice: activate Stripe Tax + flip `STRIPE_AUTOMATIC_TAX_ENABLED` (added 2026-04-26)
+
+INTERNAL_TODO #35 is closed in code: every Stripe Checkout session now ships with `allow_promotion_codes: true` (active immediately — no env var, no Dashboard change) and `automatic_tax: { enabled: process.env.STRIPE_AUTOMATIC_TAX_ENABLED === 'true' }` (env-var gated; off by default).
+
+The promotion-code half is **live now** — every coupon Master creates in the Stripe Dashboard from this point forward is reachable via the "Add promotion code" link on the Checkout page. No verification needed beyond running the next coupon-driven distribution action (Product Hunt PH50, AppSumo, agency cold email).
+
+The automatic-tax half needs Master to do two things in production:
+
+### Action
+
+1. **Activate Stripe Tax in the Dashboard** (~5 minutes). Stripe Dashboard → Settings → Tax → Activate. You will be asked for:
+   - Your business country and address (the "origin" address used for tax calculation).
+   - The tax registrations you currently hold. For a new SaaS, the typical starting answer is "no registrations yet" — Stripe Tax can still **calculate** tax on every invoice and will track which jurisdictions you cross thresholds in (so you know when to register). Stripe will auto-add your home-country registration once you provide it.
+   - Whether to **collect** tax or just calculate. If you're not yet registered anywhere, set to "calculate only" (no collection). Once registered in any jurisdiction (typical first registration is your home country once you cross its small-seller threshold), flip the registration to "collect".
+2. **Flip the env var** in production (Heroku / Render / Railway / etc):
+   ```
+   STRIPE_AUTOMATIC_TAX_ENABLED=true
+   ```
+   Restart the dyno. Next checkout will pass `automatic_tax.enabled=true` and `customer_update: { address: 'auto', name: 'auto' }` to Stripe — Stripe captures the billing address and applies the calculated tax.
+
+Until both steps are done, leave the env var unset (or `=false`). Checkout still works, just without tax collection.
+
+### Verification
+
+After the env flip, hit `/billing/upgrade`, click "Start 7-day free trial". On the Stripe Checkout page:
+- A **"Add promotion code"** link should appear next to the line-item price (the promo half — already live before this Master action).
+- A **"VAT / Sales tax"** line should appear in the order summary (tax half — needs the env flip + Stripe Tax activation).
+- The billing address fields should be auto-required.
+
+Stripe's Test Card `4242 4242 4242 4242` with a EU postcode (e.g. UK `SW1A 1AA`) should display VAT in the summary; same card with a US postcode (e.g. `94105`) should display sales tax for jurisdictions where you've registered.
+
+### Why this matters (income relevance)
+
+Direct, compounding revenue lift from one ~10-line code change:
+
+1. **Coupon flows.** Unlocks every marketing distribution action that hands users a coupon code: Product Hunt launch coupons (PH50), AppSumo lifetime deals, freelancer-newsletter sponsorships ("DESIGNERS20"), and the 100%-off-first-month coupon planned for the Agency cold-email outreach (TODO_MASTER #25). Without `allow_promotion_codes`, every coupon was unreachable — the user landed on Checkout, couldn't find a coupon field, and bounced.
+2. **EU/UK/AU/CA market segment.** ~30% of the global freelancer market is outside the US and is required by their tax authorities to display tax-inclusive prices. Stripe Tax automation removes the compliance friction. Combined with the still-open multi-currency support (INTERNAL_TODO #24), this is the EU-launch enabler.
+
+Both are zero-CAC revenue lifts.
