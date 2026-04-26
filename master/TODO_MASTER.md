@@ -976,3 +976,97 @@ Page-1 organic ranking on a freelancer-niche query is worth ~50-200 visits/month
 ### Why this matters (income relevance)
 
 The accountant-referral channel is the single highest-trust distribution channel in B2B SaaS — a freelancer who hears "QuickInvoice handles your invoicing" from their CPA converts at 5-10x the rate of cold organic traffic. Five active partner accountants each referring 2-5 clients per quarter = 40-100 new Pro signups per year per partner cohort, at ~zero ongoing CAC. The compounding effect over 12-18 months can produce a recurring revenue floor that is more stable than any single launch event.
+
+---
+
+## 38. QuickInvoice: replace `public/og-image.png` with branded asset (added 2026-04-27)
+
+**Impact:** MEDIUM-HIGH (compounds across every share) — INTERNAL_TODO #36 shipped Open Graph + Twitter Card metadata on every public page (landing, pricing, all 6 niche landing pages). The placeholder `public/og-image.png` is a valid 1200×630 brand-indigo PNG so social-card validators accept it pre-replacement, but the actual share preview is just a solid color block. Replacing it with a branded card (logo + tagline + brand color background) makes every shared link in Slack / iMessage / Twitter / LinkedIn / Discord render as a recognisable QuickInvoice card.
+
+### Action (Master, ~15 min)
+
+1. Open Figma / Canva / any image tool. Create a 1200×630 PNG with:
+   - QuickInvoice wordmark or `⚡ QuickInvoice` logo (top-left or centered)
+   - Tagline: "Professional invoices in 60 seconds" or "Get paid faster"
+   - Brand-indigo (#4f46e5) background or gradient (matches `views/partials/head.ejs` Tailwind brand-600)
+   - White or near-white text for high contrast
+2. Export as PNG, name it `og-image.png`, replace `public/og-image.png` in the repo. Commit + deploy.
+3. Validate after deploy by pasting `https://quickinvoice.io/` into:
+   - LinkedIn Post Inspector: https://www.linkedin.com/post-inspector/
+   - Twitter Card Validator: https://cards-dev.twitter.com/validator
+   - Both should show the new card. If they show the old image, click "Refresh" / "Re-fetch" to bust their cache.
+
+### Why this matters (income relevance)
+
+Indirect but compounding. Every distribution action in TODO_MASTER (Reddit posts #14, tweets #17/#30, newsletter mentions #20, Slack/Discord drops #28, Show HN #19, listicle outreach #36) generates ~30-50% higher click-through when the link preview renders as a branded card vs. a bare URL. Lifetime ROI on 15 minutes of design work.
+
+---
+
+## 39. QuickInvoice: set `APP_URL` env var in production (added 2026-04-27)
+
+**Impact:** MEDIUM-HIGH — INTERNAL_TODO #36's Open Graph metadata uses `process.env.APP_URL` to render absolute `og:url` and `og:image` URLs. Most social-card validators (Twitter, LinkedIn, Discord) require absolute URLs for the preview image — relative paths fail silently and the card falls back to "no image." The env var is also used by other features (`jobs/trial-nudge.js`'s CTA, `lib/email.js` paid-notification button) where it's nice-to-have; for OG metadata it's effectively required.
+
+### Action (Master, ~1 min)
+
+1. In Heroku / Render / your prod env, set:
+   ```
+   APP_URL=https://quickinvoice.io
+   ```
+   (no trailing slash — the OG helper normalises it either way, but cleaner without).
+2. Restart / redeploy so the new env var takes effect.
+3. Re-validate via LinkedIn Post Inspector + Twitter Card Validator (see #38) — preview image should now load instead of "Image preview unavailable."
+
+### Why this matters
+
+Pairs with #38 (branded OG image). Without `APP_URL` set, the og:image URL renders as a bare `/og-image.png` which most social-card consumers can't fetch. With it set, every shared link gets the rich preview card.
+
+---
+
+## 40. [MARKETING] Stripe Customer Portal: enable invoice history + tax IDs + payment method update (added 2026-04-27)
+
+**Impact:** MEDIUM (retention + EU/UK tax compliance) — Stripe Customer Portal launches today with only the "Cancel subscription" affordance enabled by default. Pro users can already reach the portal from the past-due banner and the pricing page's "Manage subscription" link, but they can't:
+- Download past invoices for their accountant.
+- Update billing details (address, tax ID) — required for EU/UK VAT compliance once #30 (Stripe Tax) is activated.
+- Update payment method without going through dunning.
+
+Each of these is a self-serve feature Stripe ships behind a single dashboard toggle. Enabling them costs zero engineering work and removes 3 categories of "I have to email support" tickets, which compounds support time-savings as the user base grows.
+
+### Action (Master, ~2 min)
+
+1. Stripe Dashboard → Settings → Billing → Customer portal → "Configure" the Live mode portal.
+2. Under "Features", enable:
+   - **Invoice history** (already on by default — verify)
+   - **Tax IDs** (off by default — turn ON for EU/UK/AU/CA freelancer compliance once #30 Stripe Tax is activated)
+   - **Update billing address** (off by default — turn ON; required by Stripe Tax)
+   - **Update payment method** (off by default — turn ON; the most-requested portal feature)
+3. Under "Cancellation", confirm the cancellation flow asks for a reason (Stripe collects this and it's the cheapest churn-signal data we'll ever have).
+4. Save. Changes apply immediately to every subsequent portal session — no redeploy.
+
+### Why this matters (income relevance)
+
+Self-serve portal features convert "support escalation" into "happy customer" with zero ongoing engineering cost. Each enabled feature is a few hours of Master support time saved per month, and tax IDs specifically unblock #30 (Stripe Tax) for the EU/UK/AU/CA freelancer market segment that #30's automatic_tax flag will start collecting from.
+
+---
+
+## 41. [MARKETING] Coupon-URL campaign templates for Reddit / Product Hunt / Show HN (added 2026-04-27 — gated on INTERNAL_TODO #58)
+
+**Impact:** MEDIUM-HIGH (conversion lift on every paid distribution) — once INTERNAL_TODO #58 (`/redeem/:code` page) ships, every distribution channel can carry a unique URL that auto-applies a Stripe promotion code at checkout. This converts the existing "Add promotion code" affordance (which most visitors don't notice) into a 1-click redemption flow. Master needs to (a) create the codes in Stripe, (b) draft channel-specific posts that carry the URLs.
+
+### Action (Master, ~2 hrs once #58 ships)
+
+1. Stripe Dashboard → Products → Coupons → create:
+   - `PH50` — 50% off first 3 months (Product Hunt launch)
+   - `SHOWHN30` — 30% off first 3 months (Show HN)
+   - `REDDITSAAS25` — 25% off first 3 months (r/SaaS, r/freelance posts)
+   - `MEDIUM-LISTICLE` — 20% off first 3 months (one per inbound listicle, see #36)
+   - `ACCOUNTANT-PARTNER50` — 50% off first 3 months (for #37 partner referrals)
+2. For each coupon, create a Stripe Promotion Code with the same name (Stripe distinguishes Coupons from Promotion Codes; #58 reads the latter).
+3. Draft 3 launch posts that carry the URLs:
+   - **Product Hunt launch** — `https://quickinvoice.io/redeem/PH50` in the comments.
+   - **Show HN** — `https://quickinvoice.io/redeem/SHOWHN30` in the body.
+   - **r/SaaS Friday Roundup** — `https://quickinvoice.io/redeem/REDDITSAAS25` in the post.
+4. Track conversions per code in Stripe → Coupons → individual coupon page → "Redemptions" count. Each redemption is a measurable Pro signup attributable to that exact channel.
+
+### Why this matters
+
+Without per-channel codes, every paid signup looks identical in Stripe and channel ROI is impossible to measure. With them, Master can see "30 signups via PH50 in week 1, $0 ad spend" and double down on what works. Pairs with INTERNAL_TODO #34 (Plausible analytics) — Plausible measures the click; the coupon code measures the conversion.

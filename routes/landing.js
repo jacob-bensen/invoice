@@ -226,7 +226,11 @@ function buildLocals(slug) {
     nicheBenefits: niche.benefits,
     nicheFaq: niche.faq,
     exampleInvoice: niche.exampleInvoice,
-    screenshotAlt: `Example QuickInvoice invoice for a ${niche.singular}`
+    screenshotAlt: `Example QuickInvoice invoice for a ${niche.singular}`,
+    ogTitle: niche.headline,
+    ogDescription: niche.description,
+    ogPath: publicUrls(slug),
+    ogType: 'article'
   };
 }
 

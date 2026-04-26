@@ -10,7 +10,13 @@ const router = express.Router();
 router.get('/upgrade', requireAuth, (req, res) => {
   const flash = req.session.flash;
   delete req.session.flash;
-  res.render('pricing', { title: 'Upgrade to Pro', flash });
+  res.render('pricing', {
+    title: 'Upgrade to Pro',
+    flash,
+    ogTitle: 'QuickInvoice Pro — Unlimited invoices, payment links, $12/mo',
+    ogDescription: 'Upgrade to Pro for unlimited invoices, Stripe payment links, automated reminders, and custom branding. 7-day free trial, no credit card.',
+    ogPath: '/billing/upgrade'
+  });
 });
 
 function resolvePriceId(billingCycle) {

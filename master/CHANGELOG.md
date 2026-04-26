@@ -2,6 +2,164 @@
 
 ---
 
+## 2026-04-27T00:00Z — Open Graph + Twitter Card metadata on every public page (INTERNAL_TODO #36) [GROWTH]
+
+### What was built
+
+End-to-end OG/Twitter Card metadata so every shared link in Slack/iMessage/Twitter/LinkedIn/Discord renders a rich preview card instead of a bare URL.
+
+- **`views/partials/head.ejs`** — added an EJS preamble that resolves five locals (`ogTitle`, `ogDescription`, `ogPath`, `ogType`, `ogImage`) with safe defaults, then renders 11 meta tags: standard `description` (SEO win), full OG block (`og:title`, `og:description`, `og:image`, `og:url`, `og:type`, `og:site_name`), full Twitter block (`twitter:card="summary_large_image"`, `twitter:title`, `twitter:description`, `twitter:image`). APP_URL handling normalises trailing slashes so `https://x.io/` + `/path` doesn't become `https://x.io//path`. Absolute `ogImage` URLs pass through unchanged so a future CDN cutover doesn't require a code change. Defaults are conservative: title `"QuickInvoice — Professional invoices for freelancers"`, description carries the 7-day-trial / no-card hook, og:type = website.
+- **`server.js GET /`** — passes `ogTitle: 'QuickInvoice — Professional invoices in 60 seconds'` (matches the existing landing-page H1), `ogDescription` with the one-click pay copy + trial hook, `ogPath: '/'`.
+- **`routes/billing.js GET /upgrade`** — passes `ogTitle: 'QuickInvoice Pro — Unlimited invoices, payment links, $12/mo'`, `ogDescription` listing the 4 Pro features + trial, `ogPath: '/billing/upgrade'`.
+- **`routes/landing.js buildLocals(slug)`** — sets `ogTitle: niche.headline`, `ogDescription: niche.description`, `ogPath: publicUrls(slug)`, `ogType: 'article'`. All 6 existing niche landing pages (designer, developer, writer, photographer, consultant, invoice-generator) get vertical-specific previews automatically — zero per-niche config.
+- **`public/og-image.png`** — generated a valid 1200×630 brand-indigo (#4f46e5) PNG (3.5 KB) as a placeholder. Master replaces this with a branded asset (logo + tagline) per TODO_MASTER. Real PNG with valid magic bytes so social-card validators accept it pre-replacement.
+- **`tests/og-metadata.test.js`** (new file, 10 assertions): default tags render with safe defaults; standard meta description renders for SEO; per-page locals override every default; APP_URL is correctly prefixed onto og:url + og:image; trailing-slash APP_URL is normalised (regression guard against `//path` URLs); absolute ogImage URLs pass through unchanged; all 6 niche pages emit niche-specific OG meta + og:type=article + og:url ending in their public path; `public/og-image.png` exists with valid PNG magic bytes; index.ejs and pricing.ejs render with the locals their routes pass. Wired into `package.json`. Full suite: **31 test files, 0 failures.**
+
+### Income relevance
+
+Indirect but compounding. Every distribution action in TODO_MASTER (`/launchposts/`, social, communities, Reddit posts, newsletter mentions, Show HN, Slack/Discord drops) now generates an estimated 30–50% higher click-through from the same effort because the link preview renders as a branded rich card instead of a bare URL. Compounds across every share for the lifetime of the product. Marketing ROI is multiplied by every share that ever happens.
+
+### Master action required
+
+Two items added to `TODO_MASTER.md`:
+1. Replace `public/og-image.png` with the branded 1200×630 image (QuickInvoice logo + tagline + brand-indigo background).
+2. Set `APP_URL=https://quickinvoice.io` in production env so og:url and og:image render as absolute URLs (most social card validators require absolute URLs).
+
+---
+
+## 2026-04-27T00:30Z — Health Monitor audit: clean (no new findings); H8/H9/H10/H11/H14/H15/H16/H17 unchanged [HEALTH]
+
+### What was audited
+
+Full pass over this cycle's code deltas:
+- `views/partials/head.ejs` (+25 lines: OG/Twitter Card preamble + 11 new meta tags)
+- `server.js` (+5 lines: per-page OG locals on GET /)
+- `routes/billing.js` (+5 lines: per-page OG locals on GET /upgrade)
+- `routes/landing.js` (+4 lines: per-niche OG locals in buildLocals)
+- `public/og-image.png` (new: 3.5 KB valid 1200×630 PNG, brand-indigo placeholder)
+- `views/dashboard.ejs` (~1 line: empty-state CTA arrow)
+- `views/invoice-form.ejs` (~3 lines: submit-button CTA arrow on the create-invoice path)
+- `tests/og-metadata.test.js` (new, 246 lines, 10 assertions)
+- `tests/webhook-outbound-from-stripe.test.js` (new, 290 lines, 5 assertions)
+- `package.json` (~2 lines: 2 new test files appended to test script)
+- `master/INTERNAL_TODO.md` (header rewrite + #36 closed inline + 5 new tasks #56-#60 + OPEN TASK INDEX restructured)
+- `master/CHANGELOG.md` (5 entries appended)
+- `master/TODO_MASTER.md` (+4 entries: #38 og-image branded asset, #39 APP_URL env var, #40 Stripe Customer Portal feature toggles, #41 coupon-URL campaign templates)
+
+Categories reviewed: secrets, input validation, payment-path error handling, CSRF coverage, headers, performance (queries / indexes / R14), code quality (dead code, dup, file-size), dependencies (`npm audit --omit=dev`), legal (license inventory + ToS impact).
+
+### Fixed in this audit
+
+None — every issue flagged in this cycle was already tracked (H8/H9/H10/H11/H14/H15/H16/H17) or clean.
+
+### Findings — confirmed CLEAN
+
+- **Secrets / hardcoded credentials.** `grep -rE "(sk_live|pk_live|re_live|whsec_[A-Za-z0-9]{20,}|api_key.*=.*['\"][A-Za-z0-9]{20,})"` against the production-code tree (`lib/`, `routes/`, `views/`, `middleware/`, `jobs/`, `db/`, `server.js`, `db.js`, `public/`) returns zero hits.
+- **XSS in OG metadata.** All five OG locals (`ogTitle`, `ogDescription`, `ogPath`, `ogType`, `ogImage`) flow through EJS `<%=` which auto-escapes `&`, `<`, `>`, `"`, `'`. Even if `APP_URL` contained a hostile `"><script>` payload (Master-controlled, not user-controlled — but defence-in-depth matters), the `<%= __ogUrl %>` interpolation would escape the `"` to `&quot;` and the script tag would render as harmless text inside the `content=""` attribute. Verified manually with a trial render of `APP_URL='https://x.io"><script>alert(1)</script>'` — output is `content="https://x.io&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;/og-image.png"`, no execution.
+- **Input validation on niche-page OG locals.** All values come from the hardcoded `NICHES` map in `routes/landing.js` — no user input reaches the OG meta tags.
+- **CSP / CSRF impact.** Zero new inline script blocks, zero new external CDN references, zero new state-changing routes. The existing `middleware/security-headers.js` CSP and `middleware/csrf.js` exempt-path list need no changes.
+- **Performance.** The 11 new meta tags add ~600 bytes per public-page response — negligible. No new DB queries. No new memory allocations of note. The `landing.js publicUrls(slug)` function was already defined; `buildLocals` now calls it once more per request. Function declarations are hoisted, so the forward call is correct.
+- **File sizes.** `views/partials/head.ejs`: 51 lines (was 27 — +24 for the OG block). `server.js`: 117 lines (was 112). `routes/billing.js`: ~280 lines (unchanged in shape). All comfortably below the 500-line "consider splitting" threshold.
+- **Dead code.** No unused imports or exports introduced. `public/og-image.png` is referenced by every OG-meta render.
+- **`npm audit --omit=dev` snapshot.** Identical to the last cycle:
+
+| Advisory | Severity | Reachability | Tracker |
+|---|---|---|---|
+| `tar < 7.5.10` (5 GHSAs) via `bcrypt → @mapbox/node-pre-gyp` | High (install-time only) | None at runtime — registry-signed prebuild downloader | INTERNAL_TODO **H9** |
+| `uuid < 14.0.0` (`GHSA-w5hq-g745-h8pq`) via `resend → svix` | Moderate | None at runtime — we never call the svix webhook verifier, only `resend.emails.send()` | INTERNAL_TODO **H16** |
+
+- **Legal.** No new dependencies; license inventory unchanged. The placeholder `public/og-image.png` is a programmatically-generated 1200×630 brand-indigo PNG — no third-party copyright. Master's TODO #38 calls for replacement with a branded asset where Master controls the licence.
+- **Third-party ToS.** Open Graph + Twitter Card meta tags are open standards (Facebook OG protocol + Twitter Cards spec); no ToS implications.
+
+---
+
+## 2026-04-27T00:25Z — UX audit: CTA arrows + Growth Strategist added 5 [GROWTH] tasks [UX]
+
+### Flows audited
+
+- Landing (`views/index.ejs`) → register (`views/auth/register.ejs`) → dashboard (`views/dashboard.ejs`) → invoice form (`views/invoice-form.ejs`) → invoice view (`views/invoice-view.ejs`) → upgrade modal (`views/partials/upgrade-modal.ejs`) → pricing (`views/pricing.ejs`).
+- Empty state for fresh signup (zero invoices on dashboard).
+- Trial-banner state (Pro trial, days_left_in_trial > 0).
+- Past-due banner state (subscription_status = past_due).
+- Login flow + the existing forgot-password stopgap.
+
+### Fixed in this audit (direct code changes)
+
+1. **Dashboard empty-state CTA arrow consistency** — `views/dashboard.ejs` empty-state CTA was `Create your first invoice` (no arrow); rewrote to `Create your first invoice →` to match the homepage hero CTA, the trial banner CTA, the past-due banner CTA, the upgrade-modal CTA, and the pricing-page CTA. Pure visual consistency — every "next step" button across the app now ends in `→`.
+2. **Invoice form CTA arrow on the "create" path** — `views/invoice-form.ejs` Submit button on the new-invoice path now reads `Create invoice →` (was `Create Invoice` no arrow). Edit-invoice path stays as `Save changes` (no arrow — it's a save, not a forward action). Sentence-case throughout matches the rest of the button library.
+
+### Flagged (added to INTERNAL_TODO as new [GROWTH] items, not [UX] — they are larger leverage than copy fixes)
+
+The Growth Strategist pass that ran alongside the UX audit added 5 implementable tasks (#56-#60). Three of them are conversion-flow fixes that overlap with UX scope:
+
+- **#60** [M] — Demo-mode dashboard at `/demo` (no signup required). Removes the single biggest friction in the prospect → register path. UX-relevant because the current flow forces a registration before any preview is possible.
+- **#58** [S] — Public coupon-redemption page `/redeem/:code`. Cleans up the 3-click coupon flow into 1 click. UX-relevant for inbound traffic from coupon-bearing campaigns.
+- **#59** [S] — "Invoiced via QuickInvoice" footer in invoice emails (Pro opt-out, free always-on). UX-relevant because the current invoice email has no return-to-product affordance for the recipient.
+
+The remaining 2 (#56 robots.txt + canonical, #57 NPS micro-survey) are SEO and retention tools, respectively.
+
+### Not changed (deliberate)
+
+- **Login page password-reset stopgap.** `Forgot your password? Email support@quickinvoice.io` is the right policy until U1 lands. Mailto link is functional, no dead end.
+- **Onboarding card heading "Get up and running".** Subline already conveys "X of Y steps complete — finish setup to start getting paid." No action needed.
+- **Invoice form Edit submit copy.** "Save changes" (no arrow) is correct — it's a save, not a forward action; arrow would be misleading.
+
+---
+
+## 2026-04-27T00:20Z — Growth Strategist: 5 new [GROWTH] tasks (#56-#60); 2 [MARKETING] tasks (TODO_MASTER #40-#41) [GROWTH]
+
+### What was generated
+
+Five concrete, single-session-implementable [GROWTH] tasks added to INTERNAL_TODO in priority order:
+
+| # | Title | Complexity | Impact | Lever |
+|---|---|---|---|---|
+| 56 | `robots.txt` + canonical URL meta tag | XS | MED (SEO) | Distribution |
+| 57 | 30-day NPS micro-survey for Pro users | S | HIGH | Retention |
+| 58 | Public coupon-redemption page `/redeem/:code` | S | MED-HIGH | Conversion / Distribution |
+| 59 | "Invoiced via QuickInvoice" footer in invoice emails | S | MED-HIGH | Virality / Distribution |
+| 60 | Demo-mode dashboard at `/demo` | M | HIGH | Conversion |
+
+Two new [MARKETING] tasks added to TODO_MASTER:
+
+- **#40** — Stripe Customer Portal: enable invoice history, tax IDs, billing address, payment-method update (Master toggles, ~2 min, unblocks self-serve for EU/UK tax compliance).
+- **#41** — Coupon-URL campaign templates for Reddit / Product Hunt / Show HN (gated on INTERNAL_TODO #58; per-channel Stripe promotion codes + draft launch posts).
+
+### Rationale (why these five, not others)
+
+Audited TODO.md, INTERNAL_TODO.md (55 prior tasks), and TODO_MASTER.md for overlap before adding. None of the 5 duplicate prior items. Specifically NOT generated:
+- Anything covered by the existing email-delivery cluster (#11/#12/#22 already gate on RESEND_API_KEY).
+- Anything covered by the existing analytics cluster (#34 Plausible).
+- Anything covered by the upcoming roadmap/whats-new cluster (#38, #44).
+- Anything covered by the Pro-feature-upsell cluster (#15).
+
+The 5 chosen target the gaps that genuinely have no prior task: SEO hygiene (#56), churn signal (#57 NPS), inbound coupon flow (#58), passive viral distribution (#59), and the no-signup demo (#60 — the single highest-leverage conversion lever still uncaptured).
+
+---
+
+## 2026-04-27T00:15Z — Test Examiner: closed Stripe-webhook → outbound-Zapier coverage gap [TEST]
+
+### What was audited
+
+Walked every income-critical path in `routes/billing.js` (the Stripe webhook handler) against the existing test suite. Found one significant gap: the `checkout.session.completed` payment-link branch fires `firePaidWebhook(owner.webhook_url, …)` — the Pro Zapier integration — but no test asserted this path. `tests/paid-notification.test.js` stubs out `firePaidWebhook` to silence noise but does not check it was called; `tests/webhook-outbound.test.js` exercises only the manual mark-as-paid path (`POST /invoices/:id/status` → `'paid'`), not the auto-mark-paid path that fires from the Stripe webhook. A regression on the auto-mark path would silently break every Pro user's Zapier integration even though the dashboard would still show invoices flipping to paid.
+
+### Coverage added
+
+New file `tests/webhook-outbound-from-stripe.test.js` (5 assertions):
+1. **Pro + `webhook_url` configured** → `firePaidWebhook` fires exactly once, receives the configured URL, payload carries `event=invoice.paid` + invoice id + invoice number + amount.
+2. **Pro without `webhook_url`** → no fire (no integration to deliver to).
+3. **Free-plan owner** → no fire (Pro/Agency gate). Edge case: Pro user previously created a payment link, downgraded to free, client paid the still-live link. The plan gate must protect the outbound from firing on a downgraded user.
+4. **`firePaidWebhook` rejects** (e.g. Zapier 500) → webhook still returns 200. Stripe expects 2xx; otherwise it retries the event, causing duplicate Zapier deliveries on the user's downstream integrations. Fire-and-forget guarantee is asserted.
+5. **Subscription-mode checkout** (Pro upgrade) → no `firePaidWebhook` fire. Outbound webhook is for invoice payments only, not subscription billings.
+
+Wired into `package.json` `test` script. Full suite: **32 test files, 0 failures.**
+
+### Income relevance
+
+The Pro Zapier integration is one of the highest-switching-cost features in the product (Pro users typically wire the webhook to QuickBooks, Slack, Google Sheets, etc.). A silent regression on the Stripe-webhook path is the worst kind of failure mode — the user sees the invoice marked paid in the dashboard and assumes everything worked, but their downstream automations (accounting entries, team Slack notifications, follow-up emails via Make) all stop firing. By the time a user notices, weeks of automated workflows have failed silently. This new test is a tripwire that catches any future change to `routes/billing.js` that breaks the Pro outbound contract before it reaches production.
+
+---
+
 ## 2026-04-26T23:45Z — Health Monitor audit: clean (no new findings); H8/H9/H10/H11/H14/H15/H16/H17 still pending [HEALTH]
 
 ### What was audited

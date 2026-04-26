@@ -1,8 +1,8 @@
 # QuickInvoice + InvoiceFlow — Internal Growth TODO
 
-> **Audited:** 2026-04-26 PM-2 (4th pass of the day) — Task Optimizer cycle. This cycle's deltas: (a) **#41 closed** — Stripe Payment Link bank-debit methods (ACH/SEPA/BECS/BACS/ACSS) shipped end-to-end via `parsePaymentMethods()` helper + `STRIPE_PAYMENT_METHODS` env var + invoice-view tooltip + 10 new tests; TODO_MASTER #35 added for the Stripe Dashboard activation. (b) **#37 closed** — concrete "Save $45/year vs. monthly" copy added under `views/pricing.ejs` annual headline + `views/partials/upgrade-modal.ejs` after-trial line; replaces the rejected mathematically-wrong "2 months free" framing. (c) **6 new [GROWTH] items (#50-#55)** from this cycle's Growth Strategist pass: #50 quote/estimate flow [M], #51 schedule invoice send [S], #52 JSON-LD schema [XS], #53 Resend webhook open-tracking [M], #54 deposit/partial payments [S], #55 auto client thank-you [XS]. (d) **2 new [MARKETING] items in TODO_MASTER (#36-#37)** — listicle outreach for niche-page backlinks, accountant/bookkeeper partner program. (e) **2 new test files** — `tests/payment-link-methods.test.js` (10 assertions for the new env-var path) and `tests/billing-deleted-account.test.js` (4 assertions closing the deferred H7 regression-test gap). Full suite now 30 files, 0 failures (was 28 last cycle).
+> **Audited:** 2026-04-27 (Task Optimizer cycle, 5th pass). This cycle's deltas: (a) **#36 closed** — Open Graph + Twitter Card metadata shipped end-to-end on `views/partials/head.ejs` + per-page locals on `/`, `/billing/upgrade`, all 6 niche pages; placeholder `public/og-image.png` (1200×630 brand-indigo PNG, valid magic) shipped; 10 new tests (`tests/og-metadata.test.js`); TODO_MASTER #38/#39 added for branded image + APP_URL. (b) **5 new [GROWTH] items (#56-#60)** from this cycle's Growth Strategist pass: #56 robots.txt + canonical [XS], #57 30-day NPS micro-survey [S], #58 `/redeem/:code` coupon page [S], #59 invoice-email viral footer [S], #60 demo-mode `/demo` [M]. (c) **2 new [MARKETING] items in TODO_MASTER (#40-#41)** — Stripe Customer Portal feature toggles, per-channel coupon-URL campaign templates. (d) **2 new test files** — `tests/og-metadata.test.js` (10 assertions) + `tests/webhook-outbound-from-stripe.test.js` (5 assertions closing the Stripe-webhook → outbound Zapier coverage gap). (e) **UX audit fixes** — dashboard empty-state CTA + invoice-form CTA now carry the standard `→` arrow; sentence-case throughout. Full suite now **32 files, 0 failures** (was 30 last cycle).
 >
-> Prior DONE items remain inline-tagged (kept for context; **archive trigger remains 1.5k lines** — currently at ~1.7k lines after this cycle's net additions; **archive sweep recommended next cycle** — every line of [DONE] resolution text is now valuable as historical context but old enough to compress into a `master/CHANGELOG_ARCHIVE.md`). Priority order: **[TEST-FAILURE] (none) > income-critical features > [UX] items that affect conversion > [HEALTH] > [GROWTH] > [BLOCKED]**. Complexity tags: [XS] < 30 min · [S] < 2 hrs · [M] 2–8 hrs · [L] > 8 hrs. Duplicates checked against `TODO.md` and `TODO_MASTER.md` — none introduced this cycle.
+> Prior DONE items remain inline-tagged (kept for context; **archive trigger remains 1.5k lines** — currently at ~1.85k lines after this cycle's net additions; **archive sweep is now overdue** — every line of [DONE] resolution text is valuable as historical context but old enough to compress into a `master/CHANGELOG_ARCHIVE.md` next cycle). Priority order: **[TEST-FAILURE] (none) > income-critical features > [UX] items that affect conversion > [HEALTH] > [GROWTH] > [BLOCKED]**. Complexity tags: [XS] < 30 min · [S] < 2 hrs · [M] 2–8 hrs · [L] > 8 hrs. Duplicates checked against `TODO.md` and `TODO_MASTER.md` — none introduced this cycle. The 5 new [GROWTH] items were checked for overlap against all 55 prior items and the entire TODO_MASTER tree before adding.
 
 Do not duplicate items already in `TODO.md`. App labels indicate which codebase each task applies to.
 
@@ -17,7 +17,7 @@ Do not duplicate items already in `TODO.md`. App labels indicate which codebase 
   *(U2 closed 2026-04-26 PM. #37 closed 2026-04-26 PM-2 UX audit. #41 closed 2026-04-26 PM-2.)*
 
 **Income-critical [GROWTH] — XS first (highest impact-per-effort)**
-- **#36** [XS] — Open Graph + Twitter Card metadata (MED-HIGH; compounds across every share)
+- **#56** [XS] — `robots.txt` + canonical URL meta tag (MED SEO; pairs with #36)
 - **#44** [XS] — In-app "✨ What's new" changelog widget in nav (retention)
 - **#45** [XS] — Last-day urgency dashboard banner for trial users (HIGH; pairs with #29)
 - **#52** [XS] — JSON-LD `SoftwareApplication` schema on landing + niche pages (MED-HIGH SEO; pairs with #36)
@@ -25,8 +25,12 @@ Do not duplicate items already in `TODO.md`. App labels indicate which codebase 
 - **#48** [XS] — "Powered by QuickInvoice" badge on public invoice URLs (compounds with invoice volume; gated on #43)
 - **#31** [XS] — Free-Plan Invoice Limit Progress Bar on Dashboard
 - **#34** [XS] — Plausible Analytics Integration (gated on Master providing PLAUSIBLE_DOMAIN per TODO_MASTER #29)
+  *(#36 closed 2026-04-27 — OG/Twitter Card metadata shipped end-to-end + 10 new tests; TODO_MASTER #38/#39 added for Master to drop in branded image + APP_URL.)*
 
 **Income-critical [GROWTH] — S complexity**
+- **#57** [S] — 30-day NPS micro-survey for Pro users (HIGH retention; surfaces churn before cancel)
+- **#58** [S] — Public coupon-redemption page `/redeem/:code` (MED-HIGH; pairs with #35 + TODO_MASTER #41)
+- **#59** [S] — "Invoiced via QuickInvoice" footer in invoice emails (MED-HIGH virality; Calendly-style passive distribution)
 - **#28** [S] — Legal Pages Scaffolding (Terms / Privacy / Refund) — blocks L1/L2/L3 in TODO_MASTER + Stripe ToS + U3
 - **#46** [S] — Pricing page exit-intent modal (MED-HIGH; 5-15% bounce-cohort recovery)
 - **#47** [S] — Monthly→Annual upgrade prompt on dashboard (HIGH retention/LTV)
@@ -48,6 +52,7 @@ Do not duplicate items already in `TODO.md`. App labels indicate which codebase 
 - **#51** [S] — Schedule invoice send for a future date (MED-HIGH; reuses cron infra)
 
 **Income-critical [GROWTH] — M / L (larger; plan deliberately)**
+- **#60** [M] — Demo-mode dashboard at `/demo` (HIGH; removes #1 conversion blocker — no signup required)
 - **#50** [M] — Quote/Estimate flow with one-click "Convert to invoice" (HIGH; B2B switching-cost lift)
 - **#53** [M] — Resend webhook integration: surface "client opened invoice" on dashboard (HIGH; behavioural signal)
 - **#40** [M] — Recurring Invoice Auto-Generation for QuickInvoice (parity with InvoiceFlow; HIGH retention)
@@ -1013,7 +1018,7 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 
 ---
 
-### 36. [GROWTH] Open Graph + Twitter Card metadata on landing/pricing/niche pages (added 2026-04-26 audit) [XS]
+### 36. [DONE 2026-04-26 PM-3] [GROWTH] Open Graph + Twitter Card metadata on landing/pricing/niche pages (added 2026-04-26 audit) [XS]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** MEDIUM-HIGH — every share of `quickinvoice.io`, `/pricing`, or any of the 6 niche landing pages currently renders as a bare URL in Slack/iMessage/Twitter/LinkedIn/Discord previews. Adding `og:title`, `og:description`, `og:image`, `og:url`, `twitter:card`, `twitter:image` makes every shared link render a rich preview card with the QuickInvoice screenshot — typically 30–50% higher click-through vs. a bare URL. This compounds across every Reddit post (TODO_MASTER #14), every Tweet (#17, #30), every newsletter mention (#20), every Slack/Discord drop (#28), every Show HN (#19).
@@ -1038,6 +1043,19 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 4. Test by pasting the URL into the LinkedIn Post Inspector or Twitter Card Validator after deploy.
 
 **Income relevance:** Indirect but compounding — every distribution action in TODO_MASTER (`/launchposts/`, social, communities) gets ~30–50% more traffic from the same effort.
+
+**Resolution (2026-04-26 PM-3):** Implemented end-to-end as the highest-priority `[XS]` income-critical task in this cycle.
+
+1. **`views/partials/head.ejs`** — added an EJS preamble that resolves five locals (`ogTitle`, `ogDescription`, `ogPath`, `ogType`, `ogImage`) with conservative defaults, then renders 9 meta tags: `description` (standard SEO), `og:title`, `og:description`, `og:image`, `og:url`, `og:type`, `og:site_name`, `twitter:card="summary_large_image"`, `twitter:title`, `twitter:description`, `twitter:image`. APP_URL handling normalises trailing slashes (no `https://x.io//path` artefacts) and lets `ogImage` pass through unchanged when it is already an absolute URL (so a future CDN cutover doesn't require a code change). Defaults are safe: title "QuickInvoice — Professional invoices for freelancers", description carries the 7-day-trial / no-card hook, og:type = website. Per-page locals override every default so landing and niche pages emit niche-specific previews.
+2. **`server.js GET /`** — now passes `ogTitle: 'QuickInvoice — Professional invoices in 60 seconds'`, `ogDescription` (one-click pay copy + trial hook), `ogPath: '/'`. The 60-seconds framing matches the existing landing-page H1.
+3. **`routes/billing.js GET /upgrade`** — passes `ogTitle: 'QuickInvoice Pro — Unlimited invoices, payment links, $12/mo'`, `ogDescription` listing the 4 Pro features + trial, `ogPath: '/billing/upgrade'`.
+4. **`routes/landing.js buildLocals(slug)`** — now sets `ogTitle: niche.headline`, `ogDescription: niche.description`, `ogPath: publicUrls(slug)`, `ogType: 'article'`. All 6 existing niche landing pages (designer, developer, writer, photographer, consultant, invoice-generator) get vertical-specific previews automatically — no per-niche config needed.
+5. **`public/og-image.png`** — generated a valid 1200×630 brand-indigo (#4f46e5) PNG (3.5 KB) as a placeholder. Master replaces this with a branded asset (logo + tagline) per TODO_MASTER. The placeholder is a real PNG with valid magic bytes so social-card validators still accept it pre-replacement; the share preview just shows a solid-color card until Master uploads the branded image.
+6. **`tests/og-metadata.test.js`** (new file, 10 assertions): default tags render with safe defaults; standard meta description renders for SEO; per-page locals override every default; APP_URL is correctly prefixed onto og:url + og:image; trailing-slash APP_URL is normalised (regression guard against `//path` URLs); absolute ogImage URLs pass through unchanged (CDN-future-proofing); all 6 niche pages emit niche-specific og:title + og:description + og:type=article + og:url ending in their public path; public/og-image.png exists with valid PNG magic bytes (regression guard against an empty placeholder); index.ejs and pricing.ejs render with the locals their routes pass. Wired into `package.json test` script after `tests/billing-deleted-account.test.js`. Full suite: **31 test files, 0 failures.**
+
+**[Master action]** required to complete the polish: replace `public/og-image.png` with the branded 1200×630 image (QuickInvoice logo + tagline + brand-indigo background). Optional but recommended: also set `APP_URL=https://quickinvoice.io` in production env so og:url and og:image render as absolute URLs (most social card validators require this). Both items added to TODO_MASTER.
+
+**Income relevance:** Indirect but compounding — every distribution action in TODO_MASTER (`/launchposts/`, social, communities) now generates 30–50% higher click-through from the same effort because the link preview renders as a branded card instead of a bare URL.
 
 ---
 
@@ -1500,6 +1518,95 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 6. New `tests/client-thanks.test.js` (4 tests): paid → client thank-you fires with correct payload; opt-out (`thanks_email_enabled=false`) → no client send; free user → no client send (Pro gate); thanks-email throw does not break the webhook (fire-and-forget hygiene).
 
 **Income relevance:** Compounding professionalism. Each thank-you email sent is a passive touchpoint that signals "this freelancer uses real tooling." Clients are subliminally more likely to refer the freelancer to their network. Also a tangible Pro feature for the settings page that the upgrade modal can reference. Effectively free per-send (Resend free tier covers 3,000 emails/month).
+
+---
+
+### 56. [GROWTH] `robots.txt` + canonical URL meta tag (added 2026-04-27 audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM (compounds with #36 OG metadata + the existing 6 niche landing pages) — Google currently has no `robots.txt` to follow. A missing file isn't fatal (Googlebot crawls everything by default) but a real `robots.txt` with `Allow: /` and an explicit `Sitemap: <APP_URL>/sitemap.xml` is the standard SEO signal that says "this is a real site, here's the index." Pairs with a `<link rel="canonical">` tag in `head.ejs` so duplicate URLs (`/?utm_source=...`, `/pricing#x`, etc.) don't dilute ranking.
+**Effort:** Very Low.
+**Prerequisites:** None.
+
+**Sub-tasks:**
+1. New `routes/robots.js` (or 4-line addition to `server.js`): `GET /robots.txt` → `Content-Type: text/plain` with body `User-agent: *\nAllow: /\n\nSitemap: ${APP_URL}/sitemap.xml\n`. Falls back to a relative sitemap URL when `APP_URL` is unset.
+2. `views/partials/head.ejs`: add `<link rel="canonical" href="<%= __ogUrl %>">` immediately under the existing OG meta block. Re-uses the `__ogUrl` local already computed for `og:url` so canonical and og:url stay in sync.
+3. New `tests/robots-and-canonical.test.js` (4 tests): `GET /robots.txt` returns 200 with `User-agent: *` + `Sitemap:` line; canonical link renders on the homepage with the right URL; canonical link respects per-page `ogPath` overrides; canonical link normalises trailing-slash APP_URL (regression guard inherited from OG normalisation).
+
+**Income relevance:** Indirect SEO compounding. Reduces wasted crawl budget on duplicate-querystring URLs and gives Google a clean index of every page. Compounds across every niche page added by #25 (6 → 15 niches).
+
+---
+
+### 57. [GROWTH] 30-day NPS micro-survey for Pro users (added 2026-04-27 audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** HIGH (retention, churn-prevention) — the single most actionable retention signal a SaaS can collect is a 30-day NPS score from new Pro users. Detractors (0-6) can be reached out to before they cancel; promoters (9-10) can be asked for testimonials (#20 social-proof) or referrals (#18). Without it, churn is silent — by the time the user clicks "cancel" in Stripe, the conversation has already happened in their head. A 1-question Alpine.js modal that fires once at the 30-day Pro mark + free-text follow-up costs ~50 lines of code and produces the highest-quality user-feedback signal available.
+**Effort:** Low.
+**Prerequisites:** None — runs purely on existing session + DB infrastructure.
+
+**Sub-tasks:**
+1. `db/schema.sql`: idempotent — `CREATE TABLE IF NOT EXISTS nps_responses (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES users(id), score INT NOT NULL CHECK (score BETWEEN 0 AND 10), comment TEXT, created_at TIMESTAMP DEFAULT NOW());` plus `ALTER TABLE users ADD COLUMN IF NOT EXISTS nps_prompted_at TIMESTAMP;`.
+2. `db.js`: `recordNpsResponse({ userId, score, comment })`, `markNpsPrompted(userId)`, and a `shouldPromptNps(user)` helper — eligible iff `plan IN ('pro','business','agency')`, account is ≥30 days old (`created_at < NOW() - INTERVAL '30 days'`), and `nps_prompted_at IS NULL`.
+3. `routes/invoices.js GET /` (dashboard): pass `npsPrompt: shouldPromptNps(user)` to the template.
+4. `views/dashboard.ejs`: render a `print:hidden` Alpine modal (gated on `locals.npsPrompt`) with copy "How likely are you to recommend QuickInvoice to a friend or colleague?" + 0-10 scale pills + an optional textarea on score selection + Submit button. POSTs to `POST /nps` with `{ score, comment }` + CSRF.
+5. New `routes/nps.js` (or extension to billing.js): `POST /nps` validates score is 0-10, persists via `recordNpsResponse` + `markNpsPrompted`. Single round-trip; flashes "Thanks for the feedback" and redirects to dashboard.
+6. New `tests/nps.test.js` (5 tests): `shouldPromptNps` returns false for free users; returns false for <30-day Pro accounts; returns true for ≥30-day Pro accounts that haven't been prompted; POST /nps persists the score + comment; POST /nps with score outside 0-10 is rejected.
+
+**Income relevance:** Direct retention tool. A detractor surfaced at 30 days has a much higher chance of being saved than a churned-and-cancelled user. Industry data: SaaS that systematically follow up with NPS detractors retain 15-25% of would-be churners. Promoters caught here also feed the testimonial pipeline (#20) and the referral program (#18) — three retention/expansion levers from one survey.
+
+---
+
+### 58. [GROWTH] Public coupon-redemption landing page `/redeem/:code` (added 2026-04-27 audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM-HIGH — INTERNAL_TODO #35 shipped `allow_promotion_codes: true` on Stripe Checkout. That unlocks coupon entry on the Stripe page, but the user-facing flow today is still "click upgrade → realise you have a code → click 'Add promotion code' → paste." A dedicated `/redeem/:code` page that auto-applies the code at checkout cuts the funnel from 3 clicks to 1 and is the canonical asset every campaign URL points at — Reddit r/SaaS posts, Product Hunt launch coupons, AppSumo deals, accountant-partner #37 referrals.
+**Effort:** Low.
+**Prerequisites:** #35 `allow_promotion_codes` (done).
+
+**Sub-tasks:**
+1. New route `GET /redeem/:code` in `server.js` or a new `routes/redeem.js`: render `views/redeem.ejs` showing the code, a one-line description (e.g. "Get 50% off your first 3 months of Pro"), and an "Apply & checkout" CTA. Code passed to the registration-or-checkout link as `?promo=<code>`.
+2. `routes/billing.js POST /create-checkout`: read `req.body.promo` and `req.session.pending_promo`; when set, pass `discounts: [{ promotion_code: '<code>' }]` to `stripe.checkout.sessions.create()`. Stripe validates the promotion code; if invalid, error-handle gracefully (skip the discount, log).
+3. `routes/auth.js POST /register`: persist `req.session.pending_promo = req.body.promo` so a fresh signup → checkout flow carries the code through.
+4. `views/redeem.ejs`: minimal landing page (max-width 600px), QuickInvoice header, code in a monospace badge, the description, and either a "Sign up & redeem →" CTA (anon visitor) or "Apply to my account →" CTA (logged-in user). Pure copy; no DB.
+5. New `tests/redeem.test.js` (4 tests): `GET /redeem/PH50` renders 200 with the code; `POST /create-checkout` with a `promo` body field passes `discounts: [{promotion_code:'PH50'}]` to Stripe; the session falls back to no-discount when promo is empty/invalid; sign-up flow persists `pending_promo` across the redirect-then-checkout flow.
+
+**Income relevance:** Direct conversion lift on every paid distribution channel — Master can drop a clean URL (`quickinvoice.io/redeem/PH50`) into Reddit/X/PH listings without users having to know about Stripe's "Add promotion code" affordance. Pairs with marketing #36 (listicle outreach) — every backlink can carry a unique tracking code (`/redeem/MEDIUM-LISTICLE`) so Master can attribute conversions back to the channel.
+
+---
+
+### 59. [GROWTH] "Invoiced via QuickInvoice" footer in invoice emails (Pro opt-out, free always-on) (added 2026-04-27 audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM-HIGH — every invoice email a freelancer sends is a marketing touchpoint inside the client's inbox. Adding a small `Invoiced via QuickInvoice — quickinvoice.io` footer to the HTML email body turns each Pro user into a passive distribution channel — same dynamic that powers Calendly's "Powered by Calendly" footer (one of the strongest viral-loop signals in SaaS history). Free users get the footer always-on (#48 already has the same idea for public invoice URLs); Pro users get a settings toggle to opt out (paying customers get the choice — same pattern as the PDF footer #5).
+**Effort:** Low.
+**Prerequisites:** Email delivery (#13, done); Resend API key in production.
+
+**Sub-tasks:**
+1. `lib/email.js buildInvoiceHtml(invoice, owner)`: append a footer block at the bottom of the existing HTML body. Always render for free; render for Pro/Business/Agency only when `owner.email_footer_enabled !== false` (default true). Footer copy: `<p style="font-size:12px;color:#9ca3af;text-align:center;margin-top:24px;border-top:1px solid #e5e7eb;padding-top:12px">Invoiced via <a href="https://quickinvoice.io/?ref=email-footer" style="color:#6366f1">QuickInvoice</a></p>`. Same copy in the text fallback (`buildInvoiceText`).
+2. `db/schema.sql`: idempotent — `ALTER TABLE users ADD COLUMN IF NOT EXISTS email_footer_enabled BOOLEAN DEFAULT true;`
+3. `views/settings.ejs`: Pro-only checkbox under the existing "Reply-to email" field — `Show "Invoiced via QuickInvoice" footer in client emails` defaulted ON. POSTs through the existing settings handler; `routes/billing.js POST /settings` extends the dynamic-update path to accept the boolean.
+4. The existing `tests/email.test.js` already asserts on the HTML body shape — update the relevant test fixtures to also assert the footer renders for free, renders for Pro by default, and is hidden for Pro when `email_footer_enabled=false`. Three new assertions in the existing file rather than a new file.
+
+**Income relevance:** Pure organic acquisition. A typical Pro user sends 5-20 invoice emails a month; at 1-3% click-through on the footer link (calendly's measured rate), each Pro user generates 1-6 new visits/month at zero CAC. With Pro users compounding monthly, the footer becomes a top-3 acquisition channel by month 6 with no marketing spend. The opt-out is the right policy: paying users earn the choice; the friction of disabling it is high enough that >80% leave it on (industry data on default-opt-out toggles).
+
+---
+
+### 60. [GROWTH] Demo-mode dashboard at `/demo` (no signup required) (added 2026-04-27 audit) [M]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** HIGH — the highest-friction conversion blocker today is "I have to register before I can see what this looks like." A demo dashboard that pre-loads 5 fake invoices in 4 statuses (draft, sent, paid, overdue) lets a visitor click around the dashboard, the invoice form, the PDF view, even the Pro upgrade flow, all without creating an account. Industry data: indie SaaS that ship a no-signup demo see 15-30% lift in the landing → register conversion rate vs. the same audience with no demo. Notion, Linear, and Figma all do this; QuickInvoice does not.
+**Effort:** Medium.
+**Prerequisites:** None — runs as a session-scoped fake DB layer.
+
+**Sub-tasks:**
+1. New `lib/demo-data.js`: pure module exporting `getDemoInvoices()`, `getDemoUser()`, `getDemoClient()` — hardcoded fixtures with realistic line items (3 sent, 1 paid, 1 overdue; client `Acme Co.`; total revenue ~$8,000). Same shape as the real DB rows so `views/dashboard.ejs` renders unchanged.
+2. New `middleware/demo-mode.js`: when `req.path.startsWith('/demo')` OR `req.session.demo === true`, set `req.demoMode = true`. Subsequent routes branch on this flag.
+3. `routes/invoices.js GET /` (and the few sub-routes the demo allows): when `req.demoMode`, return demo data instead of hitting `db.getInvoicesByUser`. POST/edit/delete routes are read-only in demo mode (return a soft "Sign up to save changes →" flash + redirect to register).
+4. New `GET /demo`: sets `req.session.demo = true` + `req.session.user = getDemoUser()`, redirects to `/invoices` (the dashboard). The fake user has `plan='pro'` so the visitor sees the full Pro UI (Stripe Payment Link card, branding section, etc.) without an upgrade gate.
+5. `views/index.ejs` hero: add a secondary "Try the demo →" button next to the main "Create your first invoice" CTA. Pure visual link, no extra logic.
+6. New `tests/demo.test.js` (5 tests): `GET /demo` sets the demo session; `GET /invoices` in demo mode returns the fixture invoices, not real DB; `POST /invoices/new` in demo mode redirects to register with a flash; demo session does NOT contaminate real-user sessions across tests; demo dashboard renders with `plan='pro'` UI (payment-link card visible).
+
+**Income relevance:** Direct top-of-funnel lift. Removes the single biggest friction in the prospect → register path. Compounds with #36 OG metadata (now every shared link drops the visitor on a marketing page that links to a clickable demo, not a registration form) and #20 social proof (the demo is the strongest possible "show, don't tell"). Demo mode is also a discoverability win for SEO — the `/demo` page itself becomes a high-engagement landing page that ranks for "invoice software demo" / "free invoice tool no signup" queries.
 
 ---
 

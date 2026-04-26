@@ -52,7 +52,12 @@ app.use(csrfProtection);
 
 app.get('/', (req, res) => {
   if (req.session.user) return res.redirect('/dashboard');
-  res.render('index', { title: 'QuickInvoice — Get Paid Faster' });
+  res.render('index', {
+    title: 'QuickInvoice — Get Paid Faster',
+    ogTitle: 'QuickInvoice — Professional invoices in 60 seconds',
+    ogDescription: 'Send invoices freelancers can pay in one click. Free to start, $12/mo for Pro. 7-day free trial, no credit card.',
+    ogPath: '/'
+  });
 });
 
 app.get('/dashboard', (req, res) => {
