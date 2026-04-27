@@ -1,23 +1,25 @@
 # QuickInvoice + InvoiceFlow — Internal Growth TODO
 
-> **Audited:** 2026-04-27 PM-2 (Task Optimizer cycle, 7th pass). This cycle's deltas: (a) **#63 closed** — quick-pick recent clients dropdown on the invoice form shipped end-to-end. New `db.getRecentClientsForUser(userId, limit=10)` (DISTINCT ON dedupe by lowercased email-then-name, recency-first, limit clamped to [1,50]); new `loadRecentClients` adapter in `routes/invoices.js` (returns [] on DB failure — defence-in-depth so a Postgres outage in the secondary lookup never blocks the form); `views/invoice-form.ejs` renders an Alpine `<select>` only when `recentClients.length > 0`, picker fills client name/email/address via `x-model` with no server round-trip; new `tests/recent-clients.test.js` (6 assertions including a regression guard for the DB-failure fallback). (b) **5 new [GROWTH] items (#66-#70)** from this cycle's Growth Strategist pass: #66 auto-CC accountant on every invoice email [XS, MED-HIGH retention/switching-cost — gated on Resend key], #67 tip-on-pay toggle for Pay links [S, MED revenue lift on creator/individual-client segment], #68 customisable invoice email template [S, MED retention; pairs with #15 branding], #69 embeddable Pay-this-invoice JS widget [M, MED-HIGH virality; gated on #43], #70 receipt PDF for paid invoices [S, MED professionalism signal; complements #61]. (c) **2 new [MARKETING] items in TODO_MASTER (#45-#46)** — indie/freelancer Slack + Discord community presence, 60-second YouTube product walkthrough video (evergreen SEO + landing). (d) **UX direct fixes** — `views/index.ejs` pricing card free tier "3 invoices total" → "Up to 3 invoices" (clearer cap copy); `views/dashboard.ejs` empty-state Pro callout reworded from "auto-generates a Stripe Pay button" technical phrasing to "Pro adds a 'Pay now' button to every invoice — clients pay in one click via Stripe"; `views/invoice-view.ejs` "Mark as Paid" promoted to a solid green primary CTA when invoice status is `sent` or `overdue` (was a low-prominence bordered green-text button; restores visual hierarchy at the highest-leverage conversion moment for the freelancer). Test updated to match new dashboard copy (`tests/onboarding.test.js`). Full suite now **34 files, 0 failures** (was 33 last cycle).
+> **Audited:** 2026-04-27 PM-3 (Task Optimizer cycle, 8th pass). This cycle's deltas: (a) **U4 closed** — Pay Link surface consolidation on `views/invoice-view.ejs`. The action-bar "💳 Preview Pay Link" button was structurally redundant with the dedicated "Payment Link" copy-card; consolidated to one surface as a "Preview ↗" anchor sitting alongside the Copy button inside the existing card. Single source of truth for the URL (input value + Copy button + Preview anchor href all reference the same string). `tests/payment-link.test.js::testInvoiceViewRendersPayButtonForPro` rewritten to assert the new structure + regression guard against the old action-bar button. (b) **5 new [GROWTH] items (#71-#75)** from this cycle's Growth Strategist pass: #71 auto-BCC freelancer on invoice email [XS, MED-HIGH support-load reduction — gated on Resend], #72 calendar `.ics` attachment on invoice email [S, HIGH time-to-payment lift — gated on Resend], #73 pre-portal "Cancel reason" survey [XS, MED churn intelligence], #74 Pro PDF logo upload — actually deliver on the "custom branding" pricing claim [S, MED Pro-feature credibility / 7-day churn defence], #75 Slack/Discord webhook quick-start templates [XS, MED activation lift on existing #7]. (c) **2 new [MARKETING] items in TODO_MASTER (#47-#48)** — "cashflow horror story" Twitter/X thread series (monthly evergreen narrative format), first-Pro-cohort founder onboarding calls capped at 20 customers (HIGH-impact one-time investment producing testimonials, feedback, churn-reduction simultaneously). (d) **Test Examiner pass:** added 4 tests for `reply_to_email` validation on `POST /billing/settings` (valid persists, blank/whitespace clears to NULL, malformed rejected with no DB write, > 255 chars rejected with no DB write). Closes a coverage gap on a Pro-feature configuration path that gates Resend deliverability. (e) **UX direct fixes** — `views/pricing.ejs` free-tier × list now includes `Stripe payment links` and `Auto reminder emails` (the highest-leverage upgrade levers were not visible to a freelancer scanning the pricing card before this commit) + free first ✓ "3 invoices total" → "Up to 3 invoices" (consistency with dashboard); Pro tier list reordered so deltas land vertically aligned with free-tier ×s. `views/invoice-form.ejs` Due Date now defaults to issued + 30 days (Net 30) on new invoices — directly activates the reminder cron and time-to-payment loop on every new invoice without freelancer action. Edit-mode preserved (existing due_date renders unchanged). Full suite now **34 files, 0 failures** (203+ test functions; +4 new this cycle).
 >
-> Prior DONE items remain inline-tagged (kept for context; **archive trigger remains 1.5k lines** — currently at ~2.0k lines after this cycle's net additions; **archive sweep is now overdue by 3 cycles** — every line of [DONE] resolution text is valuable as historical context but old enough to compress into a `master/CHANGELOG_ARCHIVE.md` next cycle). Priority order: **[TEST-FAILURE] (none) > income-critical features > [UX] items that affect conversion > [HEALTH] > [GROWTH] > [BLOCKED]**. Complexity tags: [XS] < 30 min · [S] < 2 hrs · [M] 2–8 hrs · [L] > 8 hrs. Duplicates checked against `TODO.md` and `TODO_MASTER.md` — none introduced this cycle. The 5 new [GROWTH] items (#66-#70) were checked for overlap against all 65 prior items and the entire TODO_MASTER tree before adding: #66 vs #11 (different cohorts), #67 unique, #68 vs #15 (distinct: branding=logo+color; #68=email-body text), #69 vs #43 (#69 is gated on #43), #70 vs #61 (#61 attaches PDF; #70 is a separate post-payment receipt). TODO_MASTER reviewed: #38 (OG image asset) and #39 (APP_URL env) remain genuinely open and Master-pending — no items flip to [LIKELY DONE - verify] this cycle.
+> Prior DONE items remain inline-tagged (kept for context; **archive trigger remains 1.5k lines** — currently at ~2.1k lines after this cycle's net additions; **archive sweep is now overdue by 4 cycles** — flagged for next cycle's optimizer pass to compress oldest [DONE] items into `master/CHANGELOG_ARCHIVE.md`). Priority order: **[TEST-FAILURE] (none) > income-critical features > [UX] items that affect conversion > [HEALTH] > [GROWTH] > [BLOCKED]**. Complexity tags: [XS] < 30 min · [S] < 2 hrs · [M] 2–8 hrs · [L] > 8 hrs. Duplicates checked against `TODO.md` and `TODO_MASTER.md` — none introduced this cycle. The 5 new [GROWTH] items (#71-#75) were checked for overlap against all 70 prior items and the entire TODO_MASTER tree before adding: #71 vs #66 (different recipients: #66 CCs accountant, #71 BCCs self), #72 vs #16 (different leverage point: #16 nags after-due, #72 prevents-due via calendar add), #72 vs #61 (different attachment types: PDF vs .ics — share Resend `attachments` codepath, can ship in one commit), #73 unique (no equivalent in backlog), #74 vs #15 (#15 = upsell prompts on locked features, #74 = make the locked feature actually exist), #75 vs #7 (different layer: #7 generic webhook, #75 platform-specific payload formatters). TODO_MASTER reviewed: #38 (OG image asset), #39 (APP_URL env), #18 (Resend API key) all remain genuinely open and Master-pending — no items flip to [LIKELY DONE - verify] this cycle.
 
 Do not duplicate items already in `TODO.md`. App labels indicate which codebase each task applies to.
 
 ---
 
-## OPEN TASK INDEX (priority order, post-2026-04-27 PM-2 audit)
+## OPEN TASK INDEX (priority order, post-2026-04-27 PM-3 audit)
 
 **[UX] — affects conversion, fix sooner**
 - **U1** [UX] [M] — Self-serve password reset flow (stopgap shipped; full flow blocked on Resend key + 4 routes + 2 views + tests)
 - **U3** [UX] [S] — Authed pages have no global footer with pricing / settings / log-out / legal links. Once #28 (legal pages) ships, build a `views/partials/footer.ejs` and include it on `dashboard`, `invoice-view`, `invoice-form`, `settings`, and the auth pages.
-- **U4** [UX] [S] — The "Preview Pay Link" action button on `views/invoice-view.ejs` is structurally redundant with the dedicated "Payment Link" copy-link card further down the page. Consolidate to one surface (keep the copy-link card OR move the URL-copy card into the action bar).
-  *(U2 closed 2026-04-26 PM. #37 closed 2026-04-26 PM-2 UX audit. #41 closed 2026-04-26 PM-2. 2026-04-27 PM-2 UX audit fixed three items directly without opening new [UX] tasks: pricing free-tier cap copy clarified, empty-state Pro callout reworded for benefit-first phrasing, "Mark as Paid" promoted to primary CTA when invoice is sent/overdue.)*
+  *(U2 closed 2026-04-26 PM. #37 closed 2026-04-26 PM-2 UX audit. #41 closed 2026-04-26 PM-2. 2026-04-27 PM-2 UX audit fixed three items directly without opening new [UX] tasks: pricing free-tier cap copy clarified, empty-state Pro callout reworded for benefit-first phrasing, "Mark as Paid" promoted to primary CTA when invoice is sent/overdue. **U4 closed 2026-04-27 PM-3** — action-bar "Preview Pay Link" button removed; consolidated into the existing "Payment Link" copy-card as a "Preview ↗" anchor sitting alongside the Copy button. Single source of truth for the URL (readonly input value + Preview href + Copy button writes the same value). Test `testInvoiceViewRendersPayButtonForPro` updated to assert the new structure: presence of the "Payment Link" card heading, presence of "Preview ↗" anchor, absence of the old "💳 Preview Pay Link" string, and that the URL appears at least twice in the rendered HTML (input value + anchor href).)*
 
 **Income-critical [GROWTH] — XS first (highest impact-per-effort)**
 - **#66** [XS] — Auto-CC accountant on every invoice email (Pro feature) (MED-HIGH retention/switching-cost; gated on Resend key going live)
+- **#71** [XS] — Auto-BCC the freelancer on every invoice email (HIGH support-load reduction; "did Stripe send it?" inbound queries → zero; gated on Resend)
+- **#73** [XS] — Pre-portal "Cancel reason" survey before redirect to Stripe Customer Portal (MED churn intelligence; surfaces price/feature/support reasons Master needs to act on)
+- **#75** [XS] — Slack/Discord webhook quick-start templates next to webhook URL field on `/billing/settings` (MED activation lift on existing #7 webhook feature)
 - **#44** [XS] — In-app "✨ What's new" changelog widget in nav (retention)
 - **#45** [XS] — Last-day urgency dashboard banner for trial users (HIGH; pairs with #29)
 - **#52** [XS] — JSON-LD `SoftwareApplication` schema on landing + niche pages (MED-HIGH SEO; pairs with #36)
@@ -28,6 +30,8 @@ Do not duplicate items already in `TODO.md`. App labels indicate which codebase 
   *(#36 closed 2026-04-27 — OG/Twitter Card metadata shipped end-to-end + 10 new tests; TODO_MASTER #38/#39 added for Master to drop in branded image + APP_URL. #56 closed 2026-04-27 PM — robots.txt + canonical link tag + meta robots noindex on authed pages + 17 new tests in `tests/robots-and-canonical.test.js`. Pairs with #36 — every shared link now carries a canonical pointer to the canonical domain in addition to the rich OG preview.)*
 
 **Income-critical [GROWTH] — S complexity**
+- **#72** [S] — Calendar `.ics` attachment on invoice email — VEVENT carrying `due_date` (HIGH time-to-payment lift; client adds invoice to calendar at moment-of-receive, removes "client forgot" failure mode; gated on Resend)
+- **#74** [S] — Pro PDF logo upload — actually implement what the pricing page already advertises ("custom branding"). Today it's a marketing bullet that delivers nothing. (MED retention; closes Pro-feature credibility gap; pairs with #15 contextual upsells)
 - **#67** [S] — Tip-on-pay toggle for invoice Pay links (Pro; MED revenue lift on creator/individual-client segment)
 - **#68** [S] — Customisable invoice email template (Pro; MED retention; pairs with #15 branding)
 - **#70** [S] — Receipt PDF for paid invoices (MED; professionalism signal; complements #61)
@@ -1834,6 +1838,106 @@ New `tests/recent-clients.test.js` (5 assertions): (1) DB-helper dedupe-by-lower
 4. `tests/receipt.test.js`: 4 assertions — owner can render receipt for paid invoice; non-paid invoice → redirect with flash; IDOR (non-owner) → /dashboard; receipt body includes "PAID IN FULL" banner.
 
 **Income relevance:** Professionalism signal that B2B-buyer freelancers care about (clients want a paper trail; agencies need it for audit). Complements #61 (PDF attached to invoice email) by closing the post-payment side of the same loop.
+
+---
+
+### 71. [GROWTH] Auto-BCC the freelancer on every invoice email (added 2026-04-27 PM-3 audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM-HIGH (support-load reduction + retention) — every Pro user who sends an invoice via Resend currently has zero proof in their own inbox that the send happened. Inbound support queries shaped like "Did Stripe actually send the invoice? My client didn't reply." are the dominant first-cycle Pro support load on every invoicing tool. BCC'ing the freelancer on the outbound message gives them their own copy in their own inbox at the moment of send — instant proof of delivery, instant searchable archive, zero new code on the user side. Pairs with #66 (auto-CC accountant, also gated on Resend) and reuses the same Resend API parameter shape.
+**Effort:** Trivial
+**Prerequisites:** Resend API key provisioned in production (TODO_MASTER #18).
+
+**Sub-tasks:**
+1. `lib/email.js sendInvoiceEmail`: add `bcc: [user.email]` to the Resend payload. Keep it conditional on `user.email` truthiness so a malformed user record can't crash the send.
+2. `views/settings.ejs`: add a Pro-gated checkbox `<input type=checkbox name=bcc_self_on_invoice>` that defaults to **on** (default-on so the support load reduction lands without the user having to opt in). Stored on `users.bcc_self_on_invoice BOOLEAN DEFAULT TRUE`.
+3. `db/schema.sql`: idempotent `ALTER TABLE users ADD COLUMN IF NOT EXISTS bcc_self_on_invoice BOOLEAN DEFAULT TRUE;`. Bundle with the next `users` migration (H17 trial-nudge index, #74 logo column, etc.).
+4. `routes/billing.js POST /settings`: read the checkbox, persist via `db.updateUser`. If unchecked, `lib/email.js` skips the BCC.
+5. `tests/email.test.js`: 2 new assertions — when `bcc_self_on_invoice=true` (default) the Resend payload includes `bcc: [user.email]`; when false the BCC field is omitted.
+
+**Income relevance:** Indirect (reduces support load, raises Pro-feature confidence). The cost-of-doubt that "did the send actually happen?" is the single most-cited first-week complaint on every invoice-sending tool's review pages — closing it on day 1 raises retained-Pro % and reduces refund-driven churn.
+
+---
+
+### 72. [GROWTH] Calendar `.ics` attachment on invoice email — VEVENT carrying due_date (added 2026-04-27 PM-3 audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** HIGH (time-to-payment) — the dominant late-payment failure mode is "the client put it on their to-do list and forgot." Attaching a `.ics` calendar file to the outbound invoice email forces the client's email client (Gmail, Outlook, Apple Mail) to surface a one-click "Add to calendar" affordance at the moment the invoice arrives in their inbox. The reminder fires the day before due_date — without QuickInvoice or the freelancer having to do anything. Compounds with the existing reminder cron (#16) — that cron nags the client AFTER they're late; the `.ics` nags them BEFORE.
+**Effort:** Low
+**Prerequisites:** Resend API key (TODO_MASTER #18) — Resend `attachments` parameter accepts the same base64-encoded body as the existing PDF attach path planned for #61 (so the codepath is shared).
+
+**Sub-tasks:**
+1. New `lib/ics.js` — exports `buildInvoiceIcs(invoice, user)`. RFC 5545 minimal VEVENT: `BEGIN:VCALENDAR / VERSION:2.0 / PRODID:-//QuickInvoice//EN / BEGIN:VEVENT / UID:invoice-<id>@quickinvoice.io / DTSTAMP:<now> / DTSTART;VALUE=DATE:<due_date YYYYMMDD> / DTEND;VALUE=DATE:<due_date+1> / SUMMARY:Invoice <number> due — <user.business_name> / DESCRIPTION:Pay at <payment_link_url or invoice URL> / TRIGGER:-P1D (1-day-before VALARM) / END:VEVENT / END:VCALENDAR`. CRLF line endings, 75-octet line folding. Pure function, easy to unit-test.
+2. `lib/email.js sendInvoiceEmail`: when `invoice.due_date` is set and not in the past, attach `{ filename: 'invoice-<number>.ics', content: buildInvoiceIcs(invoice, user), contentType: 'text/calendar; method=REQUEST' }` via Resend's `attachments` parameter. Skip on past-due (no value adding the client to a calendar after the fact).
+3. `views/settings.ejs`: Pro-gated toggle `<input type=checkbox name=ics_attach_invoice>` defaulting to **on**. Stored on `users.ics_attach_invoice BOOLEAN DEFAULT TRUE`. Bundle with #71's settings checkbox so both ship in one commit.
+4. `db/schema.sql`: `ALTER TABLE users ADD COLUMN IF NOT EXISTS ics_attach_invoice BOOLEAN DEFAULT TRUE;` — bundle with the next `users` migration.
+5. `tests/ics.test.js`: 6 assertions — VEVENT structure (UID, DTSTAMP, DTSTART, SUMMARY, VALARM, END:VCALENDAR all present); CRLF line endings; long SUMMARY line is folded at 75 octets; past-due invoice → `null` returned; missing `due_date` → null; description includes payment_link_url when present.
+6. `tests/email.test.js`: 2 new assertions — when invoice has future `due_date` the Resend payload includes a `text/calendar` attachment named `invoice-<number>.ics`; when due_date is null no attachment is added.
+
+**Income relevance:** DIRECT lift on time-to-payment. Every invoice that gets paid 5 days earlier compounds across the user's invoice volume — at 10 invoices/mo per Pro user, that's roughly 50 cumulative days of cashflow improvement per user per month. Pairs with #61 (PDF attach) since both flow through the same Resend `attachments` parameter and can be implemented in the same commit.
+
+---
+
+### 73. [GROWTH] Pre-portal "Cancel reason" survey before redirect to Stripe Customer Portal (added 2026-04-27 PM-3 audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM (churn intelligence) — today `POST /billing/portal` redirects directly to the Stripe Customer Portal, where the user can cancel without QuickInvoice ever knowing why. This is the data-blackhole moment in the lifecycle: the user is mid-decision, the highest-intent moment to ask "what's missing?", and we discard the chance. A single-screen pre-portal interstitial asking "Why are you considering cancelling?" with 5 radio options (price-too-high / not-using-it / missing-feature / found-alternative / one-off-need-finished) + free-text optional captures the data Master needs to inform pricing/feature decisions, **before** the user disappears. Skip-able (small "Skip and go to portal" link) so the friction never blocks the cancellation.
+**Effort:** Trivial
+**Prerequisites:** None.
+
+**Sub-tasks:**
+1. `db/schema.sql`: idempotent migration — `CREATE TABLE IF NOT EXISTS cancel_intents (id BIGSERIAL PK, user_id BIGINT FK users, reason VARCHAR(50), free_text TEXT, created_at TIMESTAMP DEFAULT NOW());`. Bundle with the next migration.
+2. `routes/billing.js`: rename existing `POST /portal` → `POST /portal/redirect` (the actual Stripe call); add new `GET /portal` that renders `views/cancel-intent.ejs` (5-radio-option form + free-text + "Skip and continue to billing portal" link).
+3. `routes/billing.js POST /cancel-intent`: receives the form, inserts a `cancel_intents` row (only if user is Pro), then 303-redirects to `/billing/portal/redirect`. Skip path bypasses the insert.
+4. `views/settings.ejs`: change the existing "Manage Billing" button from `POST /billing/portal` to `GET /billing/portal` so the pre-portal page renders before the Stripe redirect.
+5. `views/cancel-intent.ejs`: new page; copy "Before you go — help us improve. (Optional)" + 5 radio options + free-text textarea + 2 buttons ("Submit and continue" / "Skip"). Tailwind-styled, mobile-friendly.
+6. Surface aggregate counts to Master via TODO_MASTER addition: "Run `SELECT reason, COUNT(*) FROM cancel_intents GROUP BY reason ORDER BY 2 DESC;` weekly to inform pricing/feature roadmap."
+7. `tests/cancel-intent.test.js`: 4 assertions — GET /billing/portal renders the survey for Pro user; POST /cancel-intent inserts a row + 303 to portal redirect; skip path bypasses insert + 303 to portal redirect; non-Pro user GET /billing/portal short-circuits to `/billing/upgrade` (no portal to redirect to).
+
+**Income relevance:** Indirect — generates the data Master needs to make pricing/feature decisions that move the long-tail churn rate. Without this data, every retention experiment is shot in the dark. With even 30 days of cancel-reason data, Master can attribute churn to a small number of root causes and prioritise [GROWTH] tasks accordingly.
+
+---
+
+### 74. [GROWTH] Pro PDF logo upload — actually implement what the pricing page advertises (added 2026-04-27 PM-3 audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM (Pro-feature credibility + retention) — `views/pricing.ejs` and `views/dashboard.ejs` already advertise "custom branding" as a Pro perk, but the actual feature delivers nothing today: the invoice-print/invoice-view headers render `user.business_name` text only, no logo. A Pro user who upgrades and discovers the logo upload doesn't exist hits an immediate "what am I paying for?" moment — that's a refund or churn risk in the first 7 days. Closing the gap turns the marketing claim into a tangible deliverable.
+**Effort:** Low–Medium (multipart upload, file storage abstraction, image-rendering in two views).
+**Prerequisites:** None for filesystem storage (Heroku ephemeral filesystem is fine for an MVP — re-uploadable on dyno restart). For long-term durability Master should provision an S3 bucket or Cloudinary; flag in TODO_MASTER.
+
+**Sub-tasks:**
+1. `db/schema.sql`: `ALTER TABLE users ADD COLUMN IF NOT EXISTS logo_url TEXT;` — bundle with the next `users` migration.
+2. `npm i multer` (or use `express-fileupload` to avoid the new dep). Configure for `image/png|jpeg|svg+xml`, 1 MB max, store under `public/uploads/logos/<user_id>-<uuid>.<ext>`.
+3. `routes/billing.js POST /settings/logo`: Pro-gated, multipart upload. Validate magic-byte sniff (PNG `89 50 4E 47`, JPEG `FF D8 FF`, SVG `<svg`/`<?xml`) — defence against an attacker uploading an executable with an image extension. On success, persist `logo_url` to `users` and flash success.
+4. `views/settings.ejs`: Pro-gated upload form; show preview of current logo with a "Remove" button (sets `logo_url=null`).
+5. `views/invoice-view.ejs` and `views/invoice-print.ejs`: render `<img src="<%= user.logo_url %>" class="h-12 w-auto" alt="">` next to `user.business_name` when present; fall back to text-only when null. Print CSS retains the image for PDF render.
+6. `views/index.ejs` Pro pricing card already lists "Custom branding" — no copy change needed; the bullet is finally accurate.
+7. `tests/logo-upload.test.js`: 6 assertions — Pro user can upload PNG; free user blocked with 403/redirect; oversized (>1 MB) rejected; non-image MIME rejected; magic-byte mismatch (e.g. `.png` extension on a JS file) rejected; remove path nulls `logo_url`.
+8. `tests/payment-link.test.js` + `tests/free-footer.test.js`: extend existing render assertions to check that `logo_url` renders a `<img>` tag when set.
+9. **TODO_MASTER addition:** S3/Cloudinary bucket for durable logo storage (Heroku ephemeral FS will lose uploads on dyno restart; OK for MVP, not OK for paid users at scale).
+
+**Income relevance:** DIRECT — closes a credibility gap on a Pro-only feature that's already in the upgrade pitch. A Pro user who finds the feature missing in week 1 churns in week 1; closing the gap reduces 7-day churn on the paid cohort. Also unblocks part of #15 (contextual upsells on locked features) — once the logo upload is real, the upsell prompt at "[Free user clicked customise branding] → upgrade to Pro" has a tangible reward to point to.
+
+---
+
+### 75. [GROWTH] Slack/Discord webhook quick-start templates next to webhook URL field on /billing/settings (added 2026-04-27 PM-3 audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM (activation lift on existing #7 webhook feature) — the outbound paid-webhook (#7, shipped) is a Pro-feature that's underutilised because most Pro users don't run a Zapier subscription. Adding two ~15-line presets ("Use with Slack" / "Use with Discord") that auto-format the JSON payload for those platforms turns the webhook from a "for power users with Zapier" feature into a "post a message to my team's channel" feature anyone can adopt in 60 seconds. Same backend code, same DB column, dramatically larger addressable audience.
+**Effort:** Trivial
+**Prerequisites:** None (the outbound webhook firing logic already exists in `lib/outbound-webhook.js`).
+
+**Sub-tasks:**
+1. `lib/outbound-webhook.js`: detect Slack hosts (`hooks.slack.com`) and Discord hosts (`discord.com/api/webhooks` / `discordapp.com/api/webhooks`) from the saved `webhook_url`. When detected, swap the JSON payload shape:
+   - Slack: `{ text: "💸 *Invoice INV-X* paid by *<client_name>* — $<amount>" }`
+   - Discord: `{ content: "💸 **Invoice INV-X** paid by **<client_name>** — $<amount>" }`
+   - Generic (default): keep the existing `{ invoice_id, amount, client_name, paid_at }` shape so existing Zapier zaps don't break.
+2. `views/settings.ejs`: under the existing webhook URL input, render two collapsible "Quick start" panels with:
+   - Slack: "Go to your Slack workspace → Apps → Incoming Webhooks → Add to channel → copy the URL → paste it here. Test it now [button]." Link to the official Slack incoming-webhook setup doc.
+   - Discord: "In your Discord channel → Edit channel → Integrations → Webhooks → New Webhook → copy URL → paste it here."
+3. Extend `tests/webhook-outbound.test.js`: 4 new assertions — Slack URL detection produces `text:` payload shape; Discord URL detection produces `content:` payload shape; arbitrary URL keeps the generic JSON shape (regression guard for existing Zapier users); payload includes the dollar-formatted amount with 2 decimals.
+
+**Income relevance:** Indirect — unlocks the existing #7 outbound webhook (which is a stickiness lock-in feature) for the 80% of freelancers who use Slack/Discord but not Zapier. Switching cost compounds with every new freelancer who wires their team channel to the webhook.
 
 ---
 

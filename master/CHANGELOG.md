@@ -2,6 +2,202 @@
 
 ---
 
+## 2026-04-27T23:05Z — Health Monitor: clean cycle — no new advisories, no new fixes needed
+
+### What was audited
+
+- **New code shipped this cycle:** `views/invoice-view.ejs` (Preview ↗ anchor in payment-link card), `views/invoice-form.ejs` (Net 30 default Due Date), `views/pricing.ejs` (free-tier × items added), `tests/billing-settings.test.js` (4 new reply_to_email tests). Zero new server code, zero new routes, zero new env var references, zero new dependencies, zero new external API call sites.
+- **Security review of the diff:** the Preview ↗ anchor `href="<%= invoice.payment_link_url %>"` uses EJS auto-escaping (default for `<%= %>` in attribute context — escapes `<`, `>`, `&`, `'`, `"`), `target="_blank"` paired with `rel="noopener"` (correct — prevents tabnabbing of the parent tab from the Stripe Checkout page); same href semantics as the previously-existing action-bar button it replaced, so the security posture is preserved. The Net 30 default `new Date(Date.now() + 30*86400000).toISOString().split('T')[0]` runs server-side at template render time with no user input — pure date arithmetic, no injection surface.
+- **`npm audit --production`:** 6 vulnerabilities (3 moderate, 3 high) — all pre-existing, all install-time-only, all already tracked under [HEALTH] H9 (`bcrypt → tar`/`@mapbox/node-pre-gyp`) and H16 (`resend → svix → uuid`). No new advisories surfaced this cycle.
+- **Performance:** no new DB queries; no new template loops over user-scale data; the Net 30 default is a single `new Date()` call per invoice-form render (sub-microsecond). No N+1 risk introduced.
+- **Code quality:** no dead code introduced; two redundant view blocks consolidated to one (the U4 commit's pay-link surface dedupe is a net code-quality win, removes ~7 lines of duplicate URL handling). No new repeated logic; no new oversized files.
+- **Dependencies:** no new packages added.
+- **Legal:** no new data-handling flows; no new third-party API call sites; no new third-party SDK bundling. Existing [LEGAL] gaps in TODO_MASTER unchanged. The Preview ↗ anchor opens an external Stripe URL — same data flow as the prior action-bar button, no new disclosure surface.
+
+### What was fixed directly
+
+Nothing new — every contained issue surfaced this cycle was already a clean code change shipped by Roles 1, 2, or 4. No defence-in-depth gap was discovered that warranted a hot-fix.
+
+### What was flagged
+
+Nothing new added to [HEALTH]. All eight pre-existing [HEALTH] items (H8, H9, H10, H11, H14, H15, H16, H17, H18) remain accurate as written; complexity tags still match.
+
+### Income relevance
+
+Indirect — verifies that this cycle's user-visible improvements (U4 consolidation, Net 30 default, pricing-card clarity, billing-settings tests) didn't introduce regressions in the security/performance/legal posture. A clean Health Monitor cycle is the steady-state expectation, not a celebration — but it's worth recording so a future regression can be cleanly bisected against this confirmed-clean snapshot.
+
+---
+
+## 2026-04-27T22:55Z — Task Optimizer: 8th pass — header refresh + U4 closure recorded
+
+### Cleanup applied
+
+1. **U4 archived** — moved closure note inline beneath the [UX] section header (no separate detail block existed; only the index entry was previously present). Index entry replaced with the cycle closure note.
+2. **5 new [GROWTH] items inserted in correct priority slots** — #71/#73/#75 in the XS-first row (alongside #66, #44, #45, #52, #55, #48, #31, #34); #72/#74 in the S-complexity row above the existing #67/#68. Both placements respect the existing income-impact ordering.
+3. **Header audited block updated** — bumped from "PM-2, 7th pass" to "PM-3, 8th pass". Added this cycle's deltas (U4, #71-#75, TODO_MASTER #47-#48, billing-settings reply_to_email tests, pricing-card and Net-30 UX fixes) and refreshed the duplicate-check audit (each new item proven non-overlapping against the prior 70).
+4. **Archive trigger flagged** — file is now at ~2.1k lines (1.5k threshold). Archive sweep is overdue by 4 cycles; flagged for next cycle's optimizer pass to compress oldest [DONE] items into `master/CHANGELOG_ARCHIVE.md`. Not done this cycle to keep the diff focused on actual content changes.
+5. **TODO_MASTER reviewed** — no items flip to `[LIKELY DONE - verify]` this cycle. The genuinely-open Master-pending items remain: #18 (Resend API key — gates #11/#12/#71/#72/#66 + the dunning email loop), #38 (branded OG image PNG — gates the rich social preview), #39 (`APP_URL` env in production — gates canonical URLs and absolute Stripe success/cancel URLs).
+6. **No vague tasks broken down** — all open items already have explicit sub-task lists with file paths and assertion counts. Complexity tags (XS/S/M/L) consistent across the index and detail blocks.
+7. **No duplicate consolidation needed** — overlap check against the entire backlog confirmed 0 new duplicates this cycle.
+
+### What was NOT done
+
+- **Bulk DONE-item archive sweep.** The file is over the 1.5k-line threshold but compressing the in-place [DONE] resolution notes into a separate `CHANGELOG_ARCHIVE.md` is itself a [S]-complexity task that would dominate the diff this cycle. Deferred again with clearer next-cycle instruction in the header. Each cycle's drift makes the eventual sweep more valuable (more items to compact in one pass).
+
+### Income relevance
+
+Indirect — keeps the priority surface readable so the next cycle's Feature Implementer can pick the highest-leverage task without scrolling through resolved noise.
+
+---
+
+## 2026-04-27T22:45Z — UX Auditor: pricing-card value-prop clarity + Net-30 default due date
+
+### Flows audited
+
+- Landing → register → dashboard → empty state → upgrade CTA
+- Pricing page (free vs Pro feature comparison)
+- New-invoice form (the freelancer's most-used create flow)
+- Invoice view (action bar, payment-link card — already cleaned up by Role 1's U4 commit)
+- Settings page (business info + reply-to + Pro webhook URL)
+- Auth login + register (forgot-password copy + flash messages)
+- Dashboard trial banner + past-due banner
+
+### What was changed directly
+
+**1. `views/pricing.ejs` — Free-tier feature list now exposes the highest-leverage upgrade levers.**
+
+Before: free tier × list showed only `Unlimited invoices`, `Business branding`, `Priority support`. Pro card listed `Stripe payment links` as ✓ but the free tier had no corresponding ×, so a freelancer reading the pricing page literally could not see that **payment links** (the primary product wedge — "send a Stripe Pay button with every invoice") was a Pro upgrade. Same gap on auto-reminder emails (the second product wedge).
+
+After: free tier × list now includes `× Stripe payment links` and `× Auto reminder emails` alongside the existing three, so the upgrade trade-off is visible at a glance. Pro tier list reordered so the corresponding ✓ entries land in the same vertical position — readers can scan the deltas top-to-bottom without searching. Free tier first ✓ also changed from "3 invoices total" to "Up to 3 invoices" to match the dashboard's "X/3 invoices used" framing (consistency hygiene already started in last cycle's UX pass).
+
+**2. `views/invoice-form.ejs` — Due Date now defaults to Net 30 on new invoices.**
+
+Before: `value=""` on new invoices. The freelancer had to remember to pick a date; if they skipped it, the resulting invoice had `due_date IS NULL`, which:
+- Disables the reminder cron entirely (the cron predicate filters on `due_date < NOW()`).
+- Hides the "Pay by..." copy on `views/invoice-view.ejs`.
+- Will block the planned `.ics` calendar attachment (INTERNAL_TODO #72).
+
+After: `value="<%= new Date(Date.now() + 30*86400000).toISOString().split('T')[0] %>"` (issued today + 30 days). Net 30 is the de-facto industry default. The freelancer can still override on the form. Label updated to `Due Date (Net 30 default)` so the pre-fill is transparent — no surprise about why the field has a value.
+
+This is a **direct conversion lever**: every new invoice now ships with a due date by default, every due date now activates the reminder cron, every reminder fires on schedule without the freelancer remembering to set it. Net effect: shorter time-to-payment without any user action.
+
+**Edit-mode preserved:** when the invoice already exists with a due_date, the existing value renders unchanged (no clobbering of an already-set date).
+
+### What was flagged
+
+No new [UX] items added. The remaining open [UX] items (U1 password reset, U3 global footer) are both blocked on prerequisites already tracked (Resend API key, #28 legal pages).
+
+Walked the auth pages, settings page, dashboard banners, invoice form, invoice view, and pricing page in turn — nothing else needed direct copy/layout fixes this cycle. Role 1's U4 consolidation already shipped the invoice-view cleanup; Role 3's #72 (`.ics` attachment) and #74 (logo upload) are tracked as new [GROWTH] items rather than [UX] because they need code beyond copy/layout changes.
+
+### Test impact
+
+Full suite re-run after both changes — 34 test files, 0 failures. No test changes required: the pricing test (`tests/landing.test.js`) asserts on the page rendering 200 with recognisable Pro/Free copy, not on the specific bullet count; the invoice-form tests assert the form submits with the values set, not on the default Date value.
+
+### Income relevance
+
+DIRECT — both fixes target the same cashflow loop:
+- Pricing-card delta visibility: a freelancer who *can see* the Pro feature wedge converts; a freelancer who can't, doesn't.
+- Net 30 due date default: every reminder cron tick that fires recovers cashflow that would otherwise sit in the "client forgot" failure mode forever.
+
+---
+
+## 2026-04-27T22:30Z — Growth Strategist: 5 new [GROWTH] dev tasks + 2 new [MARKETING] items
+
+### What was added
+
+Walked the open-task index against the conversion / retention / expansion / automation / distribution matrix. Five new [GROWTH] dev tasks identified, all non-overlapping with the existing #1-#70 backlog and verified against TODO.md + TODO_MASTER for duplicates:
+
+| # | Task | Complexity | Income impact | Lever |
+|---|---|---|---|---|
+| #71 | Auto-BCC freelancer on every invoice email | XS | MED-HIGH | Support load reduction (gated on Resend) |
+| #72 | Calendar `.ics` attachment on invoice email (VEVENT carrying due_date) | S | HIGH | Time-to-payment lift (gated on Resend) |
+| #73 | Pre-portal "Cancel reason" survey before Stripe Customer Portal redirect | XS | MED | Churn intelligence |
+| #74 | Pro PDF logo upload — actually implement what pricing advertises | S | MED | Pro-feature credibility / 7-day churn defence |
+| #75 | Slack/Discord webhook quick-start templates next to webhook URL field | XS | MED | Activation lift on existing #7 |
+
+### Two new [MARKETING] items in TODO_MASTER
+
+- **#47** "Cashflow horror story" Twitter/X thread series — once-monthly, evergreen narrative format that consistently out-performs tip threads on engagement and click-through. Distinct from existing #17 (general tip series).
+- **#48** First-Pro-cohort founder onboarding calls — capped at the first 20 paying customers; produces feature feedback, testimonial quotes, referral seeds, and reduced churn in one motion. Capped at 20 because the unit economics stop working past that scale.
+
+### Overlap check
+
+Each new item was checked against the entire #1-#70 + TODO_MASTER #1-#46 backlog before adding:
+- #71 vs #66 (#66 = CC accountant; #71 = BCC self — different recipients, different problems)
+- #72 vs #16 (#16 = post-due reminder cron; #72 = pre-due calendar event — different leverage points in the time-to-payment funnel)
+- #72 vs #61 (#61 = PDF attach; #72 = .ics attach — different attachment types, share Resend `attachments` codepath so can ship in the same commit)
+- #73 — no equivalent in backlog (cancel-reason survey is a new data-capture surface)
+- #74 vs #15 (#15 = upsell prompts on locked features; #74 = make the locked feature actually exist)
+- #75 vs #7 (#7 = generic webhook; #75 = Slack/Discord-specific payload formatters on top)
+- TODO_MASTER #47 vs #17 (different content shape: tip threads vs narrative threads)
+- TODO_MASTER #48 vs #21 (#21 = testimonial collection; #48 = the *call* that produces the quote — strictly upstream)
+
+### Income relevance summary
+
+- HIGH-impact: #72 (time-to-payment), TODO_MASTER #48 (founder calls)
+- MED-HIGH: #71 (support load), #74 (Pro credibility)
+- MED: #73 (churn data), #75 (activation), TODO_MASTER #47 (evergreen acquisition)
+
+Two items (#71, #72) gated on Resend API key (TODO_MASTER #18). Three items (#73, #74, #75) implementable today.
+
+---
+
+## 2026-04-27T22:15Z — Test Examiner: reply_to_email validation coverage on POST /billing/settings
+
+### What was audited
+
+Walked every income-critical mutation path against the test suite. The `reply_to_email` validation block in `routes/billing.js` `POST /settings` (lines 259-271) was the largest uncovered surface. This field controls the Reply-To header on outbound invoice + reminder emails (Pro feature) — a regression in either direction is income-relevant:
+
+- **False accept:** a malformed value lands on the user's row, Resend rejects the entire email send when the Pro user marks an invoice sent, the freelancer's only revenue-collection channel silently breaks.
+- **False reject:** valid values get bounced, Pro user can't configure the feature they paid for, churn risk.
+
+The route's existing logic (regex `/^[^\s@]+@[^\s@]+\.[^\s@]+$/` + length-≤-255 guard + trim → null clearing path) had **zero** test coverage in `tests/billing-settings.test.js` before this commit.
+
+### What was changed
+
+Added 4 new tests to `tests/billing-settings.test.js` covering all four reply_to_email branches:
+
+1. `testSettingsPostReplyToValid` — valid `invoices@carol.studio` → `db.updateUser` called once with `reply_to_email` field set verbatim, redirects to `/billing/settings`.
+2. `testSettingsPostReplyToBlankClearsField` — whitespace-only `'   '` → `db.updateUser` called once with `reply_to_email: null` (asserts the trim-then-clear path so a Pro user can wipe the field).
+3. `testSettingsPostReplyToMalformedRejected` — `'not-an-email'` → **zero** `db.updateUser` calls, redirect with error flash. Defence against malformed Reply-To headers reaching Resend.
+4. `testSettingsPostReplyToTooLongRejected` — 265-char address (passes regex, fails length guard) → zero DB writes, redirect with error flash. Defence against the Postgres `VARCHAR(255)` constraint crashing the insert with a 22001.
+
+Test file header comment updated to reflect the 4 new branches. Full suite re-run — **34 test files, 0 failures** (up from 33 of last cycle's reported count after counting the file additions; no count regressions).
+
+### What was flagged
+
+No `[TEST-FAILURE]` items added — every test passes after the fix. No flaky tests detected. No redundant tests deleted (all existing assertions remain meaningful).
+
+### Income relevance
+
+DIRECT — closes a coverage gap on a Pro-feature configuration path that gates Resend deliverability. Bug here surfaces as silent revenue-collection failure (Pro user sends an invoice, Resend rejects the malformed Reply-To, client never receives the invoice, freelancer doesn't get paid). With these tests in place, a regression in the validator is caught in CI before reaching production.
+
+---
+
+## 2026-04-27T22:00Z — Feature Implementer: U4 Pay Link surface consolidation
+
+### What was built
+
+`views/invoice-view.ejs` — the action-bar "💳 Preview Pay Link" button (rendered at the top of an invoice for Pro users with a Stripe Payment Link) was structurally redundant with the dedicated "Payment Link" copy-card lower on the page. Two surfaces → confusion ("which one do I send the client?") and visual clutter in the action bar (already 5+ buttons on the densest state). Consolidated to one surface by:
+
+1. **Removed** the action-bar `<a href="payment_link_url">💳 Preview Pay Link</a>` block (was lines 31-37 of `views/invoice-view.ejs`).
+2. **Added** a "Preview ↗" anchor inside the existing `border-t border-gray-100` Payment Link card, sitting alongside the Copy button. Same `target="_blank" rel="noopener"` semantics. New helper line beneath the input row reads "Preview opens the page your client sees." so the freelancer immediately understands the anchor is a what-the-client-sees inspector — not a "I'm paying my own invoice" action.
+3. **Single source of truth** for the URL — readonly input value, Copy button's `navigator.clipboard.writeText(...)` argument, and Preview anchor `href` all reference `invoice.payment_link_url` once. No more drift risk between the action-bar href and the copy-card input value.
+
+### Test changes
+
+`tests/payment-link.test.js::testInvoiceViewRendersPayButtonForPro` rewritten to assert the new structure: presence of "Payment Link" card heading, presence of "Preview ↗" anchor, **absence** of the old "💳 Preview Pay Link" string (regression guard so the consolidation can't silently un-consolidate), and that `https://buy.stripe.com/test_42` appears ≥ 2 times in the HTML (input `value=` + anchor `href=`). Full suite re-run — all 34 test files pass, 0 failures.
+
+### Income relevance
+
+Indirect — UX cleanup at the highest-leverage screen in the freelancer's flow (the post-create invoice view, where the "send to client" decision happens). Reducing two pay-link surfaces to one removes a hesitation moment ("which URL do I share?") that delays the moment-of-payment-link-share. The longer the freelancer hesitates, the longer until the client receives the link, the longer until cash arrives. Not a measurable conversion lever in isolation; compounds with the other UX hygiene fixes shipped this week (free-tier copy, empty-state callout, Mark-as-Paid primary CTA).
+
+### Master action
+
+None. Pure code change. Deploys with the next `git push` to production.
+
+---
+
 ## 2026-04-27T19:30Z — Health Monitor pass: pre-deploy XSS fix + recent-clients index flag
 
 ### What was audited

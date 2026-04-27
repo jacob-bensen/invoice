@@ -28,13 +28,6 @@
 
   <!-- Action bar -->
   <div class="flex flex-wrap gap-3 mb-8">
-    <% if (invoice.payment_link_url && user.plan === 'pro') { %>
-      <a href="<%= invoice.payment_link_url %>" target="_blank" rel="noopener"
-        title="Open the Stripe payment page your client will see"
-        class="bg-green-600 text-white font-semibold px-5 py-2.5 rounded-lg hover:bg-green-700 transition flex items-center gap-2">
-        💳 Preview Pay Link
-      </a>
-    <% } %>
     <a href="/invoices/<%= invoice.id %>/print" target="_blank"
       class="bg-brand-600 text-white font-semibold px-5 py-2.5 rounded-lg hover:bg-brand-700 transition flex items-center gap-2">
       🖨️ Print / Download PDF
@@ -187,7 +180,13 @@
             <span x-show="!copied">Copy</span>
             <span x-show="copied" class="text-green-600">Copied!</span>
           </button>
+          <a href="<%= invoice.payment_link_url %>" target="_blank" rel="noopener"
+            title="Open the Stripe payment page your client will see"
+            class="border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-gray-50 transition text-sm whitespace-nowrap">
+            Preview ↗
+          </a>
         </div>
+        <p class="text-gray-400 text-xs mt-2">Preview opens the page your client sees.</p>
       </div>
     <% } %>
 

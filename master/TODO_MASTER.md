@@ -1169,3 +1169,40 @@ Closed communities are the highest-conversion-per-impression distribution surfac
 ### Why this matters
 
 YouTube SEO is the single most-evergreen acquisition channel for B2B SaaS at this stage. A 60-second walkthrough that ranks for one or two long-tail queries drives 50-300 passive views per month indefinitely, of which ~5% click through to the landing page, of which ~5% convert to free signup. Doesn't compete with #15 (Loom autoplay clip — that's about reducing landing-page bounce); this is about new acquisition. Compounds with #36 (OG metadata) and INTERNAL_TODO #52 (JSON-LD `SoftwareApplication` schema with `VideoObject` ref).
+
+---
+
+## 47. [MARKETING] "Cashflow horror story" Twitter/X thread series — once monthly, evergreen (added 2026-04-27 PM-3)
+
+**Impact:** MEDIUM — distinct from #17 (LinkedIn/Tweet content series — that's invoicing tips). This is a structured monthly thread format that retells a real freelancer cashflow horror story (anonymised, sourced from r/freelance, Indie Hackers, or your own users) and lands on a "this is the gap QuickInvoice closes" beat. Threads of this shape (relatable problem → narrative → tool reveal) consistently outperform tip threads on engagement and click-through, because the reader spends 90 seconds invested in the problem before the product gets named.
+
+### Action (Master, ~1 hr/month ongoing)
+
+1. **Source one story per month** (~20 min): scrape r/freelance and Indie Hackers for posts tagged `chasing payment`, `client won't pay`, `late invoice`, `freelance accountant horror`. Take one with > 50 upvotes / > 10 comments and the freelancer's permission to retell anonymised.
+2. **Write the thread** (~30 min, 8-12 tweets): tweet 1 = the hook ("Freelance designer waited 91 days to get paid. Here's what happened."). Tweets 2-8 = narrative beats (signed contract, sent invoice, client ghosted, follow-up emails, etc.). Tweet 9 = the systemic gap ("No automated reminder. No payment link. Just hope."). Tweet 10 = "This is why I built QuickInvoice." with the landing URL.
+3. **Schedule** via Buffer/Hypefury for Tuesday 10am ET (highest engagement window for the freelancer cohort).
+4. **Cross-post the thread to LinkedIn** as a single long-form post (LinkedIn auto-truncates at 1300 chars but the algorithm rewards long-form text-only posts; embed the landing-page link in the first comment, not the post body — LinkedIn deboosts posts with external links).
+5. **Track conversion** via the `?ref=twitter-cashflow-MM-YY` URL param on the landing-page link; review Plausible's referrer split (#29 once live) at 30 days post-publish.
+
+### Why this matters
+
+Once-monthly cadence (12 threads/year) is sustainable. Each thread compounds — the problem stays evergreen, the freelancer cohort doesn't change, the QuickInvoice positioning ("we close this specific gap") gets reinforced 12 times a year without ever feeling like a sales pitch. Pairs with #34 (Indie Hackers / Reddit launch posts — same audience, different surface), #44 (LinkedIn outbound — same content can be repurposed there), and the #45 community presence (you can drop the thread into your community feed once you've earned the standing).
+
+---
+
+## 48. [MARKETING] First-Pro-cohort founder onboarding calls — first 20 customers only (added 2026-04-27 PM-3)
+
+**Impact:** HIGH (early-stage learning + retention) — every SaaS founder who skipped the "manually onboard the first 20 paying customers" step has a regret thread on Indie Hackers about it. A 15-minute Zoom call with each of the first 20 Pro signups generates: (a) the most actionable feature feedback you'll ever get; (b) testimonial quotes (#21 prereq); (c) referral seeds (each Pro user knows ~5 other freelancers, half of whom would benefit from QuickInvoice); (d) reduced churn (a customer who's spoken to a founder 1-on-1 churns at roughly half the rate of one who hasn't). Each call is a marketing asset, a product-research interview, and a retention lever simultaneously. Stops at 20 customers because the math stops working past that scale; the "first 20" is a one-time investment.
+
+### Action (Master, ~30 min per customer, capped at 20 customers ≈ 10 hrs total)
+
+1. **Trigger:** add a hook in the existing `customer.subscription.updated` webhook handler so the first 20 Pro upgrades fire a Slack notification to Master with the user's email (no code change needed if Master sets up a Stripe-to-Slack Zap; otherwise tag as INTERNAL_TODO).
+2. **Personalised email** (template, ~5 min to fill per customer): "Hi <name>, founder of QuickInvoice here — you're one of the first 20 Pro users, and I want to make sure you get a real human onboarding. 15-minute Zoom this week? <Calendly link>." Calendly free tier is fine.
+3. **Run the call** (15-20 min): (a) watch them create their first invoice — observe friction; (b) ask "what would you have wanted that's missing?"; (c) ask "what almost stopped you from signing up?"; (d) close with "would you mind if I quoted you on the landing page once you've used it for a month?"
+4. **Capture the answers** in a single Notion / Google Doc — one entry per customer, structured: name / vertical / pain point / feature requests / quote-permission y/n.
+5. **Feed back into INTERNAL_TODO** — every feature request that surfaces 2+ times across the 20 calls becomes a [GROWTH] item with the tag "validated by user interview."
+6. **Stop at 20 customers.** Past 20, the unit economics break (Master's hourly cost > customer LTV at $9-19/mo), and the patterns repeat. The first-20 cohort is a one-time investment.
+
+### Why this matters
+
+Every SaaS team that skipped this step bought their first 20 customers' feedback in churn data instead of voice — that's strictly worse data, delivered later, when the customer has already left. Compounds with #21 (testimonials — the calls produce the quotes), #18 (affiliate program — the early Pros are the most likely affiliates), and INTERNAL_TODO #57 (NPS survey — the calls calibrate the NPS-question wording before the survey ships at scale).
