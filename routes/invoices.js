@@ -40,15 +40,29 @@ router.get('/', requireAuth, async (req, res) => {
       }
     }
     const onboarding = buildOnboardingState(user, invoices);
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, noindex: true });
+    const invoiceLimitProgress = buildInvoiceLimitProgress(user);
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
       title: 'My Invoices', invoices: [], user: req.session.user || null,
-      flash: null, days_left_in_trial: 0, onboarding: null, noindex: true
+      flash: null, days_left_in_trial: 0, onboarding: null,
+      invoiceLimitProgress: null, noindex: true
     });
   }
 });
+
+function buildInvoiceLimitProgress(user) {
+  if (!user || user.plan !== 'free') return null;
+  const used = Math.max(0, parseInt(user.invoice_count, 10) || 0);
+  const max = FREE_LIMIT;
+  const cappedUsed = Math.min(used, max);
+  const percent = max > 0 ? Math.round((cappedUsed / max) * 100) : 0;
+  const remaining = Math.max(0, max - used);
+  const atLimit = used >= max;
+  const nearLimit = !atLimit && remaining <= 1;
+  return { used, max, percent, remaining, atLimit, nearLimit };
+}
 
 function buildOnboardingState(user, invoices) {
   if (!user || user.onboarding_dismissed) return null;
@@ -323,5 +337,7 @@ async function onboardingDismissHandler(req, res) {
 
 module.exports = router;
 module.exports.buildOnboardingState = buildOnboardingState;
+module.exports.buildInvoiceLimitProgress = buildInvoiceLimitProgress;
 module.exports.onboardingDismissHandler = onboardingDismissHandler;
 module.exports.ALLOWED_INVOICE_STATUSES = ALLOWED_INVOICE_STATUSES;
+module.exports.FREE_LIMIT = FREE_LIMIT;

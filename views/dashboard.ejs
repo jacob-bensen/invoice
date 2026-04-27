@@ -116,14 +116,50 @@
     </div>
   <% } %>
 
+  <% if (locals.invoiceLimitProgress) { %>
+    <div
+      data-testid="invoice-limit-progress"
+      data-used="<%= invoiceLimitProgress.used %>"
+      data-max="<%= invoiceLimitProgress.max %>"
+      class="mb-6 rounded-xl border <%= invoiceLimitProgress.atLimit || invoiceLimitProgress.nearLimit ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-white' %> px-5 py-4 print:hidden"
+      role="region"
+      aria-label="Free plan invoice usage"
+    >
+      <div class="flex items-center justify-between gap-3 mb-2">
+        <p class="text-sm <%= invoiceLimitProgress.atLimit || invoiceLimitProgress.nearLimit ? 'text-amber-900' : 'text-gray-700' %>">
+          <strong><%= invoiceLimitProgress.used %> of <%= invoiceLimitProgress.max %></strong> free invoices used
+          <% if (invoiceLimitProgress.atLimit) { %>
+            &mdash; you've hit the limit.
+          <% } else if (invoiceLimitProgress.nearLimit) { %>
+            &mdash; <%= invoiceLimitProgress.remaining %> left this plan.
+          <% } %>
+        </p>
+        <a
+          href="/billing/upgrade"
+          class="text-xs font-semibold <%= invoiceLimitProgress.atLimit || invoiceLimitProgress.nearLimit ? 'text-amber-700 hover:text-amber-900' : 'text-brand-600 hover:text-brand-700' %> whitespace-nowrap"
+        >Upgrade &rarr;</a>
+      </div>
+      <div class="bg-gray-100 rounded-full h-2 overflow-hidden" aria-hidden="true">
+        <div
+          class="<%= invoiceLimitProgress.atLimit || invoiceLimitProgress.nearLimit ? 'bg-amber-500' : 'bg-brand-600' %> h-2 rounded-full transition-all"
+          style="width: <%= invoiceLimitProgress.percent %>%"
+        ></div>
+      </div>
+    </div>
+  <% } %>
+
   <!-- Header -->
   <div class="flex items-center justify-between mb-8">
     <div>
       <h1 class="text-2xl font-bold text-gray-900">My Invoices</h1>
       <p class="text-gray-500 text-sm mt-1">
         <% if (user && user.plan === 'free') { %>
-          Free plan · <%= user.invoice_count || 0 %>/3 invoices used ·
-          <a href="/billing/upgrade" class="text-brand-600 hover:underline font-medium">Upgrade for unlimited</a>
+          <% if (locals.invoiceLimitProgress) { %>
+            Free plan · <a href="/billing/upgrade" class="text-brand-600 hover:underline font-medium">Upgrade for unlimited</a>
+          <% } else { %>
+            Free plan · <%= user.invoice_count || 0 %>/3 invoices used ·
+            <a href="/billing/upgrade" class="text-brand-600 hover:underline font-medium">Upgrade for unlimited</a>
+          <% } %>
         <% } else { %>
           Pro plan · Unlimited invoices
         <% } %>

@@ -1,6 +1,13 @@
 # QuickInvoice + InvoiceFlow — Internal Growth TODO
 
-> **Audited:** 2026-04-27 PM-3 (Task Optimizer cycle, 8th pass). This cycle's deltas: (a) **U4 closed** — Pay Link surface consolidation on `views/invoice-view.ejs`. The action-bar "💳 Preview Pay Link" button was structurally redundant with the dedicated "Payment Link" copy-card; consolidated to one surface as a "Preview ↗" anchor sitting alongside the Copy button inside the existing card. Single source of truth for the URL (input value + Copy button + Preview anchor href all reference the same string). `tests/payment-link.test.js::testInvoiceViewRendersPayButtonForPro` rewritten to assert the new structure + regression guard against the old action-bar button. (b) **5 new [GROWTH] items (#71-#75)** from this cycle's Growth Strategist pass: #71 auto-BCC freelancer on invoice email [XS, MED-HIGH support-load reduction — gated on Resend], #72 calendar `.ics` attachment on invoice email [S, HIGH time-to-payment lift — gated on Resend], #73 pre-portal "Cancel reason" survey [XS, MED churn intelligence], #74 Pro PDF logo upload — actually deliver on the "custom branding" pricing claim [S, MED Pro-feature credibility / 7-day churn defence], #75 Slack/Discord webhook quick-start templates [XS, MED activation lift on existing #7]. (c) **2 new [MARKETING] items in TODO_MASTER (#47-#48)** — "cashflow horror story" Twitter/X thread series (monthly evergreen narrative format), first-Pro-cohort founder onboarding calls capped at 20 customers (HIGH-impact one-time investment producing testimonials, feedback, churn-reduction simultaneously). (d) **Test Examiner pass:** added 4 tests for `reply_to_email` validation on `POST /billing/settings` (valid persists, blank/whitespace clears to NULL, malformed rejected with no DB write, > 255 chars rejected with no DB write). Closes a coverage gap on a Pro-feature configuration path that gates Resend deliverability. (e) **UX direct fixes** — `views/pricing.ejs` free-tier × list now includes `Stripe payment links` and `Auto reminder emails` (the highest-leverage upgrade levers were not visible to a freelancer scanning the pricing card before this commit) + free first ✓ "3 invoices total" → "Up to 3 invoices" (consistency with dashboard); Pro tier list reordered so deltas land vertically aligned with free-tier ×s. `views/invoice-form.ejs` Due Date now defaults to issued + 30 days (Net 30) on new invoices — directly activates the reminder cron and time-to-payment loop on every new invoice without freelancer action. Edit-mode preserved (existing due_date renders unchanged). Full suite now **34 files, 0 failures** (203+ test functions; +4 new this cycle).
+> **Audited:** 2026-04-27 PM-4 (Task Optimizer cycle, 9th pass). This cycle's deltas: (a) **#31 closed** — Free-Plan Invoice Limit Progress Bar shipped end-to-end. New `buildInvoiceLimitProgress(user)` helper in `routes/invoices.js` (returns null for paid plans / missing users; produces `{used, max, percent, remaining, atLimit, nearLimit}` for free-plan users; clamps over-limit and coerces malformed `invoice_count`). New `dashboard.ejs` block above the header rendering the bar with three visual branches: healthy (brand colour), near-limit (`remaining <= 1` → amber), at-limit (`used >= max` → amber + "you've hit the limit" copy). Always carries `print:hidden` and the canonical `Upgrade →` CTA. New `tests/invoice-limit-progress.test.js` (15 assertions: 8 helper unit + 7 template render). (b) **6 new regression tests in `tests/recent-regression.test.js`** — direct-asserts on the prior cycle's UX changes that lacked test coverage (pricing free-tier × includes "Stripe payment links" + "Auto reminder emails", "Up to 3 invoices" copy consistency, Net 30 default on `views/invoice-form.ejs` new-mode, edit-mode preserves stored due_date). (c) **5 new [GROWTH] items (#76-#80)** from this cycle's Growth Strategist pass: #76 QuickBooks Online (.qbo) export — accounting-tool sync moat distinct from #33 generic CSV [S, MED-HIGH retention]; #77 welcome-back email on past_due → active [XS, MED retention — gated on Resend]; #78 public freelancer profile page `/u/<slug>` with latest-unpaid widget [S, MED virality — gated on #43]; #79 Stripe Klarna/Afterpay BNPL toggle for Pay Links [S, MED-HIGH conversion]; #80 weekly Mon 8am UTC engagement digest [XS, MED retention — gated on Resend]. (d) **1 new [MARKETING] item in TODO_MASTER (#49)** — G2 / Capterra / TrustRadius profile claims + first-cohort review seeding (review-platform listings distinct from AppSumo lifetime-deal #33). All five new GROWTH items checked for overlap against the prior 75 + entire TODO_MASTER tree before adding (see consolidation note in (e) below).
+>
+> Cross-checks for non-overlap on this cycle's adds: #76 vs #33 (different output formats: #33 = generic CSV, #76 = QBO/Xero structured), vs #62 (different scope: #62 = annual tax summary PDF, #76 = per-invoice/bulk QBO export), vs #21 (different consumer: #21 = client portal, #76 = freelancer's accounting tool); #77 vs #11 (different trigger: #11 fires on `subscription.deleted`, #77 on `past_due → active` flip — recovery, not win-back), vs #29 trial nudge (different lifecycle stage); #78 vs #69 (different surface: #69 = JS embed on freelancer's own site, #78 = QuickInvoice-hosted bio page); #79 vs #67 (different toggle: #67 = tip selector, #79 = BNPL methods), vs #41 ACH/SEPA (different method family: BNPL is a separate payment_method_types entry); #80 vs #12 (different cadence: #12 monthly summary, #80 weekly engagement digest). Each add was also re-checked against the [LIKELY DONE] gate in TODO_MASTER and against #63 (recent clients), #44 (changelog widget), #57 (NPS) to make sure none of them silently overlap.
+>
+> Prior context preserved (compacted to keep header readable):
+> 8th pass shipped U4 closure (pay-link surface dedupe) + 5 [GROWTH] (#71-#75) + 2 [MARKETING] (TODO_MASTER #47-#48) + reply_to_email validation tests + pricing free-tier × additions + Net-30 due-date default. **Audit metadata still applies:** archive trigger remains 1.5k lines, currently at ~2.2k after this cycle (overdue by 5 cycles); priority order unchanged: **[TEST-FAILURE] (none) > income-critical features > [UX] items that affect conversion > [HEALTH] > [GROWTH] > [BLOCKED]**; complexity tags: [XS] < 30 min · [S] < 2 hrs · [M] 2–8 hrs · [L] > 8 hrs. TODO_MASTER reviewed: #38 (OG image), #39 (APP_URL), #18 (Resend API key) all remain genuinely open. Full suite now **36 files, 224 test functions, 0 failures** (+15 + 6 = +21 this cycle).
+>
+> **Original 8th-pass audit note retained for traceability:** Audited 2026-04-27 PM-3 (Task Optimizer cycle, 8th pass). This cycle's deltas: (a) **U4 closed** — Pay Link surface consolidation on `views/invoice-view.ejs`. The action-bar "💳 Preview Pay Link" button was structurally redundant with the dedicated "Payment Link" copy-card; consolidated to one surface as a "Preview ↗" anchor sitting alongside the Copy button inside the existing card. Single source of truth for the URL (input value + Copy button + Preview anchor href all reference the same string). `tests/payment-link.test.js::testInvoiceViewRendersPayButtonForPro` rewritten to assert the new structure + regression guard against the old action-bar button. (b) **5 new [GROWTH] items (#71-#75)** from this cycle's Growth Strategist pass: #71 auto-BCC freelancer on invoice email [XS, MED-HIGH support-load reduction — gated on Resend], #72 calendar `.ics` attachment on invoice email [S, HIGH time-to-payment lift — gated on Resend], #73 pre-portal "Cancel reason" survey [XS, MED churn intelligence], #74 Pro PDF logo upload — actually deliver on the "custom branding" pricing claim [S, MED Pro-feature credibility / 7-day churn defence], #75 Slack/Discord webhook quick-start templates [XS, MED activation lift on existing #7]. (c) **2 new [MARKETING] items in TODO_MASTER (#47-#48)** — "cashflow horror story" Twitter/X thread series (monthly evergreen narrative format), first-Pro-cohort founder onboarding calls capped at 20 customers (HIGH-impact one-time investment producing testimonials, feedback, churn-reduction simultaneously). (d) **Test Examiner pass:** added 4 tests for `reply_to_email` validation on `POST /billing/settings` (valid persists, blank/whitespace clears to NULL, malformed rejected with no DB write, > 255 chars rejected with no DB write). Closes a coverage gap on a Pro-feature configuration path that gates Resend deliverability. (e) **UX direct fixes** — `views/pricing.ejs` free-tier × list now includes `Stripe payment links` and `Auto reminder emails` (the highest-leverage upgrade levers were not visible to a freelancer scanning the pricing card before this commit) + free first ✓ "3 invoices total" → "Up to 3 invoices" (consistency with dashboard); Pro tier list reordered so deltas land vertically aligned with free-tier ×s. `views/invoice-form.ejs` Due Date now defaults to issued + 30 days (Net 30) on new invoices — directly activates the reminder cron and time-to-payment loop on every new invoice without freelancer action. Edit-mode preserved (existing due_date renders unchanged). Full suite now **34 files, 0 failures** (203+ test functions; +4 new this cycle).
 >
 > Prior DONE items remain inline-tagged (kept for context; **archive trigger remains 1.5k lines** — currently at ~2.1k lines after this cycle's net additions; **archive sweep is now overdue by 4 cycles** — flagged for next cycle's optimizer pass to compress oldest [DONE] items into `master/CHANGELOG_ARCHIVE.md`). Priority order: **[TEST-FAILURE] (none) > income-critical features > [UX] items that affect conversion > [HEALTH] > [GROWTH] > [BLOCKED]**. Complexity tags: [XS] < 30 min · [S] < 2 hrs · [M] 2–8 hrs · [L] > 8 hrs. Duplicates checked against `TODO.md` and `TODO_MASTER.md` — none introduced this cycle. The 5 new [GROWTH] items (#71-#75) were checked for overlap against all 70 prior items and the entire TODO_MASTER tree before adding: #71 vs #66 (different recipients: #66 CCs accountant, #71 BCCs self), #72 vs #16 (different leverage point: #16 nags after-due, #72 prevents-due via calendar add), #72 vs #61 (different attachment types: PDF vs .ics — share Resend `attachments` codepath, can ship in one commit), #73 unique (no equivalent in backlog), #74 vs #15 (#15 = upsell prompts on locked features, #74 = make the locked feature actually exist), #75 vs #7 (different layer: #7 generic webhook, #75 platform-specific payload formatters). TODO_MASTER reviewed: #38 (OG image asset), #39 (APP_URL env), #18 (Resend API key) all remain genuinely open and Master-pending — no items flip to [LIKELY DONE - verify] this cycle.
 
@@ -8,7 +15,7 @@ Do not duplicate items already in `TODO.md`. App labels indicate which codebase 
 
 ---
 
-## OPEN TASK INDEX (priority order, post-2026-04-27 PM-3 audit)
+## OPEN TASK INDEX (priority order, post-2026-04-27 PM-4 audit)
 
 **[UX] — affects conversion, fix sooner**
 - **U1** [UX] [M] — Self-serve password reset flow (stopgap shipped; full flow blocked on Resend key + 4 routes + 2 views + tests)
@@ -20,18 +27,23 @@ Do not duplicate items already in `TODO.md`. App labels indicate which codebase 
 - **#71** [XS] — Auto-BCC the freelancer on every invoice email (HIGH support-load reduction; "did Stripe send it?" inbound queries → zero; gated on Resend)
 - **#73** [XS] — Pre-portal "Cancel reason" survey before redirect to Stripe Customer Portal (MED churn intelligence; surfaces price/feature/support reasons Master needs to act on)
 - **#75** [XS] — Slack/Discord webhook quick-start templates next to webhook URL field on `/billing/settings` (MED activation lift on existing #7 webhook feature)
+- **#77** [XS] — Welcome-back email when past_due Pro user updates card (subscription_status flips back to `active`) (MED retention; closes the recovery loop the dunning banner already opened; gated on Resend)
+- **#80** [XS] — Weekly Monday-AM email digest of "this week's invoiced/paid/outstanding" for Pro users (MED retention; engagement-frequency lever distinct from #12 monthly summary; gated on Resend)
 - **#44** [XS] — In-app "✨ What's new" changelog widget in nav (retention)
 - **#45** [XS] — Last-day urgency dashboard banner for trial users (HIGH; pairs with #29)
 - **#52** [XS] — JSON-LD `SoftwareApplication` schema on landing + niche pages (MED-HIGH SEO; pairs with #36)
 - **#55** [XS] — Auto thank-you email to client on paid (compounds with #30; effortless professionalism)
 - **#48** [XS] — "Powered by QuickInvoice" badge on public invoice URLs (compounds with invoice volume; gated on #43)
-- **#31** [XS] — Free-Plan Invoice Limit Progress Bar on Dashboard
 - **#34** [XS] — Plausible Analytics Integration (gated on Master providing PLAUSIBLE_DOMAIN per TODO_MASTER #29)
+  *(**#31 closed 2026-04-27 PM-4** — free-plan invoice-limit progress bar shipped end-to-end; new `buildInvoiceLimitProgress(user)` helper + 15 new tests + dashboard.ejs render block with three colour-coded branches. Single most direct conversion lever yet — every free-plan dashboard render now displays the upgrade pressure visually before the hard wall fires at #1.)*
   *(#36 closed 2026-04-27 — OG/Twitter Card metadata shipped end-to-end + 10 new tests; TODO_MASTER #38/#39 added for Master to drop in branded image + APP_URL. #56 closed 2026-04-27 PM — robots.txt + canonical link tag + meta robots noindex on authed pages + 17 new tests in `tests/robots-and-canonical.test.js`. Pairs with #36 — every shared link now carries a canonical pointer to the canonical domain in addition to the rich OG preview.)*
 
 **Income-critical [GROWTH] — S complexity**
 - **#72** [S] — Calendar `.ics` attachment on invoice email — VEVENT carrying `due_date` (HIGH time-to-payment lift; client adds invoice to calendar at moment-of-receive, removes "client forgot" failure mode; gated on Resend)
 - **#74** [S] — Pro PDF logo upload — actually implement what the pricing page already advertises ("custom branding"). Today it's a marketing bullet that delivers nothing. (MED retention; closes Pro-feature credibility gap; pairs with #15 contextual upsells)
+- **#79** [S] — Stripe Klarna/Afterpay/Affirm BNPL toggle for invoice Pay Links (MED-HIGH conversion lift on high-value invoices; "pay in 4" / "pay later" methods raise pay-rate on $500+ invoices; distinct from #67 tip toggle and #41 ACH/SEPA — different `payment_method_types` family)
+- **#76** [S] — QuickBooks Online (.qbo) / Xero (.csv with Xero schema) export per invoice + bulk (MED-HIGH retention via accounting-tool sync moat; distinct from #33 generic CSV — produces structured QBO/Xero files that import directly as transactions)
+- **#78** [S] — Public freelancer profile page `/u/<slug>` with "latest unpaid invoice" widget (MED virality via shareable bio link; gated on #43 public read-only invoice URL; distinct from #69 JS embed which lives on the freelancer's own site)
 - **#67** [S] — Tip-on-pay toggle for invoice Pay links (Pro; MED revenue lift on creator/individual-client segment)
 - **#68** [S] — Customisable invoice email template (Pro; MED retention; pairs with #15 branding)
 - **#70** [S] — Receipt PDF for paid invoices (MED; professionalism signal; complements #61)
@@ -963,7 +975,7 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 
 ---
 
-### 31. [GROWTH] Free-Plan Invoice Limit Progress Bar on Dashboard [XS]
+### 31. [DONE 2026-04-27 PM-4] [GROWTH] Free-Plan Invoice Limit Progress Bar on Dashboard [XS]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** MEDIUM — the upgrade modal (#1) fires only at the hard wall (5th invoice); this adds a visible, non-pushy "X of 5 free invoices used this month" progress bar that creates conversion pressure before the wall; users who see they're at 3/5 or 4/5 are highly likely to upgrade rather than wait for the hard stop; different from #15 (contextual upsell) which targets specific feature interactions rather than the usage-limit dimension
@@ -974,6 +986,18 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 1. `routes/invoices.js` `GET /` (dashboard): for free-plan users, compute `monthly_invoice_count` — count of invoices created in the current calendar month (or rolling 30 days, matching whichever window the hard limit enforces). Pass `invoice_limit_progress: { used: N, max: 5 }` to the template only when `user.plan === 'free'`.
 2. `views/dashboard.ejs`: above the invoice list and below the onboarding checklist, render a slim progress bar when `locals.invoice_limit_progress` is defined. Tailwind: outer container `bg-gray-100 rounded-full h-2`, inner fill `bg-indigo-500 rounded-full h-2` with `style="width: N%"`. Label above: `"<strong>N of 5</strong> free invoices used this month"`. At 4/5 or 5/5 change fill color to `bg-amber-500` and append an inline `"Upgrade →"` link to `/billing/upgrade`. Wrap in `print:hidden`.
 3. No tests needed for a pure view change; spot-check that the bar does not render for Pro/Business/Agency users.
+
+**Resolution (2026-04-27 PM-4):** Implemented end-to-end. New `buildInvoiceLimitProgress(user)` helper in `routes/invoices.js` returns null for paid plans (`pro`, `business`, `agency`) and missing users; for free-plan users returns `{used, max, percent, remaining, atLimit, nearLimit}` where `used` is clamped to `[0, max]` from `parseInt(user.invoice_count, 10)` (defence against malformed DB rows / null / undefined / strings / negatives — coerces all to 0 or the parsed integer). `percent` is rounded to an integer in `[0, 100]`. `nearLimit` flags when `remaining <= 1 AND NOT atLimit`; `atLimit` flags when `used >= max`. `max` is sourced from the existing module-level `FREE_LIMIT = 3` constant (kept in sync via `module.exports.FREE_LIMIT`). The dashboard `GET /` handler passes `invoiceLimitProgress` to the template alongside `onboarding`; the catch-branch passes `null` so a DB outage doesn't break the render.
+
+`views/dashboard.ejs` renders a new block above the header (after the past-due banner, before "My Invoices"). The block is gated on `locals.invoiceLimitProgress` truthiness — Pro/Business/Agency users (where the helper returned null) never see it. Three visual branches: (1) **healthy state** (used < max-1) — `border-gray-200 bg-white` container, `bg-brand-600` inner fill, "X of 3 free invoices used" copy + "Upgrade →" link; (2) **near-limit** (`nearLimit=true`, used = max-1) — `border-amber-200 bg-amber-50` container, `bg-amber-500` fill, "X of 3 free invoices used — N left this plan." copy; (3) **at-limit** (`atLimit=true`, used >= max) — same amber container + 100%-width amber fill + "you've hit the limit." copy. All three branches surface the same "Upgrade →" CTA pointing to `/billing/upgrade`. The container carries `print:hidden` so the bar never leaks into the print/PDF view.
+
+New `tests/invoice-limit-progress.test.js` adds 15 assertions split into two halves:
+- **Helper unit (8):** paid plans → null; missing user → null; free plan → progress object; 0 used → no nearLimit flag; max-1 → nearLimit + remaining=1; at-limit → atLimit + percent=100; over-limit clamps to 100% / 0 remaining; malformed `invoice_count` (undefined / null / string `'2'` / negative / `'abc'`) coerces safely without producing NaN%.
+- **Template render (7):** bar renders when local set with correct `<used> of <max>` copy + inline width style + Upgrade CTA + `print:hidden`; bar omitted when local is null; bar omitted when local is undefined entirely (template doesn't crash); at-limit branch uses amber + "you've hit the limit" copy + 100% width; near-limit branch uses amber + "N left this plan" copy; healthy state uses `bg-brand-600` + no urgency copy; paid-plan user (with helper returning null) doesn't see the bar regardless of underlying user.plan.
+
+Wired into `package.json` `test` script. Full suite: 36 test files (was 34), 0 failures.
+
+**Income relevance:** DIRECT conversion lever — every free-plan dashboard render now displays the upgrade pressure visually before the hard wall fires at #1 (upgrade modal at 3rd invoice). Users seeing 2/3 are the highest-intent upgrade cohort. Different mechanism from #1 (which fires only on the wall) and from #15 (contextual upsells on locked features) — this is the usage-axis pressure visible at every dashboard load. Pairs with #45 (last-day trial urgency banner) — both surface countdown pressure in different lifecycle dimensions.
 
 ---
 
@@ -1938,6 +1962,97 @@ New `tests/recent-clients.test.js` (5 assertions): (1) DB-helper dedupe-by-lower
 3. Extend `tests/webhook-outbound.test.js`: 4 new assertions — Slack URL detection produces `text:` payload shape; Discord URL detection produces `content:` payload shape; arbitrary URL keeps the generic JSON shape (regression guard for existing Zapier users); payload includes the dollar-formatted amount with 2 decimals.
 
 **Income relevance:** Indirect — unlocks the existing #7 outbound webhook (which is a stickiness lock-in feature) for the 80% of freelancers who use Slack/Discord but not Zapier. Switching cost compounds with every new freelancer who wires their team channel to the webhook.
+
+---
+
+### 76. [GROWTH] QuickBooks Online (.qbo) / Xero (.csv with Xero schema) export (added 2026-04-27 PM-4 audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MED-HIGH retention — every freelancer who uses an accounting tool (QuickBooks, Xero, Wave) currently re-keys QuickInvoice invoices into their accounting software by hand or via #33's generic CSV (which doesn't import directly — needs reformatting). Adding native QBO + Xero export turns QuickInvoice into the upstream system-of-record for the accounting tool. Once 30 days of data has been imported into the freelancer's QuickBooks ledger, switching away from QuickInvoice means re-importing from the new tool, which most freelancers will not do. The accounting tool itself becomes the switching cost.
+**Effort:** Low (well-documented file formats; both formats are basically structured tab/CSV with a small header).
+**Prerequisites:** None.
+
+**Sub-tasks:**
+1. New `lib/exports.js` — `buildQboFile(invoices, user)` returns a `.qbo` string (QuickBooks Web Connect / IIF flavour — header + `!TRNS` block per invoice). `buildXeroCsv(invoices, user)` returns a Xero-compatible Sales Invoice CSV (`*ContactName,*InvoiceNumber,*InvoiceDate,*DueDate,*Description,*Quantity,*UnitAmount,*AccountCode,*TaxType` etc.). Pure functions, no DB access — easy to unit-test.
+2. `routes/invoices.js`: `GET /invoices/:id/export.qbo` and `.../export.csv?format=xero` (Pro-gated; serve as `application/octet-stream` with `Content-Disposition: attachment`). Bulk `GET /invoices/export.qbo?since=ISO_DATE` and `?format=xero` for batch export.
+3. `views/invoice-view.ejs`: action bar — "Export → QuickBooks" / "Export → Xero" dropdown next to the existing print button (Pro-gated; tooltip + upgrade CTA for free users).
+4. `views/dashboard.ejs`: header — "Export ledger" link visible to Pro/Agency only.
+5. `tests/exports.test.js`: 8 assertions — QBO output starts with required header lines; QBO line per invoice is well-formed; Xero CSV header matches official Xero spec; Xero rows include AccountCode + TaxType defaults; Pro user can download both formats; free user is 403'd; bulk export respects `since` filter; non-owner gets `/dashboard` redirect (IDOR guard).
+
+**Income relevance:** DIRECT retention via accounting-tool lock-in. Each Pro user who imports 30+ days of invoices into their QuickBooks/Xero ledger is now economically attached to QuickInvoice as their data source. Compounds with #62 (year-end tax summary PDF) — together they cover the two main accounting workflows (continuous sync + annual tax filing).
+
+---
+
+### 77. [GROWTH] Welcome-back email on past_due → active (added 2026-04-27 PM-4 audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM retention — the existing dunning banner (`H4`-cycle Stripe Smart Retries, dashboard banner) opens the recovery loop when a payment fails, but nothing closes it once the user successfully updates their card and Stripe transitions `subscription_status` back to `active`. A short "Welcome back — your card is updated and you're all set" email re-affirms the recovery, reduces silent-cancel churn, and is a positive emotional touchpoint at exactly the moment the user has just dealt with friction. Distinct from #11 (churn win-back, fires on `subscription.deleted` — too late, user already left); #77 fires on `past_due → active` transition where the user is being saved.
+**Effort:** Trivial.
+**Prerequisites:** Resend API key in production (TODO_MASTER #18). The transition detection fits in the existing `customer.subscription.updated` webhook handler that #4 already added.
+
+**Sub-tasks:**
+1. `routes/billing.js` `customer.subscription.updated` handler: when the diff between previous `subscription_status` (read from DB before update) and incoming `subscription_status` is `past_due → active` OR `paused → active`, fire `sendWelcomeBackEmail(user)`. Fire-and-forget (do not block the webhook ack).
+2. New `lib/email.js#sendWelcomeBackEmail(user)` — subject "You're all set — your QuickInvoice subscription is active again", short HTML body acknowledging the card update, Pro features re-enabled, link to dashboard. Reuses the existing `sendEmail()` infra.
+3. Idempotency: skip if a welcome-back email was sent in the last 7 days (defence against webhook replays). Track via `users.welcome_back_sent_at TIMESTAMP NULL` (idempotent migration; bundle with next users-table migration).
+4. `tests/welcome-back.test.js`: 5 assertions — past_due → active triggers send; paused → active triggers send; active → active is a no-op (regression guard against firing on any update); replay within 7 days no-ops; transition with no previous_status row (orphan) no-ops.
+
+**Income relevance:** Indirect retention. Catches the "I updated my card but heard nothing — did it work?" doubt that prompts a refund request from anxious users. Closes the loop the dunning banner opened.
+
+---
+
+### 78. [GROWTH] Public freelancer profile page `/u/<slug>` with latest-unpaid widget (added 2026-04-27 PM-4 audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM virality — every Pro freelancer wants a public-facing "pay me here" link to put in their email signature, social bios, and client onboarding emails. Today they share invoice URLs ad-hoc; #43 (public invoice URL) gives them per-invoice URLs; #78 gives them a stable per-freelancer URL that always points at "the most recent open invoice" + a pay button. Stable, shareable, becomes a default link in the freelancer's bio. Distinct from #69 (JS embed): #78 is QuickInvoice-hosted (drives traffic to the QuickInvoice domain → SEO + brand exposure), #69 lives on the freelancer's own site.
+**Effort:** Low (gated on #43).
+**Prerequisites:** #43 (public read-only invoice URL `/i/:token`) — currently OPEN. The slug → invoice resolution is the only new logic; the rendering reuses #43's view layer.
+
+**Sub-tasks:**
+1. `db/schema.sql`: `ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_slug VARCHAR(60) UNIQUE;` plus an idempotent partial unique index. Bundle with next users-table migration.
+2. `routes/billing.js POST /settings/profile-slug`: Pro-gated form input. Validate: lowercase a-z0-9 + dash, 3-60 chars, blacklist reserved slugs (`admin`, `api`, `auth`, `billing`, `dashboard`, `invoices`, `pricing`, `settings`, `i`, etc.). Reject duplicates with a clear flash.
+3. `routes/landing.js GET /u/:slug`: resolve `db.getUserBySlug(slug)` → user; load `db.getMostRecentUnpaidInvoiceForUser(user.id)`; render `views/freelancer-profile.ejs` with `business_name`, optional logo (after #74 lands), latest-unpaid invoice card with Pay button (linking to `payment_link_url`). 404 if slug not found or user is free-plan (Pro-only feature).
+4. `views/freelancer-profile.ejs`: clean Tailwind landing — business name as h1, optional bio/logo, "Latest invoice" card with amount + due date + Pay button, footer "Powered by QuickInvoice" link to landing (compounds with #59).
+5. SEO: noindex by default (Pro freelancers can opt-in via a settings checkbox `profile_indexed BOOLEAN DEFAULT FALSE` — defence against SEO noise from inactive/abandoned profiles; opt-in users contribute inbound long-tail "pay <freelancer name>" traffic).
+6. `tests/freelancer-profile.test.js`: 6 assertions — slug validation; reserved-slug rejection; profile renders for Pro user with unpaid invoice; renders graceful empty state for Pro user with no unpaid invoices; 404 for free-plan slug; non-existent slug → 404 redirect to landing.
+
+**Income relevance:** Each Pro freelancer who puts the URL in their email signature drives traffic to the QuickInvoice domain on every email they send. Calendly's domain authority was largely built this way. Pairs with #59 (footer link in invoice emails) — both are passive distribution surfaces that compound with the user's own outbound activity.
+
+---
+
+### 79. [GROWTH] Stripe BNPL toggle for invoice Pay Links — Klarna/Afterpay/Affirm (added 2026-04-27 PM-4 audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MED-HIGH conversion on high-value invoices — Stripe Pay Links accept a `payment_method_types` array. For freelancers sending $500+ invoices to creator/individual clients, "Pay in 4 with Klarna" or "Pay over 6 weeks with Affirm" lifts pay-rate measurably. The pay-rate uplift on an invoice that goes BNPL vs. card-only is the freelancer's revenue lift, not Stripe's, because BNPL providers settle the full amount to the freelancer immediately (the BNPL provider takes the credit risk and a slightly higher fee — currently ~6% vs. 2.9% card). Distinct from #67 (tip toggle: client adds extra; #79: client splits the existing total) and #41 (ACH/SEPA: lower fees on big invoices via bank debit; #79: BNPL adds installments option).
+**Effort:** Low.
+**Prerequisites:** None for code; some BNPL methods require Stripe account verification (no human action required — most accounts are auto-eligible).
+
+**Sub-tasks:**
+1. `lib/stripe-payment-link.js`: extend `parsePaymentMethods()` to accept the BNPL family — currently parses `STRIPE_PAYMENT_METHODS` env var into a card-by-default array, returning unknowns as a no-op. Add `klarna`, `afterpay_clearpay`, `affirm` to the recognised list.
+2. `db/schema.sql`: `ALTER TABLE users ADD COLUMN IF NOT EXISTS bnpl_enabled BOOLEAN DEFAULT FALSE;` plus per-invoice override `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS bnpl_enabled BOOLEAN DEFAULT NULL;` (NULL inherits user default).
+3. `views/settings.ejs`: Pro-gated toggle "Allow buy-now-pay-later (Klarna / Afterpay / Affirm)" with a 1-line "Best for invoices over $500 to individual clients" hint and an external Stripe Pricing link.
+4. `views/invoice-form.ejs`: Pro-gated checkbox "Allow client BNPL on Pay Link" defaulting to user-level setting.
+5. `lib/stripe-payment-link.js createInvoicePaymentLink`: when resolved `bnpl_enabled` is true, append the BNPL methods to the `payment_method_types` array passed to Stripe's `paymentLinks.create`. Stripe rejects invalid combinations (e.g. Klarna + invoice currency it doesn't support); catch the rejection and fall back to card-only with a warning log (do not break the link creation).
+6. `tests/payment-link-methods.test.js`: 4 new assertions — `bnpl_enabled` user flows BNPL methods into the create call; per-invoice override beats user default; invalid currency fallback (mock Stripe error → card-only created, no exception thrown); non-Pro user with `bnpl_enabled` flag set is silently downgraded (defence against expired Pro state still triggering BNPL fees).
+
+**Income relevance:** DIRECT pay-rate uplift on a sub-segment (high-ticket invoices to individual clients — agencies, designers, photographers, lawyers). Compounds with the existing time-to-payment loop (#16 reminders + #72 .ics attach + Net 30 default): a calendar reminder is more valuable when the client has a "pay in 4" option to actually act on.
+
+---
+
+### 80. [GROWTH] Weekly Monday-AM email digest of "this week's invoiced/paid/outstanding" (added 2026-04-27 PM-4 audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM retention via engagement-frequency. Distinct from #12 (monthly summary, fires once per month at the 1st 09:00 UTC): #80 fires every Monday at 08:00 UTC with a tighter "last 7 days vs. previous 7 days" comparison + a "follow up on these N overdue invoices" CTA list. The weekly cadence keeps QuickInvoice top-of-mind without becoming spammy (one email per week is the standard SaaS engagement cadence; one per month is too rare to register).
+**Effort:** Trivial.
+**Prerequisites:** Resend API key in production (TODO_MASTER #18). Reuses the cron infra from `jobs/reminders.js`.
+
+**Sub-tasks:**
+1. New `jobs/weekly-digest.js`: cron `'0 8 * * 1'` (Monday 08:00 UTC). For each Pro/Agency user with `weekly_digest_enabled = TRUE`: aggregate invoices invoiced + paid + outstanding for the last 7 days vs. previous 7 days; render HTML email with the 4 stats + a list of up to 5 overdue invoices linked to their respective invoice pages; send via `lib/email.js`.
+2. `db/schema.sql`: `ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_digest_enabled BOOLEAN DEFAULT TRUE;` (default-on; one-click unsubscribe in the email footer flips it to false).
+3. New unsubscribe handler `routes/billing.js GET /unsubscribe/weekly-digest/:token` (signed token tied to user_id + timestamp; one-click off without auth — compliance with CAN-SPAM / GDPR § 21).
+4. `views/settings.ejs`: add a checkbox under the Pro section to toggle the digest.
+5. `tests/weekly-digest.test.js`: 5 assertions — aggregate matches fixture; email body lists overdue invoices; unsubscribed user is skipped; idempotency via `weekly_digest_last_sent_at` (no double-send if cron fires twice in a window); free-plan users are skipped (Pro feature).
+
+**Income relevance:** Indirect. Re-engagement → keeps the user in the product → reduces silent dormancy → reduces churn. The "you have 3 overdue invoices to chase" CTA also drives directly-attributable cash recovery. Pairs with #16 (reminders to clients) — the weekly digest tells the freelancer about the pipeline; the reminders nudge the clients in it.
 
 ---
 

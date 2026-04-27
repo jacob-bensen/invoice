@@ -1206,3 +1206,38 @@ Once-monthly cadence (12 threads/year) is sustainable. Each thread compounds —
 ### Why this matters
 
 Every SaaS team that skipped this step bought their first 20 customers' feedback in churn data instead of voice — that's strictly worse data, delivered later, when the customer has already left. Compounds with #21 (testimonials — the calls produce the quotes), #18 (affiliate program — the early Pros are the most likely affiliates), and INTERNAL_TODO #57 (NPS survey — the calls calibrate the NPS-question wording before the survey ships at scale).
+
+---
+
+## 49. [MARKETING] G2 / Capterra / TrustRadius profile claims + first-cohort review seeding (added 2026-04-27 PM-4)
+
+**Impact:** HIGH (long-tail acquisition + late-funnel trust) — G2, Capterra, and TrustRadius are the dominant late-funnel comparison surfaces for SaaS buyers (any prospect who Googles "QuickInvoice vs FreshBooks" or "best invoice tool for freelancers" lands on one of these sites). Without a profile, the prospect either lands on a competitor's profile or on a generic listicle that doesn't have QuickInvoice in it. A claimed profile with 5+ reviews from real Pro users:
+- Surfaces in long-tail comparison searches (organic SEO)
+- Pre-empts the "no reviews → can't trust it" objection that kills late-funnel conversion
+- Becomes a first-page Google result for the brand itself (claim it before a competitor or scraper does)
+- Compounds across all three platforms simultaneously (one batch of review requests, three platforms populated)
+
+Distinct from existing #33 (AppSumo / SaaS Mantra lifetime-deal listing — different funnel: AppSumo is acquisition via promo, G2 is mid/late-funnel comparison & trust signal) and #44 (LinkedIn outbound to Ops Directors — different audience: enterprise/agency buyer vs. SMB/freelancer self-serve).
+
+### Action (Master, ~3 hrs total — broken into 4 steps over 30 days)
+
+1. **Claim the profile on each platform** (~30 min per platform, ~90 min total):
+   - **G2** (https://www.g2.com/sellers/sign-up): claim or create the QuickInvoice listing under the "Invoicing & Billing" category. G2 verifies via a `quickinvoice.io` email address.
+   - **Capterra / GetApp / Software Advice** (one signup at https://vendors.capterra.com/listing — three sites, single profile): same-category listing.
+   - **TrustRadius** (https://www.trustradius.com/products/new): smaller volume but high-intent traffic.
+
+2. **Populate each profile with the canonical pitch** (~30 min total — paste the same content across all three):
+   - 1-paragraph product summary (already written in `views/index.ejs` hero section)
+   - 3-5 screenshots: dashboard, invoice form, invoice view with Pay button, pricing page (use the already-shipped OG image from `public/og-image.png` once #38 lands)
+   - Pricing tiers verbatim from `views/pricing.ejs`
+   - "Best for" tags: Freelancers, Small agencies, Solopreneurs, Independent contractors
+
+3. **Review seeding from the first 20 Pro cohort** (paired with #48 founder onboarding calls — ~10 min of each call). Pitch wording: *"If QuickInvoice is genuinely saving you time, would you write a 2-3 sentence review on G2? Here's the link." (Send the direct G2 review URL after the call, not as a generic ask.)* G2 incentivises with a $10 Amazon gift card per verified review (valued at marketing $); QuickInvoice doesn't pay anything. Target: 5 reviews on G2, 3 on Capterra, 2 on TrustRadius within 30 days.
+
+4. **Add the review badges to the landing page** (~5 min) — once 5 reviews are live, G2 generates an embed snippet ("4.8 stars on G2 · 5 reviews"). Drop into `views/index.ejs` social-proof section (alongside whatever ships from INTERNAL_TODO #20).
+
+### Why this matters
+
+Late-funnel trust signal that compounds for years with no ongoing maintenance. Most SMB SaaS prospects do this exact path: hear about the tool → search "<tool> vs <alternative>" → see comparison-site results. A claimed profile with 5+ reviews wins that surface; a non-existent profile loses to whoever did claim theirs. The cost is one afternoon of profile setup + leveraging the #48 onboarding call cohort for review seeding. No paid spend, no recurring effort.
+
+Pairs with #48 (founder calls produce the review-seeding cohort), INTERNAL_TODO #20 (social-proof landing section consumes the badges), and INTERNAL_TODO #57 (NPS survey can be re-pitched as a review request after high scores).

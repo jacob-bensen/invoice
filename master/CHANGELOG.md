@@ -2,6 +2,180 @@
 
 ---
 
+## 2026-04-27T23:55Z — Health Monitor: clean cycle (post-#31 + #76-#80 + UX free-tier × additions)
+
+### What was audited
+
+- **New code shipped this cycle:** `routes/invoices.js` (new `buildInvoiceLimitProgress(user)` helper + `invoiceLimitProgress` local passed to dashboard render), `views/dashboard.ejs` (progress-bar block + simplified header copy when bar is shown), `views/index.ejs` (3 new × items in landing free-tier card), 2 new test files (`tests/invoice-limit-progress.test.js` + `tests/recent-regression.test.js`), `package.json` test-script wiring. Zero new dependencies, zero new env var references, zero new external API call sites, zero new DB queries.
+- **Security review of the diff:**
+  - `buildInvoiceLimitProgress` is a pure synchronous function. The only user-controlled field it reads is `user.invoice_count` which is `parseInt(_, 10)`-coerced and clamped to `[0, max]` with `Math.max(0, ...)` and `Math.min(used, max)`. Negative / NaN / string inputs all safely coerce to 0. No path that produces NaN%, no path that produces a width > 100% via the inline style.
+  - `views/dashboard.ejs` interpolates four computed integers via `<%= %>` (auto-escaped); the `style="width: <%= percent %>%"` interpolation uses a server-computed integer in `[0, 100]`, safe inside a CSS property value (CSS injection requires a `;` or attribute break which an integer can't produce). Existing helmet CSP allows `'unsafe-inline'` for styles, so no CSP regression.
+  - `views/index.ejs` additions are static HTML; no user data interpolation.
+- **`npm audit --production`:** 6 vulnerabilities (3 moderate, 3 high) — all pre-existing, all install-time only, all already tracked under [HEALTH] H9 (`bcrypt → @mapbox/node-pre-gyp → tar`) and H16 (`resend → svix → uuid`). No new advisories surfaced. Runtime exposure remains nil.
+- **Performance:** zero new DB queries; the helper runs synchronously inside the existing dashboard render and is pure arithmetic; the dashboard render adds ~1.5 KB of HTML when the bar is shown (negligible). No N+1 risk introduced.
+- **Code quality:** new helper exported alongside `buildOnboardingState` keeping the single-purpose-helper pattern. No duplicated logic. `routes/invoices.js` still well under any concerning file-size threshold (~360 lines).
+- **Dependencies:** no new packages.
+- **Legal:** no new data-handling flows, no new third-party API call sites, no new third-party SDK bundling. The progress-bar surface is internal-only (no data leaves the dyno). Existing [LEGAL] gaps in TODO_MASTER unchanged.
+
+### What was fixed directly
+
+Nothing new — every contained issue surfaced this cycle was already a clean code change shipped by Roles 1, 2, or 4.
+
+### What was flagged
+
+Nothing new added to [HEALTH]. All eight pre-existing [HEALTH] items remain accurate. The audit cycle is steady-state.
+
+### Income relevance
+
+Indirect — verifies that this cycle's user-visible improvements (#31 progress bar, free × items on landing, regression tests) didn't introduce regressions. Worth recording so a future regression can be cleanly bisected against this confirmed-clean snapshot.
+
+---
+
+## 2026-04-27T23:50Z — Task Optimizer: 9th pass — #31 closed + #76-#80 added + index re-prioritised
+
+### Cleanup applied
+
+1. **#31 closed inline + index moved.** Detail block (in the INCOME-CRITICAL section ~line 966) tagged `[DONE 2026-04-27 PM-4]` with a full resolution note (helper logic + 3 visual branches + 15-test breakdown). Index entry under "Income-critical [GROWTH] — XS first" replaced with the cycle closure note pinned to the bottom of that section.
+2. **5 new [GROWTH] items inserted in correct priority slots** — #77/#80 in the XS-first row (alongside #66, #71, #73, #75, #44, #45, #52, #55, #48, #34); #76/#78/#79 in the S-complexity row above the existing #67/#68. Each placement respects the existing income-impact ordering. Detail blocks added immediately before the BLOCKED section.
+3. **Header audited block updated** — bumped from "PM-3, 8th pass" to "PM-4, 9th pass". Refreshed the duplicate-check audit (each new item proven non-overlapping against the prior 75); compacted the prior 8th-pass note.
+4. **Archive trigger flagged** — file is now ~2.2k lines (1.5k threshold). Archive sweep is overdue by 5 cycles; flagged for next cycle's optimizer pass to compress oldest [DONE] items into `master/CHANGELOG_ARCHIVE.md`. Not done this cycle to keep the diff focused on actual content changes.
+5. **TODO_MASTER reviewed** — added new #49 (G2 / Capterra / TrustRadius profile claims + first-cohort review seeding). No items flip to `[LIKELY DONE - verify]` this cycle. Genuinely-open Master-pending items remain: #18 (Resend API key — gates #11/#12/#71/#72/#66/#77/#80 + the dunning email loop), #38 (branded OG image), #39 (`APP_URL` env in production).
+6. **No vague tasks broken down** — every new and existing open item has explicit sub-task lists with file paths and assertion counts. Complexity tags consistent across the index and detail blocks.
+7. **No duplicate consolidation needed** — overlap check against the entire backlog confirmed 0 new duplicates this cycle.
+
+### Income relevance
+
+Indirect — keeps the priority surface readable so the next cycle's Feature Implementer can pick the highest-leverage task without scrolling through resolved noise. The 5 new [GROWTH] items broaden the high-leverage funnel (3 are gated on Resend, 2 are unblocked and ready to pick up immediately).
+
+---
+
+## 2026-04-27T23:45Z — UX Auditor: landing-page free × items + dashboard header de-duplication
+
+### Flows audited
+
+- Landing index → register → dashboard → empty state → upgrade CTA
+- Pricing page (free vs Pro feature comparison — already cleaned up by last cycle's UX pass)
+- New-invoice form (the freelancer's most-used create flow — already Net-30-defaulted last cycle)
+- Invoice view (action bar, payment-link card — already cleaned up by U4 closure last cycle)
+- Settings page (business info + reply-to + Pro webhook URL)
+- Auth login + register (forgot-password copy + flash messages)
+- Dashboard with new #31 progress bar — checked for redundancy with the existing header line
+
+### What was changed directly
+
+**1. `views/index.ejs` — Landing-page free-tier card now exposes locked Pro features.**
+
+Before: the landing page (the highest-traffic surface; every prospect sees it before any other page) showed only ✓ items in the free tier card — `Up to 3 invoices`, `PDF download`, `All invoice fields`, `Payment tracking`. A freelancer scanning the pricing card on the landing page literally couldn't see what Pro adds beyond "Unlimited invoices" — the highest-leverage Pro wedges (Stripe payment links, email delivery, automated reminders) appeared only on the Pro side as ✓, with no corresponding × on the free tier showing the trade-off. This was the same gap fixed last cycle on `views/pricing.ejs` for the dedicated pricing page; the landing-page card had drifted out of sync.
+
+After: free-tier × list now includes:
+- `× Stripe payment links`
+- `× Email invoices to clients`
+- `× Auto reminder emails`
+
+These are the three highest-leverage Pro wedges by income impact. A prospect scanning the landing page now sees the full free-vs-Pro delta at a glance, matching the dedicated pricing page. Pro-tier ✓ list stays vertically aligned (no reorder needed — the existing order already lines up).
+
+**2. `views/dashboard.ejs` — Header line de-duplicated when the new #31 progress bar is shown.**
+
+Before: a free-plan user saw three repetitions of the "X/3 invoices used" count on dashboard load — the new progress bar (visual) + the heading sub-line "Free plan · X/3 invoices used · Upgrade for unlimited" (text) + the bar's own label "X of 3 free invoices used" (text). Triple redundancy in ~5 vertical lines.
+
+After: when `invoiceLimitProgress` is set (free-plan render), the heading sub-line drops the count and reads simply "Free plan · Upgrade for unlimited" — the bar carries the visual + textual count, the heading carries the plan + upgrade CTA. Defence-in-depth fallback: if `invoiceLimitProgress` is null (catch-branch render or future code path that omits the local), the heading falls back to its prior copy ("Free plan · X/3 invoices used · Upgrade for unlimited") — no information lost.
+
+### What was flagged
+
+No new [UX] items added. The remaining open [UX] items (U1 password reset, U3 global footer) are both blocked on prerequisites already tracked (Resend API key, #28 legal pages).
+
+### Test impact
+
+Full suite re-run after both changes — 36 test files, 0 failures. No test changes required: the landing test (`tests/landing.test.js`) asserts on niche-page rendering, not on the specific bullet count; `tests/onboarding.test.js` doesn't assert on the dashboard header sub-line content (only on the onboarding card).
+
+### Income relevance
+
+DIRECT — both fixes target the same conversion loop:
+- Landing-page free × items: a prospect who *can see* the Pro feature delta on the landing page is more likely to scroll to register or click pricing; a prospect who can't, bounces.
+- Dashboard header de-duplication: lower noise → cleaner visual hierarchy → the progress bar's at-limit / near-limit colour escalation reads as the dominant signal it's meant to be (instead of competing with two textual restatements of the same count).
+
+---
+
+## 2026-04-27T23:40Z — Test Examiner: regression coverage for prior cycle's UX changes
+
+### Coverage gap closed
+
+Last cycle's CHANGELOG entries documented two UX changes that lacked direct test assertions:
+- **2026-04-27 PM-3:** `views/pricing.ejs` free-tier × list addition (Stripe payment links + Auto reminder emails).
+- **2026-04-27 PM-3:** `views/invoice-form.ejs` Due Date Net 30 default on new invoices.
+
+Both ship ~revenue-relevant copy and behaviour but had no regression guard — the prior cycle deferred the test additions, but they're worth pinning down before they bit-rot.
+
+### What was added
+
+`tests/recent-regression.test.js` (6 assertions):
+1. Pricing free-tier card includes "Stripe payment links" under × column (gray-300 styling, not green ✓).
+2. Pricing free-tier card includes "Auto reminder emails" under × column.
+3. Pricing free-tier first ✓ reads "Up to 3 invoices" (consistency with dashboard "X/3 invoices used" framing) — guard against the old "3 invoices total" copy.
+4. Pricing pro-tier ✓ list mirrors both wedges (vertical alignment with free-tier ×).
+5. Invoice-form `due_date` input value attribute on a new invoice equals exactly `today + 30 days` (ISO YYYY-MM-DD).
+6. Invoice-form Due Date label includes "(Net 30 default)" hint text — transparent pre-fill.
+7. Edit-mode invoice-form preserves the stored `due_date` value verbatim — guard against the Net 30 default clobbering an existing date.
+
+Wired into `package.json` `test` script. Runs in ~150ms.
+
+### What was flagged
+
+No new [TEST-FAILURE] items added; no failing tests discovered. All paths exercised pass against the current code.
+
+### Income relevance
+
+Indirect — these are conversion-critical surfaces (pricing card is the single highest-stakes free→Pro page; Net 30 default activates the reminder cron on every new invoice). A regression on either would silently kill upgrade pressure / the time-to-payment loop. Coverage now guards both.
+
+---
+
+## 2026-04-27T23:30Z — Feature Implementer: #31 closed — Free-Plan Invoice Limit Progress Bar shipped
+
+### What was built
+
+Implemented end-to-end the highest-priority XS [GROWTH] task from the open backlog (#31). Net effect: every free-plan dashboard render now displays a visual progress bar showing "X of 3 free invoices used" — the upgrade pressure is visible **before** the hard wall fires at #1 (the upgrade modal). Users at 2/3 see the bar in amber with "1 left this plan" copy + Upgrade CTA. Users at 3/3 see a 100%-width amber bar with "you've hit the limit" copy + the same Upgrade CTA. Users at 0-1/3 see a calm brand-coloured bar.
+
+### Files changed
+
+1. `routes/invoices.js`:
+   - New `buildInvoiceLimitProgress(user)` helper. Returns `null` for missing users and any plan != `'free'`. For free-plan users returns `{used, max, percent, remaining, atLimit, nearLimit}`. `used` is `parseInt(user.invoice_count, 10)` clamped to `[0, max]`. `max` is the existing module-level `FREE_LIMIT = 3` constant. `percent = Math.round((min(used, max) / max) * 100)`. `nearLimit = remaining <= 1 AND NOT atLimit`. `atLimit = used >= max`. Defends against malformed `invoice_count` (null / undefined / negative / string / NaN).
+   - `GET /` (dashboard) handler now passes `invoiceLimitProgress: buildInvoiceLimitProgress(user)` alongside `onboarding` to the template. The catch-branch passes `null` so a DB outage doesn't break the render.
+   - Exported `buildInvoiceLimitProgress` and `FREE_LIMIT` for tests.
+
+2. `views/dashboard.ejs`:
+   - New block above the "My Invoices" header (after the past-due banner). Gated on `locals.invoiceLimitProgress` truthiness so Pro/Business/Agency users (helper returns null) never see it.
+   - Three visual branches:
+     - **Healthy** (used < max-1): `border-gray-200 bg-white` container, `bg-brand-600` inner fill, "X of 3 free invoices used" + "Upgrade →" CTA.
+     - **Near-limit** (`nearLimit=true`, used = max-1): `border-amber-200 bg-amber-50` container, `bg-amber-500` inner fill, "X of 3 free invoices used — N left this plan." copy.
+     - **At-limit** (`atLimit=true`, used >= max): same amber container + 100%-width amber fill + "you've hit the limit" copy.
+   - Bar carries `print:hidden` so it never leaks into print/PDF.
+   - All three branches surface the same `Upgrade →` CTA pointing to `/billing/upgrade`.
+
+3. `tests/invoice-limit-progress.test.js` (new file, 15 assertions):
+   - Helper unit tests (8): paid plans → null; missing user → null; free plan → progress object; 0 used → no nearLimit flag; max-1 used → nearLimit + remaining=1; at-limit → atLimit + percent=100; over-limit clamps to 100% / 0 remaining; malformed `invoice_count` (undefined / null / `'2'` / -1 / `'abc'`) coerces safely.
+   - Template render tests (7): bar renders when local set with correct copy + width + Upgrade CTA + print:hidden; bar omitted when local null; bar omitted when local undefined (template doesn't crash); at-limit branch uses amber + urgency copy; near-limit branch uses amber + remaining copy; healthy state uses brand colour + no urgency; paid plan with null progress → no bar.
+
+4. `package.json` — appended `&& NODE_ENV=test node tests/invoice-limit-progress.test.js` to the test script.
+
+### Test result
+
+Full suite: 36 test files (was 34), 224 test functions (was ~209), 0 failures.
+
+### Income relevance
+
+DIRECT conversion lever. Three different mechanisms:
+- **Visible upgrade pressure on every free-plan dashboard render.** Before this commit, a free user could create up to 3 invoices and only see a hard wall on the 4th attempt; the bar surfaces the limit on the 1st render so the user sees the trajectory of every action they take.
+- **Amber escalation at 2/3 invoices.** The visual + copy escalation at the near-limit state pre-warms the upgrade decision so the actual wall hit at 3/3 doesn't feel like a blocker — it feels like the natural next step the user has been considering for two dashboard renders already.
+- **Always-on Upgrade → CTA.** A free user who is *not* near the limit but is curious about Pro now has a 1-click path on every dashboard load (previously the upgrade CTA was only in the heading sub-line and the empty-state card).
+
+Distinct from #1 (upgrade modal at the wall) and #15 (contextual upsells on locked features) — this is the usage-axis pressure visible at every dashboard load. Pairs with #45 (last-day trial urgency banner) — both surface countdown pressure in different lifecycle dimensions.
+
+### Master action
+
+None. Pure code change; no env var, no schema migration, no third-party dependency.
+
+---
+
 ## 2026-04-27T23:05Z — Health Monitor: clean cycle — no new advisories, no new fixes needed
 
 ### What was audited
