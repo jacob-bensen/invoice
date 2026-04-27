@@ -1431,3 +1431,28 @@ Each community announcement reaches 200-2000 highly-targeted freelancers in the 
 **Income relevance (concrete numbers):** Cold-DM podcast cross-promo typically converts at 1-3% of listener count to paid (vs the 0.5-1% of paid sponsorship). On a 5k-listener episode that's 50-150 paid signups; even at the low end of $9/mo Pro that's $450-1350/mo in incremental MRR per placement — for $0 ad spend, just 30-min/week of DMs. Across 6-9 placements landed in the 8-week campaign that's $2700-12150/mo in additional MRR with **zero CAC**, which is wildly above the blended-channel CAC ROI. Pairs with #51 (paid podcast — different audience overlap) and #58 redemption page (once shipped, every host gets a clean attributable URL).
 
 **Why now:** Q2 / Q3 is the season freelancers tax-prep + invoice-tooling-shopping; podcast hosts are also actively planning their 2026 content runs and tools-segment placements. Pairs with #93 email signature builder (once shipped, every host gets a "QuickInvoice user" footer that compounds organic reach).
+
+
+---
+
+### 56. [MARKETING] Cold-DM 30 freelance subreddit moderators with a permanent community discount (added 2026-04-27)
+
+**Why this matters (concretely):** TODO_MASTER #14 (cold-email small agencies), #17 (Reddit/X organic posts on personal account), #25 (newsletter-borrowed audience), #51 (paid single-podcast), #54 (paid YouTube sponsorship), #55 (cold-DM 30 micro-podcasts) cover most adjacent-to-Reddit channels. The remaining un-touched surface is **moderator-endorsed community announcements** — a sticky thread or wiki entry on a high-traffic freelance subreddit that surfaces every time a community member asks "what invoicing tool should I use?". One sticky on `r/freelance` (790k members), `r/freelanceWriters` (180k), `r/Etsy` (470k — relevant for handmade-goods sellers who also invoice for custom orders), `r/sidehustle` (3.4M), or `r/Upwork` (250k) drives sustained organic traffic for months because the post stays at the top of the subreddit + is referenced in answers across the wider web. Distinct from #17 (organic posts you make on your account; this is moderator-endorsed) and from #55 (different platform — Reddit vs podcast). The hook is a permanent community-specific discount code (e.g. `RFREELANCE25` for 25% off for life) — the moderator gets a compelling community benefit to announce, the community gets a benefit they wouldn't get going to /pricing directly, and QuickInvoice gets attributable conversion + permanent presence in the wiki.
+
+**Action (Master, ~3 hrs research + ~1 hr/week ongoing for 4-6 weeks):**
+
+1. **Build a 30-subreddit shortlist (~2 hrs).** Search Reddit for `freelance`, `consulting`, `independent contractor`, `gig economy`, `1099`, `solopreneur`, `small business owner`. Filter for: ≥ 50k members, active mod team (recent mod posts), wiki/recommended-tools section already exists. Build sheet with: subreddit, member count, mod usernames (top 1-2 active), latest mod stickied post, modmail open?
+
+2. **Draft outreach template (~30 min).** Mod-friendly framing — Reddit mods are notoriously hostile to obvious marketing, so lead with the community benefit:
+
+   > Hi <mod_name>, I run QuickInvoice (invoicing tool for freelancers — Stripe Pay Links + auto-reminders). I'd like to offer r/<sub> a permanent 25%-off-for-life discount code (e.g. R<SUB>25) — listing it on the recommended-tools wiki, in modmail to anyone who asks "what invoice tool", or as a one-time stickied announcement, whichever feels right. No payment, no quid pro quo — just a community benefit if it's a fit. I'm happy to provide free Pro accounts for the mod team too. DM if useful, or feel free to ignore if not a fit.
+
+3. **Send 5/week × 4-6 weeks (~30 min/week).** Track in sheet. Target: 10-20% acceptance rate = 3-6 placements. Some mods will counter-offer (e.g. "I'll add it to the wiki but no sticky") — that's still a win.
+
+4. **Per-subreddit onboarding (~30 min each).** Free Pro plan for the mod team, custom Stripe promo code (`R<SUB>25` for 25% off life-of-account — gated through INTERNAL_TODO #58 redemption page when it ships), 1-paragraph community announcement they can copy-paste, links to a 90-second product demo video.
+
+5. **Track conversions for 90 days post-placement** via the per-subreddit coupon code. Refresh the playbook based on which subreddits convert best.
+
+**Income relevance (concrete numbers):** Reddit moderator-endorsed product placements have a known long-tail conversion profile (e.g. r/EntrepreneurRideAlong, r/sidehustle wiki entries from 2019-2021 still drive recurring traffic to ConvertKit, Carrd, Notion — search Reddit for "wiki recommended tools" to see). On a 100k-member subreddit that's typically 2-5 wiki referrals per week → 100-250/year → at 2-5% paid conversion that's 2-12 paid signups per year per subreddit, sustained for 2-5 years per placement. Across 3-6 placements landed in the 4-week campaign that's 12-72 sustained paid signups/year for $0 ad spend. The lifetime value compounds because (a) wiki placements rarely get removed and (b) every QuickInvoice user from that channel becomes a community-context evangelist. Pairs with #58 redemption page (clean attribution per subreddit) and #50 Indie Hackers product directory (different community type — small dedicated cohort vs Reddit's broader scale).
+
+**Why now:** Reddit's moderator team turnover happens in 6-12 month cycles; landing a wiki entry now means 2026's mod team inherits the placement (even higher staying power). Q2/Q3 is also when freelance-niche subreddits run their annual "what tools do you use" megathreads — placements made now compound into those threads naturally.

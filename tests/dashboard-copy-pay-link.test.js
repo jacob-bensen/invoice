@@ -264,8 +264,13 @@ function testEmptyInvoiceListStillRendersForProUser() {
     user: { plan: 'pro', invoice_count: 0, subscription_status: 'active' },
     invoices: []
   });
-  assert.ok(html.includes('No invoices yet'),
-    'Pro user with zero invoices must see the empty state, not a broken table');
+  // Assert on the empty-state CTA which is stable across copy revisions.
+  // The headline and supporting paragraph evolved during the 2026-04-27 PM-5
+  // UX audit (was "No invoices yet" → now "Send your first invoice today");
+  // the CTA "Create your first invoice" is the load-bearing element that has
+  // remained constant since the empty state shipped.
+  assert.ok(/Create your first invoice/.test(html),
+    'Pro user with zero invoices must see the empty-state CTA, not a broken table');
   assert.ok(!/data-testid="copy-pay-link-/.test(html),
     'Empty state must not contain any Copy link buttons');
 }

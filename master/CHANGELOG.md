@@ -2,6 +2,176 @@
 
 ---
 
+## 2026-04-27T17:51Z — Role 6 (Health Monitor): defence-in-depth percent-encode mailto recipient + clean cycle audit
+
+**What was audited (focused on this cycle's diff: invoice-view.ejs share buttons + new tests + 2 UX copy changes):**
+
+- **Security review of the diff:**
+  - **`views/invoice-view.ejs` new share-intent block (#92).** First inspection found one defence-in-depth concern: the `mailto:<client_email>?subject=…&body=…` href interpolated `client_email` directly into the URL recipient slot. `client_email` is validated client-side by `<input type="email">` on the invoice form, but no server-side `body('client_email').isEmail()` validator runs in `routes/invoices.js POST /new` or `POST /:id/edit` (only `client_name` is required). A user (or an attacker who has compromised the user's session) could store a hostile address like `foo@bar.com?cc=attacker@evil.com` in the DB; on the next /invoices/:id render, every recipient who clicks the Email share button would silently CC the attacker. The freelancer wouldn't notice — their mail client would just show one "extra" recipient in a field that's typically not foregrounded.
+  - **Fixed directly this cycle (XS, contained, safe):** wrapped `invoice.client_email` in `encodeURIComponent(...)` before concatenation. `@` becomes `%40`, `?` becomes `%3F`, `&` becomes `%26`. Modern mail clients (Mail.app, Gmail web, Outlook web, Thunderbird) all un-encode `%40` correctly back to `@`; the encoding closes the `?cc=` / `?to=` injection vector entirely. One new test in `tests/share-intent-buttons.test.js` (`testMailtoRecipientIsPercentEncodedAgainstInjection`) feeds the malformed `foo@bar.com?cc=attacker@evil.com` shape and asserts the mailto href contains no literal `?` or `&` in the recipient portion AND the only post-`?` query keys are `subject` / `body` (no injected `cc=` / `to=` / `bcc=`). Same scrubbing also catches the legitimate apostrophe-in-body HTML entity (`&#39;` → `'`) so the regex doesn't false-positive on encoded entities. The pre-existing `testMailtoHrefIncludesRecipientAndSubject` test was updated to decode the percent-encoded recipient before equality-checking the email — so it asserts the round-trip semantics, not the raw byte sequence.
+  - **WhatsApp + SMS hrefs already used `encodeURIComponent` on the body** — those paths were never injectable.
+  - **`views/dashboard.ejs` empty-state copy rewrite** — pure static-string change. Headline + supporting paragraph are fixed strings; no user-controlled bytes flow into them. Zero security surface.
+  - **`views/settings.ejs` intro paragraph rewrite** — same; pure static-string change. Zero security surface.
+  - **New `tests/webhook-outbound-agency.test.js`** — test code only; no production-runtime path. Uses transient `http.createServer` + `server.listen(0)` per test with explicit close-on-resolve — no port leakage across test boundaries.
+
+- **`npm audit --omit=dev`:** 6 vulnerabilities (3 moderate, 3 high) — **all pre-existing**, all install-time only. `bcrypt → @mapbox/node-pre-gyp → tar` (3 high, install-time) tracked under [HEALTH] H9; `resend → svix → uuid` (3 moderate, install-time) tracked under H16. Runtime exposure remains nil. No new advisories surfaced this cycle (no new dependencies — the new view block uses `encodeURIComponent` which is built into V8).
+
+- **Performance:** Zero new DB queries this cycle. The new share-buttons block adds ~700 bytes of HTML per Pro-user invoice-view render + zero client-side state (no Alpine x-data scope on the share section itself — the existing copy-button x-data covers it). For a single invoice page that's well within R14 budget. The 2 UX copy changes are fixed-length strings that net out roughly equal in size to the originals. No N+1, no missing indexes introduced.
+
+- **Code quality:** New share-intent block sits cleanly inside the existing Payment Link card's branch — no nested conditionals beyond what the card already had. The 5 new variables (`shareGreeting` / `shareTotal` / `shareBody` / `shareSubject` / waHref / smsHref / mailHref) are scoped to the EJS `<%` block and have no module-level escape. New `tests/webhook-outbound-agency.test.js` mirrors the test-style of `tests/webhook-outbound-from-stripe.test.js` (same stub pattern, same constructEventImpl seam) — follows precedent rather than introducing new shape.
+
+- **Dependencies:** zero changes — no new `npm i`, no `package-lock.json` shifts. Total prod tree unchanged.
+
+- **Legal:** No new dependencies, no license changes, no new user-data collection. The mailto / wa.me / sms URLs trigger the user's own native handlers — no PII transits any new third-party. Per RFC 6068 (mailto:), RFC 5724 (sms:), and the wa.me universal-forwarder contract, all three URL schemes are designed for client-side compose and don't initiate server-side sends. No PCI-DSS scope change (no payment surfaces touched). No GDPR / CCPA implications (no new tracking, no new collection, no new processor relationship).
+
+**No CRITICAL / hardcoded-secret findings. No new flags for TODO_MASTER.** The 8 existing open [HEALTH] items remain unchanged: H8 composite (user_id, status) index, H9 bcrypt bump, H10 parseInt radix, H11 pagination, H15 Promise.all GET handlers, H16 resend bump, H17 trial-nudge partial index, H18 expression index for recent-clients, H20 currency-formatter DRY. All are bundle-with-next-migration / next-touch hygiene items, none are blocking work.
+
+**Net delta this cycle:** +1 mailto-injection class fully eliminated (defence in depth at the source-code level — pairs with the existing `helmet()` CSP `form-action 'self' https://checkout.stripe.com https://billing.stripe.com` which already constrains where forms can post but doesn't cover mailto: / sms: / wa.me URL handlers); +1 new test asserting the fix; 0 new [HEALTH] items added. Strong defence-in-depth posture for a class of bug that's notoriously hard to spot in EJS + URL-template codebases.
+
+---
+
+## 2026-04-27T17:48Z — Role 5 (Task Optimizer): 14th-pass audit — header refreshed, #92 archived, priority queue re-ordered
+
+**Audit deltas this pass:**
+- **#92 archived as [DONE]** as a parenthetical block above #95 in the XS-GROWTH bucket (consistent with the archive pattern used for #91, #75, #45, #31, U4, etc.). Detail mirrors the CHANGELOG #92 entry.
+- **Top of file metadata** rewritten: 13th-pass narrative folded into the "13th-pass audit retained" line; 14th-pass narrative now occupies the lead block. Cross-overlap rationale for #101-#105 + MARKETING #56 written into the audit header so the next optimizer pass has the differentiation cached.
+- **Priority queue re-sorted** — #92 closed (no longer queued); #101 + #102 inserted immediately after #95 in the XS-GROWTH bucket (both pure-form-change "trust artefact" wins — highest impact per effort and ungated by Master prerequisites). #103 + #104 added to the S-GROWTH bucket as a dedicated "continued" sub-section (so the 25-item S-GROWTH list doesn't grow indefinitely without a visual break). #105 added to the M-GROWTH bucket in priority order (above the existing #69 / #60 / #50 / #53 / #40 / #21 / #18 / #24 / #17).
+- **Open task index re-counted:** 99 GROWTH items total (was 100; #92 archived); 8 [HEALTH] items open (H8/H9/H10/H11/H15/H16/H17/H18/H20 unchanged); 1 [UX] item (U1 Resend-blocked, U3 ships after #28 legal pages); 0 [TEST-FAILURE]. **No new [BLOCKED] items this cycle.**
+- **TODO_MASTER reviewed:** all 56 items checked against this cycle's CHANGELOG. None flip to [LIKELY DONE - verify] — every prior Master action remains pending its respective external step (Stripe Dashboard config, Resend API key, Plausible domain, G2/Capterra profile creation, Reddit/podcast/YouTube outreach campaigns, etc.).
+- **Duplicate consolidation pass:** ran cross-checks on the 6 new items (5 GROWTH + 1 MARKETING) vs the 100+55 existing items. Zero duplicates. Closest near-misses (#101 vs #46/#82, #102 vs #99, #103 vs #25/#86, #104 vs #69/#23, #105 vs #9/#54, MARKETING #56 vs #17/#51/#54/#55) all explicitly differentiated in-line.
+- **Archive trigger:** file at ~2.5k lines, trigger at 1.5k. Overdue 9 cycles. Defer again — fragmentation cost (split context across two files) currently exceeds size-bloat cost.
+
+**Priority order at end of 14th pass (top 12 unblocked items):**
+
+| # | ID | Tag | Cx | Title (1-line) |
+|--:|------|------|-----|------|
+| 1 | U1 | UX | M | Self-serve password reset (gated on Resend) |
+| 2 | U3 | UX | S | Authed pages global footer (gated on #28) |
+| 3 | #96 | GROWTH | XS | "Send a copy to me too" checkbox on invoice send |
+| 4 | #97 | GROWTH | XS | Stripe Receipt-emails default-on toggle |
+| 5 | #95 | GROWTH | XS | Tab-title flash + favicon dot on dashboard for paid invoices |
+| 6 | #101 | GROWTH | XS | Inline annual-savings badge on Monthly/Annual toggle |
+| 7 | #102 | GROWTH | XS | Per-user `timezone` for due-date display + reminder cron |
+| 8 | #66 | GROWTH | XS | Auto-CC accountant on invoice email (gated on Resend) |
+| 9 | #71 | GROWTH | XS | Auto-BCC freelancer on invoice email (gated on Resend) |
+| 10 | #73 | GROWTH | XS | Pre-portal cancel-reason survey |
+| 11 | #77 | GROWTH | XS | Welcome-back email on past_due → active recovery (gated on Resend) |
+| 12 | #80 | GROWTH | XS | Weekly Monday-AM Pro digest email (gated on Resend) |
+
+**Net delta this cycle:** +1 GROWTH closed (#92), +5 GROWTH added (#101-#105), +1 MARKETING added (#56), +0 [HEALTH], +0 [UX], +0 [TEST-FAILURE], +0 [BLOCKED]. Open queue: 99 GROWTH + 8 HEALTH + 2 UX + 0 TEST-FAILURE = 109 total items, dominated by income-critical features.
+
+---
+
+## 2026-04-27T17:46Z — Role 4 (UX Auditor): empty-state copy + settings intro rewritten; landing→pay-flow walked end-to-end
+
+**Flows walked (first-time visitor → paying user):**
+
+1. **Landing (`/` → `views/index.ejs`)** — hero CTA, features grid, Free vs Pro pricing card, footer. Headline + sub clear and benefit-led ("Professional invoices. In under a minute."). MOST POPULAR badge on Pro carries the visual hierarchy. Mobile stack reads cleanly. **Static pricing card** here doesn't have a Monthly/Annual toggle — captured in #101 [GROWTH].
+2. **Register (`/auth/register` → `views/auth/register.ejs`)** — 3-field form (name / email / password). Inline validation hint "(8+ characters)". Submit: "Create account →". CTA copy already action-oriented; kept.
+3. **Login (`/auth/login` → `views/auth/login.ejs`)** — clean, "Welcome back" h1, includes mailto-prefilled forgot-password link with concrete reset-time signal ("we usually reset within a few hours") shipped in cycle 13. Kept.
+4. **Dashboard (`/dashboard` → `views/dashboard.ejs`)** — onboarding checklist, trial banner (with last-day urgency variant from #45 cycle 11), past-due banner, free-plan progress bar (#31 cycle 9). New table with copy-pay-link column (#91 cycle 13). **Empty state h2 was "No invoices yet"** — passive, descriptive of absence rather than inviting action. **Direct fix this cycle:** rewrote to "Send your first invoice today" (action verb, value-anchored) + supporting copy that names three concrete output channels ("Email it, print it as a PDF, or share a Stripe pay link — all from one screen") instead of the previous generic "Create your first invoice and start getting paid." Existing test in `tests/dashboard-copy-pay-link.test.js` updated to assert the stable CTA "Create your first invoice" (load-bearing) rather than the volatile h2 copy — robust against future iteration on the headline. Free-plan Pro callout below the CTA already benefit-first ("✨ Pro adds a 'Pay now' button to every invoice"); kept from cycle 12 audit.
+5. **Invoice form (`/invoices/new` → `views/invoice-form.ejs`)** — Invoice details / Bill To / Line Items / Notes / Save. Recent-clients dropdown fills fields. Copy clear, primary CTA "Create invoice →" / "Save changes" branches correctly on edit vs new. Kept.
+6. **Invoice view (`/invoices/:id` → `views/invoice-view.ejs`)** — action bar (Mark as Sent → Mark as Paid → ✓ done), Payment Link card with Copy / Preview / **new WhatsApp / SMS / Email share buttons (#92, this cycle)**. Action bar lifecycle correctly stages primary CTA per status (Mark as Sent for draft → Mark as Paid for sent/overdue). Kept.
+7. **Settings (`/billing/settings` → `views/settings.ejs`)** — account form, Pro Zapier/Webhook section with quick-start templates from #75. **Settings intro was "This information appears on your invoices."** — accurate but flat / no value framing. **Direct fix this cycle:** rewrote to "These details appear on every invoice you send. Filling them in makes your invoices look more professional and helps clients reach you." — converts the flat statement into a benefit-anchored prompt that nudges the new user to actually fill the fields (which gates onboarding step #1 "Add your business info"). Pro/Webhook section copy unchanged.
+8. **Pricing (`/billing/upgrade` → `views/pricing.ejs`)** — Monthly/Annual toggle with "Save 31%" pill on Annual, dynamic price + "Save $45/year vs. monthly" copy, "Start 7-day free trial →" CTA + "No credit card required" subtext. Already strong from cycles 11-12 audits. Kept.
+9. **Cancel / Stripe Customer Portal** — unchanged this cycle (gated on #28 legal pages + #73 cancel-reason survey). Captured.
+10. **404 / `views/not-found.ejs`** — has homeHref/homeLabel locals + mailto-prefilled support link (#56 cycle 13). Kept.
+
+**Direct fixes shipped this cycle (no [UX] tasks added):**
+- `views/dashboard.ejs` empty-state h2 + supporting paragraph rewritten (action-verb headline + concrete output-channel description; existing CTA preserved). One test in `tests/dashboard-copy-pay-link.test.js` updated to anchor on the stable CTA rather than the volatile h2.
+- `views/settings.ejs` intro paragraph rewritten (flat statement → benefit-anchored prompt).
+
+**Flagged for future [UX] / [GROWTH] consideration (added to INTERNAL_TODO via Growth Strategist this cycle):**
+- #101 (annual savings badge on landing-page pricing card — currently static; the toggle lives only on `/billing/upgrade`).
+
+**Net delta:** 2 direct copy fixes shipped; 0 new [UX] tasks opened; 0 dead-end navigation paths surfaced this walk.
+
+---
+
+## 2026-04-27T17:44Z — Role 3 (Growth Strategist): 5 new GROWTH items (#101-#105) + 1 new MARKETING item (#56)
+
+**This cycle's lens:** un-captured leverage points across conversion / retention / expansion / automation / distribution that don't overlap with the 100 prior GROWTH items or the 55 prior TODO_MASTER items. Each idea below has been cross-checked against every nearby existing item and a one-line differentiation rationale committed in-line (so the next Strategist pass inherits the cache).
+
+**INTERNAL_TODO additions (5):**
+
+| # | Cx | Title | Impact | Distinction |
+|--:|---|---|---|---|
+| #101 | XS | Inline annual-savings badge on Monthly/Annual toggle | MED conversion lift on price→checkout | Different surface vs #46 exit-intent (in-page vs modal) and different message vs #82 plan-comparison (price comparison vs feature comparison). Pure view change — pricing.ejs + settings.ejs + upgrade-modal.ejs. |
+| #102 | XS | Per-user `timezone` column + due-date / reminder-cron localisation | MED retention via "the app gets it right for ME" | Orthogonal to #99 multi-language PDF. Today's `toLocaleDateString('en-US')` ignores user TZ; reminder cron fires at server-local midnight = 4-7am for European Pro users. |
+| #103 | S | Free `/tools/late-fee-calculator` — interactive content tool | MED-HIGH SEO long-tail | Distinct from #25 niche pages (segment angle), #86 vs-pages (competitor angle), #46 exit-intent. Compounds with #22 Pro late-fee automation (free tool seeds search; Pro feature collects on it). |
+| #104 | S | Browser extension MVP (Chrome Web Store) detecting Stripe Pay Link URLs | MED retention + virality | Distinct from #69 embedded JS widget (freelancer site) and #23 PWA (mobile install). New distribution surface — Chrome Web Store has 2.5B users. Sequencing-gated on #32 API endpoints. |
+| #105 | M | Multi-business profiles per user (`business_profiles` table) | HIGH retention for power users | Distinct from #9 team seats (different users) and from #54 deposits (different feature). Targets the dual-brand consultant / agency-of-one cohort. |
+
+**TODO_MASTER addition (1):**
+
+- **#56 [MARKETING]** — Cold-DM 30 freelance-subreddit moderators (r/freelance, r/sidehustle, r/Etsy, r/Upwork, r/freelanceWriters, etc.) with a permanent community-specific discount code (e.g. `RFREELANCE25` for 25% off for life). The pitch leads with community benefit — a code their members can use forever — rather than a marketing ask. Per-subreddit attribution via the coupon code. Distinct from #17 organic-Reddit-posts, #51 paid-podcast, #54 paid-YouTube, #55 podcast-cross-promo: this is the **moderator-endorsed wiki / sticky / modmail** surface, which is among the longest-tail content placements available on the open internet (4 years still drives traffic to ConvertKit / Carrd / Notion from old wiki entries on freelancing subs).
+
+**Cross-overlap check** — performed against all 100 prior INTERNAL_TODO #GROWTH items + 55 prior TODO_MASTER items + the 8 [HEALTH] open items + U1/U3 [UX]: zero duplicates. Closest near-misses (#101 vs #46, #102 vs #99, #103 vs #25/#86, #104 vs #69/#23, #105 vs #9/#54, #56-MARKETING vs #17/#51/#54/#55) all explicitly differentiated above.
+
+**Net delta this cycle:** +5 GROWTH (1 XS / 2 S / 1 M, balanced effort distribution), +1 MARKETING. Top of the priority queue (XS-GROWTH bucket) now reads: #96 / #97 / #92 (closed cycle) / #101 / #102 / #95 / #66 / #71 / #73 / #77 / #80 / #82 / #84 / #88 / #90 / #44 / #52 / #55 / #48 / #34 — 20 ungated XS items, 6+ months of pure conversion / retention work without any Master prerequisite required.
+
+---
+
+## 2026-04-27T17:42Z — Role 2 (Test Examiner): Agency-plan paid-webhook coverage gap closed (3 new tests)
+
+**Audit:** systematic walk through all `(plan === 'pro' || plan === 'agency')` gates in `routes/invoices.js` and `routes/billing.js` against the existing test corpus. Both call sites — manual mark-paid and Stripe-driven payment_link checkout — fire the outbound webhook for Pro AND Agency owners, but the existing `tests/webhook-outbound.test.js` and `tests/webhook-outbound-from-stripe.test.js` only exercise the Pro branch. The agency branch was referenced in a Pro test's *comment* (string literal `(plan === 'pro' || plan === 'agency')`) but never actually exercised. With H5 (DONE 2026-04-25) widening the `users_plan_check` constraint to include `'agency'`, this branch is now reachable in production — and Agency tier ($49/mo) is the highest-ARPU plan, so a silent regression here would disproportionately hit the most income-critical customers.
+
+**Other paths spot-checked (all already adequately covered):** `customer.subscription.deleted` → `subscription_status=NULL` (dunning.test.js + billing-webhook.test.js); `customer.subscription.updated` for `trialing` → `plan=pro` (dunning.test.js); `resolvePriceId` annual fallback (annual-billing.test.js); `reply_to_email` validation (billing-settings.test.js); `sendEmail` invalid_args / no_owner_email / no_client_email (email.test.js + paid-notification.test.js); 404 handler render path (not-found-handler.test.js, added cycle 11); dashboard "Copy pay link" XSS-via-attribute defence (dashboard-copy-pay-link.test.js, added cycle 13). No new gaps surfaced.
+
+**What changed:**
+- **New file `tests/webhook-outbound-agency.test.js`** — 3 tests, all passing:
+  1. Agency owner manual mark-paid (`POST /invoices/:id/status=paid`) fires the outbound webhook with the correct payload (URL = owner.webhook_url; payload carries invoice_id, amount, client_name).
+  2. Agency owner Stripe-driven mark-paid (`POST /billing/webhook` with `checkout.session.completed` for `mode=payment` + `payment_link`) fires the outbound webhook; the inner stripe.webhooks.constructEvent is stubbed to return the synthetic event so the test exercises the route's real branch logic.
+  3. Agency owner WITHOUT `webhook_url` skips the fire (parity with Pro behaviour — webhook is opt-in per user, plan gate is necessary but not sufficient).
+- `package.json` `test` script appended.
+
+**Coverage delta:** Agency-plan branch on the paid-webhook fires went from 0 assertions to 3 in this commit. Pro-branch coverage unchanged. Full suite: 41 test files, 0 failures.
+
+**Flaky / redundant flags:** none surfaced this cycle. No tests were deleted; no [TEST-FAILURE] items added to INTERNAL_TODO.md.
+
+**Income relevance:** prevents a silent regression on the highest-ARPU tier's outbound-webhook integration. Agency users wiring up Slack/Discord/Zapier post-pay automations would, before this commit, have lost their automation if a future code change accidentally narrowed the gate to `plan === 'pro'` only — and there would have been no test to catch it.
+
+---
+
+## 2026-04-27T17:39Z — Role 1 (Feature Implementer): #92 WhatsApp / SMS / Email share-intent buttons on Payment Link card
+
+**What was built:** Three native-compose share buttons on the invoice-view Payment Link card (Pro users only — gated on `invoice.payment_link_url && user.plan === 'pro'`, same condition that already gates the existing Copy / Preview controls). Each button is a plain anchor with no JS dependency:
+
+- **WhatsApp** → `https://wa.me/?text=<encoded>` — opens WhatsApp Web on desktop or the WhatsApp app on mobile (iOS + Android both honour `wa.me` as the universal forwarder); uses `target="_blank" rel="noopener"` so the popup can't reach back through `window.opener`.
+- **SMS** → `sms:?&body=<encoded>` — opens iOS Messages or the Android default SMS app at the new-message screen with no preselected recipient (the freelancer types the client's number) and the prefilled body. The `?&body=` form is the cross-platform-tolerant variant: iOS accepts both `sms:?body=` and `sms:?&body=`, Android Messages accepts only the latter (it interprets the `?` as the missing-address separator).
+- **Email** → `mailto:<client_email>?subject=…&body=…` — opens the user's default mail client (Mail.app / Gmail / Outlook / Thunderbird depending on OS-level handler), prefilled with subject `"Invoice <number> — $<total>"` and the same body. When `client_email` is empty the link degrades to `mailto:?subject=…&body=…`, leaving the recipient blank for the user to fill in.
+
+**Prefilled message body** (single string reused across all 3 buttons, kept short to fit SMS 160-char window with the URL itself):
+
+> Hi `<client_name>,` here's invoice `<number>` for `$<total>`. You can pay securely here: `<payment_link_url>`
+
+When `client_name` is empty, the greeting falls back to `Hi,` (no dangling `Hi ,`). Total is formatted as `$N.NN` to match the existing on-page total. Encoding uses `encodeURIComponent` so apostrophes / ampersands / commas / spaces / newlines never truncate the message at the URL parser.
+
+**Files touched:**
+- `views/invoice-view.ejs` — added share-prefill helper block + new "Send to client" sub-section inside the existing Payment Link card. ~50 lines added; no other view structure changed.
+- `tests/share-intent-buttons.test.js` — **new file**, 12 tests, all passing.
+- `package.json` — appended new test file to the `test` script.
+
+**Test coverage (12 assertions):**
+1. All three buttons render for Pro users (`data-share="whatsapp|sms|email"` markers).
+2. WhatsApp href uses `https://wa.me/?text=…` and decodes back to the full message including the URL, invoice number, and `$500.00` total.
+3. SMS href uses the `sms:` scheme with a `body` param containing the URL after URL-decode.
+4. mailto href starts with `mailto:<client_email>?` and carries both `subject=` and `body=` params; subject contains the invoice number and total.
+5. mailto href degrades to `mailto:?subject=…` when `client_email` is empty (no malformed `mailto:?` collision).
+6. Free users see none of the three buttons (the entire Payment Link card is gated).
+7. Greeting personalises: `"Hi <client_name>,"` when present.
+8. Greeting falls back: `"Hi,"` when `client_name` is empty (no `"Hi ,"`).
+9. URL encoding round-trips: input `O'Brien & Sons, Inc` decodes correctly through the two-stage HTML→URL decode the browser performs.
+10. The new "Send to client" header renders exactly once (regression guard against template duplication).
+11. WhatsApp anchor carries `target="_blank"` + `rel="noopener"` (XSS / window.opener defence).
+12. Notes section still renders after the share block (defensive layout regression guard).
+
+Full suite green: 40 test files, 0 failures.
+
+**Income relevance:** MED conversion lift on the share-with-client step — the single highest-friction post-send action for a Pro freelancer. Today the Copy button writes the URL to the clipboard, then the user has to switch apps, paste, type the message, and send — 4 context switches. The share buttons collapse that to one click that pre-stages everything except the recipient. Compounds with #91 (dashboard one-click copy) on the recovery side and with #75 (Slack/Discord webhook) on the post-pay side. Pure view change — no DB schema change, no Master action, no Resend dependency, no third-party SDK. Ships unblocked.
+
+---
+
 ## 2026-04-30T10:10Z — Role 6 (Health Monitor): defence-in-depth XSS guard on payment_link_url Alpine handlers + clean cycle
 
 **What was audited (focused on this cycle's diff: dashboard.ejs + tests + 2 mailto changes):**
