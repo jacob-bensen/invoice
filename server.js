@@ -109,7 +109,21 @@ app.get('/robots.txt', (req, res) => {
   res.send(lines);
 });
 
-app.use((req, res) => res.status(404).redirect('/'));
+// Friendly 404 page. A silent redirect to '/' was a dead-end — the user had no
+// signal they'd hit a stale or mistyped link, and Google saw a 302 redirect
+// instead of a 404 (which slowed deindexing of removed URLs). The 404 status
+// also pairs correctly with the meta-noindex tag in head.ejs for authed paths.
+app.use((req, res) => {
+  res.status(404);
+  const homeHref = req.session && req.session.user ? '/invoices' : '/';
+  const homeLabel = req.session && req.session.user ? 'Back to your invoices' : 'Go to home page';
+  res.render('not-found', {
+    title: 'Page not found — QuickInvoice',
+    homeHref,
+    homeLabel,
+    noindex: true
+  });
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

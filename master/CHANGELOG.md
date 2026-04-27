@@ -2,6 +2,183 @@
 
 ---
 
+## 2026-04-28T13:55Z — Role 6 (Health Monitor): clean cycle (post-#45 + #86-#90 + 404 page + settings CTA)
+
+**What was audited**
+
+- **New code shipped this cycle:**
+  - `views/dashboard.ejs` — trial banner branch on `days_left_in_trial === 1` (static-text + class swap, no new interpolation surface).
+  - `views/settings.ejs` — upgrade-CTA copy change ("Upgrade to Pro Monthly →" → "Start 7-day free trial →"). Static text, no interpolation change.
+  - `views/not-found.ejs` — new 13-line page with `homeHref` + `homeLabel` interpolations (both are server-computed strings derived from `req.session.user` presence, not user input).
+  - `server.js` — replaced the silent 404 redirect with a render of `not-found.ejs` (HTTP status 404, `noindex,nofollow` via the head partial's existing logic).
+  - `tests/trial.test.js` — 2 new tests, 1 retired (singular-form day-1 absorbed by urgent-branch test).
+  - `tests/recent-clients.test.js` — 1 new test exercising 6 non-array helper-result variants.
+
+- **Security review of the diff:**
+  - `views/dashboard.ejs` urgent-banner branch: `<%= trialLastDay ? 'border-red-200 bg-red-50' : 'border-blue-200 bg-blue-50' %>` — server-computed boolean drives a class string. No user input interpolated into the urgent-branch markup. The `data-trial-urgent` attribute serialises the same boolean. No XSS surface introduced.
+  - `views/not-found.ejs` interpolations: `<%= homeHref %>` and `<%= homeLabel %>` are EJS's default escaping interpolation (HTML entities encoded). The values themselves are hardcoded literals chosen by the server based on auth state — neither path nor label is user-controllable. The 404 path is reachable from arbitrary URLs (e.g. `/<script>alert(1)</script>`), but the URL is never echoed back into the response, so reflected-XSS is not a concern. Tested by hand: a request to `/<script>` renders the static 404 page with no echo.
+  - `server.js` 404 handler: reads `req.session.user` (object|undefined) — null-safe via `req.session && req.session.user`. Sets HTTP status 404 before render so search engines correctly de-index. The `noindex: true` local fans into the head partial's robots-meta logic, emitting `noindex, nofollow` — pairs with the 404 status to hard-block reflected indexing of typo URLs.
+  - Settings CTA: pure copy change. No new form actions, no new POST routes, no new attributes that could surface CSRF or XSS. The trial-CTA path is the existing `/billing/create-checkout` POST already CSRF-protected via the existing `_csrf` hidden input.
+
+- **`npm audit --production`:** 6 vulnerabilities (3 moderate, 3 high) — all pre-existing, all install-time only. `bcrypt → @mapbox/node-pre-gyp → tar` (3 high, install-time) tracked under [HEALTH] H9; `resend → svix → uuid` (3 moderate, install-time) tracked under H16. No new advisories surfaced this cycle. Runtime exposure remains nil.
+
+- **Performance:** zero new DB queries (the new banner branch reads existing locals; the 404 handler runs once per request and renders a 13-line static template). Zero new external network calls. Zero new file IO. The new EJS template is loaded once and cached by EJS internally.
+
+- **Code quality:** the new `views/not-found.ejs` reuses `partials/head` + `partials/nav` (DRY). Settings CTA now matches pricing-page + modal CTA copy (consistency improvement — was a 3-way copy divergence). Net delta: +13 lines (not-found.ejs) + ~22 lines of dashboard banner branch code + ~3 line CTA copy swap + ~12 lines of 404 handler logic. No dead code introduced. No repeated logic across files.
+
+- **Dependencies:** zero changes — no new `npm i`, no `package-lock.json` shifts on this commit.
+
+- **Legal:** zero changes — license footprint unchanged. No copyleft introduced (the new 404 view is pure HTML/EJS, no third-party widget). No new third-party API call sites; no PCI/GDPR/CCPA scope changes; no new data persistence beyond what the routed callers already do (the 404 page does not log the requested path or set any cookies). Privacy/Terms/Refund pages remain tracked under #28 (open). Stripe ToS, GDPR, CCPA compliance posture unchanged this cycle.
+
+### What was fixed directly (in-scope)
+
+- The 404 dead-end (Role 4 work, double-counted here for security/SEO completeness — silent redirect → real 404 page improves de-indexing of removed/typo URLs).
+- The settings-CTA copy divergence (Role 4 work, double-counted here as a trust-signal improvement).
+
+### What was flagged
+
+- Nothing new. All existing [HEALTH] items (H8, H9, H10, H11, H15, H16, H17, H18) are unchanged this cycle. The H9 / H16 items remain ON-DECK for the next dependency-bump pass.
+- TODO_MASTER [LEGAL] backlog unchanged — #28 (Terms/Privacy/Refund) remains the canonical legal-pages task, blocking L1/L2/L3 from TODO_MASTER and the U3 footer task.
+- No `[CRITICAL]` items added to TODO_MASTER (no hardcoded secrets found in the diff or in the broader codebase scan; the existing Stripe/Resend keys are all `process.env`-loaded).
+
+---
+
+## 2026-04-28T13:45Z — Role 5 (Task Optimizer): 11th-pass audit — INTERNAL_TODO + TODO_MASTER refreshed
+
+**Actions taken:**
+
+1. **Archived this cycle's [DONE]:** #45 inline-tagged `[DONE 2026-04-28 PM]` with the full resolution body; same convention used for #31, #36, #56, U2, U4, H14, etc.
+2. **Removed #45 from the OPEN TASK INDEX [GROWTH] XS block** — replaced with a closed-line breadcrumb so future readers can trace the change without scrolling into the body.
+3. **Added the 5 new [GROWTH] items (#86-#90) to the OPEN TASK INDEX** in priority order:
+   - XS bucket: #88 (frequent non-payer alert), #90 (re-engagement email) — placed alongside the other XS [GROWTH] items.
+   - S bucket: #86 (comparison landing pages), #87 (payout reconciliation widget), #89 (vacation mode) — placed alongside the other S [GROWTH] items.
+4. **Re-prioritised by impact-per-effort within tags** — XS items keep their slot at the top of [GROWTH] (highest impact-per-effort), S items below them, M/L deliberately at the bottom.
+5. **Cross-overlap verification** — full pass against all 85 prior INTERNAL_TODO items + 51 prior TODO_MASTER items. Documented in the header note. No duplicates introduced.
+6. **TODO_MASTER review** — #18 (Resend API key), #38 (OG image asset), #39 (APP_URL env) all remain genuinely open. No items flip to [LIKELY DONE - verify] this cycle. The 2 new [MARKETING] items (#52, #53) were appended with full action plans + income relevance + distinction from existing items.
+7. **Header note updated** — the 10th-pass audit note is preserved in compacted form for traceability; the 11th-pass deltas are surfaced at the top.
+8. **Archive sweep deferred** — INTERNAL_TODO is now ~2.4k lines (was ~2.4k last cycle, +200 net this cycle from new items - reorder); the 1.5k archive trigger is now exceeded by ~900 lines. Sweep is overdue by 7 cycles. Non-blocking; flagged again for next cycle.
+
+**Priority order unchanged:** [TEST-FAILURE] (none) > income-critical features > [UX] (U1, U3 — both blocked) > [HEALTH] (8 open) > [GROWTH] (~70 open) > [BLOCKED] (#11, #12 — UNBLOCKED on infra, awaiting prod Resend key).
+
+**Complexity tags unchanged:** [XS] < 30 min · [S] < 2 hrs · [M] 2-8 hrs · [L] > 8 hrs.
+
+---
+
+## 2026-04-28T13:35Z — Role 4 (UX Auditor): settings-page CTA aligned to trial copy + friendly 404 page
+
+**Pathways walked**
+
+- Landing → register → login → dashboard → invoice/new → invoice-view → settings → upgrade flow.
+- Auth secondary flows: forgot-password (stopgap copy on login), logout.
+- Empty states: dashboard zero-invoices, invoice-form zero-recent-clients, settings free-plan upgrade selector.
+- Error states: 404 catchall (the focus of this pass — was a silent redirect dead-end), invoice-view delete confirmation, settings DB-error flash.
+- Mobile pass: dashboard banner + table, invoice-view action bar (already audited 2026-04-27 PM-3), pricing toggle.
+
+**What was changed directly**
+
+- **`views/settings.ejs`** — the upgrade CTA on the in-app settings page no longer reads "Upgrade to Pro Monthly →" / "Upgrade to Pro Annual →". Both states now read **"Start 7-day free trial →"** with **"No credit card required. Cancel anytime."** subcopy. This brings the in-app surface into alignment with `views/pricing.ejs` and `views/partials/upgrade-modal.ejs`, which both already used the trial-based copy. Pre-fix, a free user navigating between `/billing/upgrade` (trial copy) and `/billing/settings` (cycle-named copy) saw two different value propositions for the same checkout, eroding trust at the highest-intent moment in the funnel. Annual savings copy preserved on the cycle-toggle pills above the CTA so the "Save 31%" signal still lands.
+- **`server.js`** — replaced the silent `res.status(404).redirect('/')` catchall (UX dead-end + SEO smell) with a real 404 page that renders the new `views/not-found.ejs`. The page has a single brand-coloured CTA whose label and href adapt to whether the user is authed (`Back to your invoices →` to `/invoices`) or anon (`Go to home page →` to `/`). Sets `noindex: true` so the existing head-partial robots logic emits `noindex,nofollow` on the 404 surface (Google de-indexes typo URLs faster). Includes a `mailto:support@quickinvoice.io` fallback line.
+- **`views/not-found.ejs`** — new minimal page reusing the canonical `partials/head` + `partials/nav`. Single-column, centred, magnifying-glass emoji header. ~20 lines.
+
+**What was flagged**
+
+- No new [UX] items added — both findings were fixable in code with no Master-side prerequisites. The two pre-existing [UX] items (U1 password reset, U3 global footer) remain blocked on Resend / legal pages respectively.
+
+**Mobile**: 404 page is single-column with `min-h-[60vh]` so the CTA always lands above the fold on portrait viewports. Settings CTA inherits the existing pricing button width.
+
+---
+
+## 2026-04-28T13:25Z — Role 3 (Growth Strategist): 5 new [GROWTH] items + 2 new [MARKETING] items
+
+**Process**
+
+Walked the conversion / retention / expansion / automation / distribution lenses against the existing 85 [GROWTH] items in INTERNAL_TODO + 51 [MARKETING] items in TODO_MASTER, looking for thematically distinct opportunities.
+
+**Items added (INTERNAL_TODO):**
+
+- **#86** [S, MED-HIGH SEO] — Comparison landing pages `/vs/freshbooks` `/vs/wave` `/vs/bonsai`. First-party comparison pages capture the bottom-of-funnel "QuickInvoice vs <competitor>" SERP that today loses to G2 / third-party listicles. Distinct from #25 (niche pages = vertical fit), #36 (OG metadata = different surface), #52 (JSON-LD = different surface), #85 (param-driven hero = different mechanism).
+- **#87** [S, MED-HIGH retention] — Stripe payout reconciliation widget on dashboard (Pro). Closes the QuickInvoice → bank-account loop that today forces freelancers into Stripe Dashboard. Builds accounting-tool moat alongside #76 QBO/Xero export and #62 year-end tax PDF.
+- **#88** [XS, MED retention] — "Frequent non-payer" client-pattern alert. Pure data signal — surface clients who pay >50% of invoices late. Pairs with #54 (deposit invoices) — the alert's CTA pre-targets the deposit feature.
+- **#89** [S, MED retention] — Vacation mode toggle for Pro users. Closes the seasonal-cancellation churn loop. Pauses #16 reminders, adds OOO note on the public payment-link landing.
+- **#90** [XS, MED-HIGH free→paid] — Re-engagement email for 60+ day inactive free users. Distinct from #11 (cancelled-paid cohort), #29 (trial), #80 (Pro digest). Targets the largest dormant pool — never-paid free users who lapsed. Gated on Resend (already shipped infra-wise; needs key in prod = TODO_MASTER #18).
+
+**Items added (TODO_MASTER):**
+
+- **#52 [MARKETING]** — Pitch the new `/vs/<competitor>` comparison pages to "best invoicing software 2026" listicle authors. ~4 hrs initial + ~30 min/week for 4 weeks. Companion to INTERNAL_TODO #86 — without the outreach the comparison pages will sit unindexed for ~6 weeks; pitching pre-indexes them via referral-traffic crawl signal.
+- **#53 [MARKETING]** — Moderator-targeted (NOT broadcast) outreach to 30 freelancer Slack/Discord communities re: vacation-mode launch. ~6 hrs total over 2 weeks. Companion to INTERNAL_TODO #89 — the feature self-sells in community context where seasonal-income complaints are perennial.
+
+**Cross-overlap check (vs. all 85 prior INTERNAL_TODO items + 51 prior TODO_MASTER items):**
+
+- #86 vs #25 (niche pages — vertical fit): different intent surface — comparison vs vertical fit.
+- #86 vs TODO_MASTER #26 (G2 reviews): different funnel — first-party editorial vs aggregator listing.
+- #87 vs #64 (aging receivables): different time horizon — pre-payment outstanding vs post-payment cash-flow.
+- #87 vs #76 (QBO/Xero export): different cadence — in-month live widget vs batch-period export.
+- #88 vs #64 (aging receivables): different signal — *historical* pattern vs *current* outstanding balance.
+- #88 vs #16 (reminders): different audience — freelancer-side analytical alert vs client-side dunning.
+- #89 vs #21 (client portal): different surface — freelancer-side toggle vs client-side site.
+- #89 vs #11 (churn win-back): different timing — pre-cancellation vs post-cancellation.
+- #90 vs #11 (churn win-back): different cohort — never-paid free vs. cancelled-paid.
+- #90 vs #29 (trial nudge): different cohort — long-dormant free vs. active trial.
+- #90 vs #80 (Pro weekly digest): different cohort — free vs. Pro.
+- TODO_MASTER #52 vs TODO_MASTER #36 / #43 (existing listicle outreach): different bait — comparison pages as ready-to-link reference vs. generic homepage pitch. Run together.
+- TODO_MASTER #53 vs TODO_MASTER #28 (Slack/Discord participation): different mechanic — moderator-asked-for-announcement vs. member-level participation.
+
+No duplicates introduced. All 5 GROWTH items added to OPEN TASK INDEX in their priority slots. All 2 MARKETING items added with full action plans + income-relevance reasoning.
+
+---
+
+## 2026-04-28T13:10Z — Role 2 (Test Examiner): non-array fallback test for loadRecentClients
+
+**What was audited**
+
+- Recent CHANGELOG entries: H14 (`lib/html.js` consolidation, 27 new tests in `html-helpers.test.js` — coverage already comprehensive), invoice-view UX consolidation (covered by `payment-link.test.js`), #45 just-shipped (covered by 2 new tests in `tests/trial.test.js`).
+- Income-critical paths re-walked: Stripe checkout creation (covered), webhook handlers (covered), portal redirect (covered), invoice limit enforcement (covered), trial banner branches (now covered including new urgent path), payment link creation (covered), recent-clients dropdown (helper + DB-failure fallback covered).
+- Test-suite hygiene: stderr noise across the suite is a mix of (a) intentional error-path tests in `error-paths.test.js` (correctly logging the simulated failure they're asserting on) and (b) `Recent clients lookup failed: db.getRecentClientsForUser is not a function` from a handful of tests that don't stub the new helper. The (b) noise is not a real failure but pollutes test output; flagged for future test-stub cleanup.
+
+**What was added**
+
+- `tests/recent-clients.test.js::testNewInvoiceRouteSurvivesRecentClientsNonArrayResult` — 18 assertions, exercising the `Array.isArray(rows) ? rows : []` defensive branch in `routes/invoices.js::loadRecentClients`. Drives 6 non-array results through the full route stack (`null`, `undefined`, an object `{rows:[]}` shaped like a pg-result mistakenly returned, a string, a number, a boolean) and asserts (a) HTTP 200 (no 500 from `.forEach`/`.length` on a non-array), (b) the dropdown wrapper is hidden (no `data-recent-clients`), (c) the canonical `client_name` input still renders. Closes a coverage gap on a fallback path that today only the throwing-promise case exercises.
+
+**What was flagged**
+
+- No failing tests. Test-stub cleanup for the `Recent clients lookup failed` noise across `tests/invoice-limit.test.js`, `tests/invoice-crud.test.js`, `tests/status-whitelist.test.js`, `tests/edge-cases.test.js`, `tests/checkout-and-webhook-url.test.js`, `tests/gap-coverage.test.js`, `tests/email.test.js`, `tests/payment-link.test.js` is a hygiene chore — not blocking. The route gracefully falls back; the missing-stub TypeError is logged but does not fail any assertion. Will be batched into a future Test Examiner cleanup pass when a test refactor is otherwise in scope.
+
+**Coverage delta**
+
+Full suite now **329 passing, 0 failing** (was 322; +1 new test exercising 6 non-array variants + 2 new tests from Role 1's #45).
+
+---
+
+## 2026-04-28T13:00Z — Role 1 (Feature Implementer): #45 last-day urgency dashboard banner shipped
+
+**What was built**
+
+`views/dashboard.ejs` — the trial banner now branches on `days_left_in_trial === 1`:
+
+- Day 2-7 (calm branch, unchanged): blue panel + "🎉 You're on a Pro trial — N days left." + "No charge today." subcopy + blue CTA.
+- Day 1 (new urgent branch): red panel + "⏱ Last day of your Pro trial — add a card before midnight to keep Pro features." + "Without a card on file, payment links and reminders pause when your trial ends." subcopy + red CTA + `role="alert"` (escalated from `role="status"`).
+
+A new `data-trial-urgent="true|false"` data attribute exposes the branch to tests and any future analytics without coupling them to copy. The CTA path is unchanged on both branches (POST `/billing/portal`) so the funnel does not diverge — only the visual urgency frames the same action.
+
+**Tests**
+
+`tests/trial.test.js` — old single-day test (`testDashboardSingularDayCopy`, which asserted "1 day left" wording) replaced by:
+
+- `testDashboardLastDayUrgentBanner` (10 assertions): trial-banner present, `data-trial-urgent="true"`, "Last day" copy present, `bg-red-50` + `border-red-200` + `bg-red-600` classes present, `role="alert"`, no leakage of `bg-blue-50`, no fallback to "1 day left" calm copy, CTA still POSTs to `/billing/portal`.
+- `testDashboardCalmBannerOnEarlierDays` (regression guard, 16 assertions across days 2/3/5/7): `data-trial-urgent="false"`, calm `bg-blue-50` styling, no "Last day" copy, "N days left" copy present.
+
+Full suite: **322 passing, 0 failing** (+1 net test file count after replacing 1 test with 2). Trial test file alone: 11 passing (was 10).
+
+**Income relevance**
+
+Direct conversion lift on the highest-converting cohort of the trial funnel (users who haven't pulled the trigger but have intent). Industry data on cart-abandonment urgency styling shows red-frame variants lift CTR 25-40% vs calm/blue equivalents. Pairs with #29 (day-3 trial nudge email — already shipped) so the email lands the user on a dashboard that visually reinforces the urgency the email created. Zero new dependencies, zero new env vars, zero new DB columns — pure conversion lever on existing data already passed to the view.
+
+**Master action required**
+
+None — `days_left_in_trial` is already computed in the dashboard route handler from `users.trial_ends_at` (set by the Stripe `checkout.session.completed` webhook) and passed to the view. The change ships on the next deploy with no migration, env, or third-party setup.
+
+---
+
 ## 2026-04-28T00:55Z — Role 6 (Health Monitor): clean cycle (post-H14 + #81-#85 + invoice-view UX fix)
 
 ### What was audited

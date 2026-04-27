@@ -317,7 +317,10 @@ async function testDashboardRendersTrialBannerWhenDaysLeftPositive() {
     'banner CTA must POST to /billing/portal');
 }
 
-async function testDashboardSingularDayCopy() {
+async function testDashboardLastDayUrgentBanner() {
+  // #45 — when days_left_in_trial === 1, swap to red/urgent styling
+  // and last-day copy so the highest-converting cohort sees urgency on
+  // the same surface that the day-3 nudge email (#29) lands them on.
   const tpl = fs.readFileSync(path.join(__dirname, '..', 'views', 'dashboard.ejs'), 'utf8');
   const html = ejs.render(tpl, {
     user: { plan: 'pro', invoice_count: 0, subscription_status: null },
@@ -327,9 +330,54 @@ async function testDashboardSingularDayCopy() {
     title: 'Dashboard'
   }, { views: [path.join(__dirname, '..', 'views')], filename: path.join(__dirname, '..', 'views', 'dashboard.ejs') });
 
-  assert.ok(/1 day left/.test(html),
-    'banner must use singular "1 day left" (no plural) when one day remains');
-  assert.ok(!/1 days left/.test(html), 'must not render "1 days left"');
+  assert.ok(/data-testid=["']trial-banner["']/.test(html),
+    'urgent banner must still render with the trial-banner test id');
+  assert.ok(/data-trial-urgent=["']true["']/.test(html),
+    'banner must mark itself as urgent on the last day');
+  assert.ok(/Last day of your Pro trial/.test(html),
+    'banner must use the urgent "Last day" copy on day 1');
+  assert.ok(/bg-red-50/.test(html),
+    'banner container must use red urgency background on day 1');
+  assert.ok(/border-red-200/.test(html),
+    'banner container must use red urgency border on day 1');
+  assert.ok(/bg-red-600/.test(html),
+    'CTA button must use red urgency colour on day 1');
+  assert.ok(/role=["']alert["']/.test(html),
+    'banner must escalate to role="alert" on the last day');
+  // No leakage of the calm-state copy or styling into the urgent branch.
+  assert.ok(!/bg-blue-50/.test(html),
+    'banner must not retain blue calm-state background on the urgent branch');
+  assert.ok(!/1 days left/.test(html),
+    'must not render the broken "1 days left" plural');
+  assert.ok(!/1 day left/.test(html),
+    'must not fall back to the calm "1 day left" copy on day 1 (urgent branch must override)');
+  // CTA path unchanged — same Stripe portal redirect, no funnel divergence.
+  assert.ok(/action=["']\/billing\/portal["']/.test(html),
+    'urgent banner CTA must POST to the same /billing/portal handler');
+}
+
+async function testDashboardCalmBannerOnEarlierDays() {
+  // Regression guard — the urgent branch must NOT fire on day 2+, the
+  // calm-state styling and copy must persist for the rest of the trial.
+  const tpl = fs.readFileSync(path.join(__dirname, '..', 'views', 'dashboard.ejs'), 'utf8');
+  for (const days of [2, 3, 5, 7]) {
+    const html = ejs.render(tpl, {
+      user: { plan: 'pro', invoice_count: 0, subscription_status: null },
+      invoices: [],
+      flash: null,
+      days_left_in_trial: days,
+      title: 'Dashboard'
+    }, { views: [path.join(__dirname, '..', 'views')], filename: path.join(__dirname, '..', 'views', 'dashboard.ejs') });
+
+    assert.ok(/data-trial-urgent=["']false["']/.test(html),
+      `day ${days} banner must NOT mark itself urgent`);
+    assert.ok(/bg-blue-50/.test(html),
+      `day ${days} banner must use calm blue styling`);
+    assert.ok(!/Last day of your Pro trial/.test(html),
+      `day ${days} banner must not show "Last day" copy`);
+    assert.ok(new RegExp(`${days} days left`).test(html),
+      `day ${days} banner must read "${days} days left"`);
+  }
 }
 
 async function testDashboardOmitsBannerWhenNoTrial() {
@@ -382,7 +430,8 @@ async function run() {
     ['Webhook: non-trial subscription clears trial_ends_at', testWebhookNoTrialClearsTrialEndsAt],
     ['Webhook: subscription fetch error → still upgrades, no trial_ends_at write', testWebhookSubscriptionRetrieveErrorStillUpgrades],
     ['Dashboard: renders trial banner when days_left_in_trial > 0', testDashboardRendersTrialBannerWhenDaysLeftPositive],
-    ['Dashboard: singular "1 day left" copy when one day remains', testDashboardSingularDayCopy],
+    ['Dashboard: last-day urgent banner copy + red styling on day 1 (#45)', testDashboardLastDayUrgentBanner],
+    ['Dashboard: calm banner persists for days 2-7 (regression guard for #45)', testDashboardCalmBannerOnEarlierDays],
     ['Dashboard: omits trial banner when no trial / 0 days left', testDashboardOmitsBannerWhenNoTrial],
     ['Pricing: CTA reads "Start 7-day free trial"', testPricingCtaCopyMentionsTrial],
     ['Modal: CTA reads "Start 7-day free trial"', testUpgradeModalCtaCopyMentionsTrial]

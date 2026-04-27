@@ -152,9 +152,9 @@
           <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
           <input type="hidden" name="billing_cycle" :value="cycle">
           <button type="submit" class="bg-brand-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-brand-700 transition">
-            <span x-show="cycle === 'monthly'">Upgrade to Pro Monthly →</span>
-            <span x-show="cycle === 'annual'" x-cloak>Upgrade to Pro Annual →</span>
+            Start 7-day free trial &rarr;
           </button>
+          <p class="text-xs text-gray-500 mt-2">No credit card required. Cancel anytime.</p>
         </form>
       </div>
     <% } %>

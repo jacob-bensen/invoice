@@ -1315,3 +1315,70 @@ A single test buy is the lowest-risk way to find out whether the unit economics 
 Distinct from #18 (Affiliate / Rewardful — affiliate is performance-only, podcast sponsorship is brand + impression), #15 (60s demo video — video is shareable asset, audio is one-and-done CPM media), and #20 (newsletter — different consumption, different audience-overlap).
 
 **Why now:** podcast sponsorship is most cost-effective when (a) you have a clear, easy-to-pitch value prop ("stop chasing payments"), (b) you have a working free trial (#19 — done), and (c) you have at least one shippable customer testimonial (gated on #21 testimonials work + #48 founder calls). The first two are true today; the third lands within 4 weeks. Buy the spot to air ~5 weeks out so the testimonial is in the can before the read goes live.
+
+---
+
+### 52. [MARKETING] Pitch the 3 new `/vs/<competitor>` comparison pages to "best invoicing software 2026" listicle authors (added 2026-04-28 PM-2)
+
+**Impact:** MED-HIGH (one-time SEO foundation + persistent backlink asset). INTERNAL_TODO #86 ships three first-party comparison pages — `/vs/freshbooks`, `/vs/wave`, `/vs/bonsai`. Comparison pages only rank when they accumulate backlinks from authoritative listicle sites; without that signal Google treats them as orphan thin-content. A targeted email outreach campaign to the 15-20 authors of "best invoicing software for freelancers 2026" / "FreshBooks alternatives 2026" / "Wave alternatives 2026" listicles, pitching QuickInvoice as a candidate addition with the new comparison pages as ready-to-link reference copy, gives those listicles a one-click reason to add QuickInvoice (the comparison page is the destination URL they'd otherwise have to write themselves). Compounds with #36 (LinkedIn outreach to listicle authors) — same audience, different surface (LinkedIn DM vs cold email).
+
+**Distinct from existing items:**
+
+- **#36** (LinkedIn outreach to listicle authors) — same audience, different surface and copy. #36 is generic "please consider listing QuickInvoice"; #52 is specific "here's a ready-to-link comparison page that does the listicle author's research for them."
+- **#26** (G2 / Capterra reviews) — different mechanism. G2 is review-aggregation listings; this is editorial content.
+- **#13** (freelancer-tool directories) — different format. Directories list; listicles narrate.
+- **TODO_MASTER #43** (existing listicle outreach) — same broad campaign, but this item adds the *comparison pages as the bait* — the existing #43 outreach pitched the homepage; this version pitches the dedicated comparison URL. Run together.
+
+### Action (Master, ~4 hrs initial + ~30 min/week follow-up for 4 weeks)
+
+1. **Confirm INTERNAL_TODO #86 has shipped** (the three comparison pages must be live and indexable before pitching — broken link in pitch = dead pitch).
+
+2. **Build target list** (~1 hr): Google "best invoicing software for freelancers 2026", "FreshBooks alternatives", "Wave alternatives", "Bonsai alternatives", "best invoice apps for designers 2026". Compile top 15-20 articles into a spreadsheet — URL, author name, author email (Hunter.io free tier or check author byline), date last updated, current tools listed, contact form URL if email isn't public. Skip anything older than 18 months — those won't be re-edited.
+
+3. **Draft outreach template** (~30 min). Subject: "Quick suggestion for your <article title>". Body (~80 words):
+
+   > Hi <author>, I work on QuickInvoice (an invoicing SaaS for freelancers — $9/mo Solo / $19/mo Pro). I noticed your <article> piece. I built dedicated comparison pages for the tools you covered — FreshBooks (<URL>), Wave (<URL>), Bonsai (<URL>) — that lay out price/feature/time-to-first-invoice side-by-side. If you're considering adding QuickInvoice to your list when the article next gets a refresh, those pages are ready-to-cite reference copy. No paid placement, no obligation. Happy to grant Pro access if you want to test it first.
+
+4. **Send 5 pitches/week** (~30 min/week) using a free Mailmerge tool (Yet Another Mail Merge, GMass free tier). Track open + reply rates in a Google Sheet. Reply rate target: 20%; placement rate target: 5% (1 placement per 20 pitches).
+
+5. **Monthly review** (~30 min): cull the list, swap in fresh listicles, refine the pitch copy based on which subject lines opened best.
+
+### Why this matters (income relevance)
+
+Each placement of QuickInvoice in a "best invoicing software 2026" listicle is a backlink + ongoing referral traffic source for years. Listicle traffic converts at 3-5x the rate of generic homepage traffic because the visitor is already in evaluation mode. The comparison pages serve double-duty: (a) as the ready-to-cite reference that makes the listicle author's job easier (raising acceptance rate), (b) as the landing page the listicle's referral traffic lands on (matching the "compare X tools" reader intent perfectly). One placement on a high-DA listicle (DA 50+) is worth ~$2-5K in equivalent paid acquisition over its first 12 months.
+
+**Why now:** the comparison pages will be live within the next sprint (gated on INTERNAL_TODO #86). Pitch within 2 weeks of those going live so they're indexed by Google before the listicle authors start verifying the citations. Pre-indexing matters because Google penalises listicles that link to thin/empty pages; a 2-week head start gives QuickInvoice's comparison pages enough crawl traffic to rank for at least the long-tail "<competitor> alternative" queries before the listicle's ranking-signal arrives.
+
+---
+
+### 53. [MARKETING] Manual cold-email outreach to 30 freelancer Slack communities re: vacation-mode launch (added 2026-04-28 PM-2)
+
+**Impact:** MED (positioning + community-driven distribution). When INTERNAL_TODO #89 (vacation mode) ships, it's the kind of feature that turns a generic invoicing tool into a tool that "gets" how freelancers actually live (seasonal income, vacation pauses, sabbaticals). It's a natural conversation-starter in any freelancer Slack/Discord community where the perennial complaint is "I cancelled my SaaS to save $20 during my off-season, then had to re-set-up everything when I came back." Manual outreach to community moderators/admins (NOT broadcast posting — that's the spam bait existing #28 warned against) asking them to consider mentioning the feature in their community newsletter or pinned announcements.
+
+**Distinct from existing items:**
+
+- **#28** (Freelancer Slack/Discord community participation) — this is moderator-targeted outreach asking for an announcement, not member-level participation. Different mechanic, different yield.
+- **#21** (testimonials on landing page) — different surface and audience.
+- **#14** (Reddit launch posts) — Reddit allows broadcast posts; Slack/Discord communities largely don't.
+
+### Action (Master, ~3 hrs research + ~3 hrs outreach over 2 weeks)
+
+1. **Confirm INTERNAL_TODO #89 has shipped** (vacation-mode toggle live, with an empty `vacation_until` value rendering the bare settings page so screenshots demo cleanly).
+
+2. **Build target list** (~2 hrs): identify 30 freelancer-focused Slack/Discord communities. Sources: the existing #28 task's research (re-use that list as a starter), Indie Hackers community directory, "Freelancing Slack groups" listicles. Filter to communities with public moderator contact info (Slack workspace owner email or Discord moderator handle visible in #welcome). Skip communities with explicit no-promo rules.
+
+3. **Draft outreach template** (~30 min). Subject: "Tiny feature your members will love". Body (~70 words):
+
+   > Hi <mod>, mod-to-mod here. We just shipped "vacation mode" on QuickInvoice — freelancers can pause auto-reminders + show an OOO note on payment links without cancelling their subscription. It's the kind of thing your community has probably ranted about. If it's useful to share, here's a 3-line announcement you can copy-paste: <link>. No paid promotion, just a heads-up.
+
+4. **Pre-write the copy-paste announcement** (~15 min). Make it a one-liner the moderator can paste with zero edits — that's the difference between "I'll consider" and "done in 30 seconds":
+
+   > **QuickInvoice just shipped Vacation Mode** — pause invoice reminders + show clients an out-of-office note on payment links without cancelling your plan. Useful if you take seasonal breaks. Free 7-day trial of Pro at quickinvoice.io.
+
+5. **Send 5/day for 6 days** (~3 hrs total). Track replies in a Google Sheet. Target: 10% acceptance = 3 community announcements.
+
+### Why this matters (income relevance)
+
+Each community announcement reaches 200-2000 highly-targeted freelancers in the exact moment they're most receptive (community context = high trust). One moderator-driven announcement is worth ~5x a generic ad placement because the framing is "your trusted community recommends" not "we're paying to be in front of you." The vacation-mode story is unusually portable — it's a 1-line feature description that sells itself in any community where seasonal-income freelancers gather, which is most of them.
+
+**Why now:** the feature's value proposition is acutely seasonal — outreach in Q2 / Q3 catches the summer-vacation cohort and Q4 holiday cohort. Ship the outreach within 30 days of the feature shipping so the announcement is news rather than backfilled history.

@@ -47,25 +47,37 @@
   <% } %>
 
   <% if (locals.days_left_in_trial && days_left_in_trial > 0) { %>
+    <% const trialLastDay = days_left_in_trial === 1; %>
     <div
       x-data="{ dismissed: false }"
       x-show="!dismissed"
       x-cloak
       data-testid="trial-banner"
-      class="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 flex items-start gap-3"
-      role="status"
+      data-trial-urgent="<%= trialLastDay ? 'true' : 'false' %>"
+      class="mb-6 rounded-xl border <%= trialLastDay ? 'border-red-200 bg-red-50' : 'border-blue-200 bg-blue-50' %> px-5 py-4 flex items-start gap-3"
+      role="<%= trialLastDay ? 'alert' : 'status' %>"
     >
-      <div class="text-blue-500 text-xl leading-none mt-0.5">&#127881;</div>
+      <div class="<%= trialLastDay ? 'text-red-500' : 'text-blue-500' %> text-xl leading-none mt-0.5">
+        <% if (trialLastDay) { %>&#9200;<% } else { %>&#127881;<% } %>
+      </div>
       <div class="flex-1 text-sm">
-        <p class="font-semibold text-blue-800">
-          You're on a Pro trial — <%= days_left_in_trial %> day<%= days_left_in_trial === 1 ? '' : 's' %> left.
+        <p class="font-semibold <%= trialLastDay ? 'text-red-800' : 'text-blue-800' %>">
+          <% if (trialLastDay) { %>
+            Last day of your Pro trial — add a card before midnight to keep Pro features.
+          <% } else { %>
+            You're on a Pro trial — <%= days_left_in_trial %> days left.
+          <% } %>
         </p>
-        <p class="text-blue-700 mt-0.5">
-          Add a payment method to keep Pro features when your trial ends. No charge today.
+        <p class="<%= trialLastDay ? 'text-red-700' : 'text-blue-700' %> mt-0.5">
+          <% if (trialLastDay) { %>
+            Without a card on file, payment links and reminders pause when your trial ends.
+          <% } else { %>
+            Add a payment method to keep Pro features when your trial ends. No charge today.
+          <% } %>
         </p>
         <form action="/billing/portal" method="POST" class="mt-3">
           <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
-          <button type="submit" class="inline-flex items-center gap-1.5 bg-blue-600 text-white font-semibold text-xs px-3 py-2 rounded-lg hover:bg-blue-700 transition">
+          <button type="submit" class="inline-flex items-center gap-1.5 <%= trialLastDay ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700' %> text-white font-semibold text-xs px-3 py-2 rounded-lg transition">
             Add payment method &rarr;
           </button>
         </form>
@@ -73,7 +85,7 @@
       <button
         type="button"
         @click="dismissed = true"
-        class="text-blue-400 hover:text-blue-600 text-2xl leading-none"
+        class="<%= trialLastDay ? 'text-red-400 hover:text-red-600' : 'text-blue-400 hover:text-blue-600' %> text-2xl leading-none"
         aria-label="Dismiss"
       >&times;</button>
     </div>
