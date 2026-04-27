@@ -1125,3 +1125,47 @@ Backlinks from the right 5 listicles outperform any paid ad campaign for indie S
 ### Why this matters
 
 The Agency tier ($49/mo, 5 contractor seats) has the highest LTV in the funnel but the lowest organic acquisition rate (it's not a self-serve segment — Ops Directors don't browse listicles). Cold outbound on LinkedIn is the standard B2B SaaS sales motion at this stage. Pairs with INTERNAL_TODO #9 (Agency team seats — must be live before this campaign starts) and #38 (roadmap — gives the prospect confidence the team-seats feature is actively maintained).
+
+---
+
+## 45. [MARKETING] Indie/freelancer Slack + Discord community presence (added 2026-04-27 PM-2)
+
+**Impact:** MEDIUM — most active SaaS / freelancer Slack and Discord communities are NOT covered by the Reddit-launch (#34) or LinkedIn-outbound (#44) playbooks because they're closed-membership and require a different posture (you must be a participating member, not a drive-by poster). Joining the right 4-5 communities and answering invoicing-related questions naturally converts at 5-15% per relevant thread response (much higher than Reddit because the audience is smaller and warmer). Compounds over months — answers stay searchable inside the community for years.
+
+### Action (Master, ~1 hr/week ongoing)
+
+1. **Join 4 communities** (one-time, ~30 min):
+   - **Indie Hackers Slack** (free, application form at indiehackers.com/community)
+   - **Indie Worldwide** (paid $20/mo, indieworldwide.com — strong founder + freelancer overlap)
+   - **Online Geniuses Slack** (free, onlinegeniuses.com — marketing/SaaS focus, freelancers building agencies)
+   - **r/freelance Discord** (linked from the subreddit sidebar) — direct freelancer audience match
+2. **Set up a saved search** in each (Slack: `/search invoice OR invoicing OR FreshBooks OR Bonsai`; Discord: same keywords). Check 2-3 times a week.
+3. **For each relevant thread** (someone asking "what invoicing tool do you use?" or complaining about FreshBooks/Bonsai pricing): reply naturally with one sentence about how you handle invoicing, link to QuickInvoice ONLY if you're already a participating member of that channel for 2+ weeks (to avoid the "drive-by promoter" auto-ban).
+4. **Track each link share** in a spreadsheet: community / thread URL / date / response. After 8 weeks compare community-attribution to Plausible referrer data (#34 once live) to identify the highest-converting community.
+5. **Run one community-only AMA** per quarter (e.g. "Ask me anything about building QuickInvoice from scratch"). Indie Hackers AMAs typically draw 20-50 questions, several of which become inbound trial signups.
+
+### Why this matters
+
+Closed communities are the highest-conversion-per-impression distribution surface for indie SaaS once you're past the cold-launch phase (Product Hunt, Show HN). They're also the most resilient against algorithm changes (no Twitter / Reddit reach collapse risk). Pairs with #34 (Plausible analytics — measures community-driven traffic by referrer), #38 (roadmap — gives community members confidence the project is real), and #19 (Show HN — the cross-post lifts traffic from the community to HN and back).
+
+---
+
+## 46. [MARKETING] 60-second YouTube product walkthrough video (evergreen SEO + landing) (added 2026-04-27 PM-2)
+
+**Impact:** MEDIUM — distinct from the existing Loom demo plan (#15 — that's an autoplay clip on the landing page). A separate, public YouTube video titled "QuickInvoice — Invoice + Get Paid in 60 Seconds (Freelancer Tool Demo)" lives on YouTube indefinitely, ranks for the long-tail "how to invoice freelance clients" query, and is embedded as the landing-page hero (replacing or complementing #15). YouTube SEO compounds — the video is discoverable for years, drives passive signups every month with zero ongoing effort, and the landing-page embed gives QuickInvoice a video-thumbnail social-share preview that the static OG image (#36, INTERNAL_TODO) can't.
+
+### Action (Master, ~3 hrs one-time)
+
+1. **Record the 60-second walkthrough** (1 hr) using OBS or Loom Pro:
+   - 0-10s: Problem hook ("Stop chasing invoices.")
+   - 10-30s: Create an invoice — 3 line items, mark Sent
+   - 30-45s: Switch to the client's perspective — open the Stripe Payment Link, click Pay
+   - 45-60s: Back to dashboard — invoice flips to PAID; revenue stat ticks up. End-card with quickinvoice.io URL.
+2. **Edit + caption** (~1 hr) — auto-captions in YouTube Studio + manual cleanup.
+3. **Publish to YouTube** with: title "QuickInvoice — Invoice + Get Paid in 60 Seconds (Freelancer Tool Demo)", description with timestamps + landing-page link, end-card pointing to the video's own playlist, tags `freelance, invoicing, stripe, saas, freelancer`. Submit to the YouTube SEO via the description (first 200 chars).
+4. **Embed on landing page** in `views/index.ejs` — replace or complement the auto-play Loom from #15. YouTube embed gives a thumbnail + Schema.org `VideoObject` that inflates the SEO of the landing page itself (compounds with the JSON-LD `SoftwareApplication` work in INTERNAL_TODO #52).
+5. **Cross-post the video link** to: r/freelance, Indie Hackers (as a Show update), LinkedIn (native upload — LinkedIn deboosts external links but boosts native video), Twitter/X.
+
+### Why this matters
+
+YouTube SEO is the single most-evergreen acquisition channel for B2B SaaS at this stage. A 60-second walkthrough that ranks for one or two long-tail queries drives 50-300 passive views per month indefinitely, of which ~5% click through to the landing page, of which ~5% convert to free signup. Doesn't compete with #15 (Loom autoplay clip — that's about reducing landing-page bounce); this is about new acquisition. Compounds with #36 (OG metadata) and INTERNAL_TODO #52 (JSON-LD `SoftwareApplication` schema with `VideoObject` ref).

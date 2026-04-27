@@ -1,23 +1,23 @@
 # QuickInvoice + InvoiceFlow — Internal Growth TODO
 
-> **Audited:** 2026-04-27 PM (Task Optimizer cycle, 6th pass). This cycle's deltas: (a) **#56 closed** — `robots.txt` route + canonical URL meta tag shipped end-to-end; `noindex: true` propagated to dashboard, settings, invoice-view, invoice-form, invoice-print, auth/login, auth/register render calls; 17 new assertions in `tests/robots-and-canonical.test.js`; pairs with #36 to give crawlers both a rich preview and a canonical pointer. (b) **5 new [GROWTH] items (#61-#65)** from this cycle's Growth Strategist pass: #61 PDF email attachment [S, HIGH — closes the largest competitor-parity gap], #62 year-end tax summary [S, HIGH retention during the highest-churn-risk window], #63 quick-pick recent clients [XS, MEDIUM activation], #64 aging receivables widget [S, MEDIUM retention/professionalism], #65 save-as-template + template gallery [S, MED-HIGH activation/retention]. (c) **3 new [MARKETING] items in TODO_MASTER (#42-#44)** — Google Search Console verification + sitemap submission, listicle outreach for backlinks, LinkedIn cold-outbound to Operations/Eng directors hiring freelancers. (d) **6 new SSRF guard tests** added to `tests/webhook-outbound.test.js` (IPv6 fc00/fd00/fe80, IPv4-mapped-to-private, 0.0.0.0/8, literal `metadata` short-name) — defence-in-depth regression-guard on `lib/outbound-webhook.js`'s SSRF branches. (e) **UX audit fixes** — `views/auth/login.ejs` submit button now reads `Log in →` (matches register's arrow style); `views/dashboard.ejs` `+ New Invoice` → `+ New invoice` sentence-case + a11y wrap on the `+` glyph. Full suite now **33 files, 0 failures** (was 32 last cycle).
+> **Audited:** 2026-04-27 PM-2 (Task Optimizer cycle, 7th pass). This cycle's deltas: (a) **#63 closed** — quick-pick recent clients dropdown on the invoice form shipped end-to-end. New `db.getRecentClientsForUser(userId, limit=10)` (DISTINCT ON dedupe by lowercased email-then-name, recency-first, limit clamped to [1,50]); new `loadRecentClients` adapter in `routes/invoices.js` (returns [] on DB failure — defence-in-depth so a Postgres outage in the secondary lookup never blocks the form); `views/invoice-form.ejs` renders an Alpine `<select>` only when `recentClients.length > 0`, picker fills client name/email/address via `x-model` with no server round-trip; new `tests/recent-clients.test.js` (6 assertions including a regression guard for the DB-failure fallback). (b) **5 new [GROWTH] items (#66-#70)** from this cycle's Growth Strategist pass: #66 auto-CC accountant on every invoice email [XS, MED-HIGH retention/switching-cost — gated on Resend key], #67 tip-on-pay toggle for Pay links [S, MED revenue lift on creator/individual-client segment], #68 customisable invoice email template [S, MED retention; pairs with #15 branding], #69 embeddable Pay-this-invoice JS widget [M, MED-HIGH virality; gated on #43], #70 receipt PDF for paid invoices [S, MED professionalism signal; complements #61]. (c) **2 new [MARKETING] items in TODO_MASTER (#45-#46)** — indie/freelancer Slack + Discord community presence, 60-second YouTube product walkthrough video (evergreen SEO + landing). (d) **UX direct fixes** — `views/index.ejs` pricing card free tier "3 invoices total" → "Up to 3 invoices" (clearer cap copy); `views/dashboard.ejs` empty-state Pro callout reworded from "auto-generates a Stripe Pay button" technical phrasing to "Pro adds a 'Pay now' button to every invoice — clients pay in one click via Stripe"; `views/invoice-view.ejs` "Mark as Paid" promoted to a solid green primary CTA when invoice status is `sent` or `overdue` (was a low-prominence bordered green-text button; restores visual hierarchy at the highest-leverage conversion moment for the freelancer). Test updated to match new dashboard copy (`tests/onboarding.test.js`). Full suite now **34 files, 0 failures** (was 33 last cycle).
 >
-> Prior DONE items remain inline-tagged (kept for context; **archive trigger remains 1.5k lines** — currently at ~1.95k lines after this cycle's net additions; **archive sweep is now overdue by 2 cycles** — every line of [DONE] resolution text is valuable as historical context but old enough to compress into a `master/CHANGELOG_ARCHIVE.md` next cycle). Priority order: **[TEST-FAILURE] (none) > income-critical features > [UX] items that affect conversion > [HEALTH] > [GROWTH] > [BLOCKED]**. Complexity tags: [XS] < 30 min · [S] < 2 hrs · [M] 2–8 hrs · [L] > 8 hrs. Duplicates checked against `TODO.md` and `TODO_MASTER.md` — none introduced this cycle. The 5 new [GROWTH] items were checked for overlap against all 60 prior items and the entire TODO_MASTER tree before adding.
+> Prior DONE items remain inline-tagged (kept for context; **archive trigger remains 1.5k lines** — currently at ~2.0k lines after this cycle's net additions; **archive sweep is now overdue by 3 cycles** — every line of [DONE] resolution text is valuable as historical context but old enough to compress into a `master/CHANGELOG_ARCHIVE.md` next cycle). Priority order: **[TEST-FAILURE] (none) > income-critical features > [UX] items that affect conversion > [HEALTH] > [GROWTH] > [BLOCKED]**. Complexity tags: [XS] < 30 min · [S] < 2 hrs · [M] 2–8 hrs · [L] > 8 hrs. Duplicates checked against `TODO.md` and `TODO_MASTER.md` — none introduced this cycle. The 5 new [GROWTH] items (#66-#70) were checked for overlap against all 65 prior items and the entire TODO_MASTER tree before adding: #66 vs #11 (different cohorts), #67 unique, #68 vs #15 (distinct: branding=logo+color; #68=email-body text), #69 vs #43 (#69 is gated on #43), #70 vs #61 (#61 attaches PDF; #70 is a separate post-payment receipt). TODO_MASTER reviewed: #38 (OG image asset) and #39 (APP_URL env) remain genuinely open and Master-pending — no items flip to [LIKELY DONE - verify] this cycle.
 
 Do not duplicate items already in `TODO.md`. App labels indicate which codebase each task applies to.
 
 ---
 
-## OPEN TASK INDEX (priority order, post-2026-04-26 PM-2 audit)
+## OPEN TASK INDEX (priority order, post-2026-04-27 PM-2 audit)
 
 **[UX] — affects conversion, fix sooner**
 - **U1** [UX] [M] — Self-serve password reset flow (stopgap shipped; full flow blocked on Resend key + 4 routes + 2 views + tests)
 - **U3** [UX] [S] — Authed pages have no global footer with pricing / settings / log-out / legal links. Once #28 (legal pages) ships, build a `views/partials/footer.ejs` and include it on `dashboard`, `invoice-view`, `invoice-form`, `settings`, and the auth pages.
 - **U4** [UX] [S] — The "Preview Pay Link" action button on `views/invoice-view.ejs` is structurally redundant with the dedicated "Payment Link" copy-link card further down the page. Consolidate to one surface (keep the copy-link card OR move the URL-copy card into the action bar).
-  *(U2 closed 2026-04-26 PM. #37 closed 2026-04-26 PM-2 UX audit. #41 closed 2026-04-26 PM-2.)*
+  *(U2 closed 2026-04-26 PM. #37 closed 2026-04-26 PM-2 UX audit. #41 closed 2026-04-26 PM-2. 2026-04-27 PM-2 UX audit fixed three items directly without opening new [UX] tasks: pricing free-tier cap copy clarified, empty-state Pro callout reworded for benefit-first phrasing, "Mark as Paid" promoted to primary CTA when invoice is sent/overdue.)*
 
 **Income-critical [GROWTH] — XS first (highest impact-per-effort)**
-- **#63** [XS] — Quick-pick recent clients dropdown on invoice form (activation lift)
+- **#66** [XS] — Auto-CC accountant on every invoice email (Pro feature) (MED-HIGH retention/switching-cost; gated on Resend key going live)
 - **#44** [XS] — In-app "✨ What's new" changelog widget in nav (retention)
 - **#45** [XS] — Last-day urgency dashboard banner for trial users (HIGH; pairs with #29)
 - **#52** [XS] — JSON-LD `SoftwareApplication` schema on landing + niche pages (MED-HIGH SEO; pairs with #36)
@@ -28,6 +28,9 @@ Do not duplicate items already in `TODO.md`. App labels indicate which codebase 
   *(#36 closed 2026-04-27 — OG/Twitter Card metadata shipped end-to-end + 10 new tests; TODO_MASTER #38/#39 added for Master to drop in branded image + APP_URL. #56 closed 2026-04-27 PM — robots.txt + canonical link tag + meta robots noindex on authed pages + 17 new tests in `tests/robots-and-canonical.test.js`. Pairs with #36 — every shared link now carries a canonical pointer to the canonical domain in addition to the rich OG preview.)*
 
 **Income-critical [GROWTH] — S complexity**
+- **#67** [S] — Tip-on-pay toggle for invoice Pay links (Pro; MED revenue lift on creator/individual-client segment)
+- **#68** [S] — Customisable invoice email template (Pro; MED retention; pairs with #15 branding)
+- **#70** [S] — Receipt PDF for paid invoices (MED; professionalism signal; complements #61)
 - **#61** [S] — Attach invoice PDF to invoice email (HIGH; AP departments require attached PDF for filing)
 - **#62** [S] — Year-end tax summary PDF + email for Pro users (HIGH retention; saves the freelancer 2-3 hrs at tax time)
 - **#65** [S] — "Save invoice as template" + template gallery on invoice form (MED-HIGH activation + retention)
@@ -56,6 +59,7 @@ Do not duplicate items already in `TODO.md`. App labels indicate which codebase 
 - **#51** [S] — Schedule invoice send for a future date (MED-HIGH; reuses cron infra)
 
 **Income-critical [GROWTH] — M / L (larger; plan deliberately)**
+- **#69** [M] — Embeddable "Pay this invoice" JS widget for freelancer websites (MED-HIGH virality; gated on #43)
 - **#60** [M] — Demo-mode dashboard at `/demo` (HIGH; removes #1 conversion blocker — no signup required)
 - **#50** [M] — Quote/Estimate flow with one-click "Convert to invoice" (HIGH; B2B switching-cost lift)
 - **#53** [M] — Resend webhook integration: surface "client opened invoice" on dashboard (HIGH; behavioural signal)
@@ -76,6 +80,7 @@ Do not duplicate items already in `TODO.md`. App labels indicate which codebase 
 - **H11** [S] — Pagination on `getInvoicesByUser` (bundle with #14 next dashboard touch)
 - **H16** [XS] — `resend@^6.12.2` → patched svix when `^6.13` lands (transitive `uuid` advisory; runtime exposure nil)
 - **H17** [XS] — Partial index `idx_users_trial_nudge_pending ON users(trial_ends_at) WHERE trial_nudge_sent_at IS NULL` to back the new trial-nudge query (bundle with next `users` migration)
+- **H18** [XS] — Expression index `idx_invoices_recent_clients ON invoices(user_id, LOWER(COALESCE(NULLIF(client_email, ''), client_name))) WHERE client_name IS NOT NULL AND client_name <> ''` to back the new recent-clients dropdown query (#63). The existing `idx_invoices_user_id` already supports the WHERE clause; this expression index makes the DISTINCT-ON dedupe sortable from the index. Today's user-table scale (a few hundred invoices per Pro user) makes this a non-issue; flagged for the next migration.
 
 **[BLOCKED] / Long-running** (kept at bottom — see BLOCKED section below)
 - **#11** [L] — Churn Win-Back Email Sequence (UNBLOCKED — needs RESEND_API_KEY in prod)
@@ -308,6 +313,33 @@ New `tests/plan-check-constraint.test.js` adds 7 static-lint assertions: (1) the
 **Fix:** `npm i resend@^6.1.3` (semver downgrade — note the audit fix's recommended version is *lower* than current because resend `6.2.0+` pulled in the affected svix range). Confirm `lib/email.js` `sendEmail` happy path still works against the downgraded SDK (the public `Resend(...).emails.send({...})` API has been stable across the 6.x line). Or: wait for `resend@^6.13` which is expected to pin the patched `svix@>=1.92`.
 **Effort:** Very Low (bump + run full `npm test` + manual mark-sent smoke).
 **Why not auto-fixed in this audit:** Same reasoning as H9 (bcrypt) — Resend is the email transport for invoice send + reminder emails (the Pro feature). A regression in the SDK's send API is income-relevant. Worth a dedicated commit so any rate-limit or payload-shape change can be cleanly attributed. Runtime exposure is nil; this is install-time/library-hygiene only.
+
+---
+
+### H18. [HEALTH] Expression index to back recent-clients dropdown query (added 2026-04-27 PM-2 audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** TRIVIAL (today) / LOW (future) — `db.getRecentClientsForUser(userId, limit)` (added in #63) runs once per `GET /invoices/new` and `GET /:id/edit`. The query filters `WHERE user_id = $1 AND client_name IS NOT NULL AND client_name <> ''` then sorts a `DISTINCT ON (LOWER(COALESCE(NULLIF(client_email, ''), client_name)))`. The existing `idx_invoices_user_id` covers the WHERE clause but not the dedupe expression — Postgres still has to sort the user's filtered rows by the lowercase expression to apply DISTINCT ON. At today's scale (Pro users have tens to low hundreds of invoices) this is sub-millisecond; once a single user grows past ~5k invoices the sort cost becomes noticeable on every form load (still single-digit ms — not user-visible).
+**Effort:** Very Low
+**Sub-tasks:**
+1. Add to `db/schema.sql`: `CREATE INDEX IF NOT EXISTS idx_invoices_recent_clients ON invoices(user_id, LOWER(COALESCE(NULLIF(client_email, ''), client_name))) WHERE client_name IS NOT NULL AND client_name <> '';` — expression + partial index. Idempotent.
+2. Bundle with the next migration that touches `invoices` so a single `psql -f db/schema.sql` lands all queued schema changes (candidates: H8 composite `(user_id, status)`, the reminder-job partial index already shipped with #16, etc.).
+3. No tests needed — query semantics unchanged; this is purely an index hint for the planner.
+
+**Why not now:** Single form-load cost is sub-ms today. Bundling with the next column-add minimises Master deploy steps.
+
+---
+
+### H19. [DONE 2026-04-27 PM-2] [HEALTH] XSS hardening on invoice-form Alpine init (added 2026-04-27 PM-2 audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** LOW (caught at code-review time, never shipped). When wiring up the recent-clients dropdown (#63), the initial `clientName` / `clientEmail` / `clientAddress` Alpine state was emitted via `<%- JSON.stringify(...) %>` (raw, unescaped) inside an inline `<script>` tag. JSON.stringify escapes JSON delimiters but does NOT escape the literal byte sequence `</script>` — so an attacker-controlled invoice field containing `</script><script>alert(1)</script>` would close the inline script tag and inject a fresh `<script>` block. The risk surface is low because the only way to set `client_name`/`client_email`/`client_address` on the invoice-form input is via the same authenticated user's POST (so the attacker needs to be the user themselves to inject into their OWN form render), but the code pattern is unsafe and would compound poorly if any future change rendered another user's input on the same page (e.g. a team-seats / shared-client view in #9 or #21).
+**Effort:** Trivial
+**Resolution (2026-04-27 PM-2):** Restructured `views/invoice-form.ejs` to pass the initial client fields as a third argument to `invoiceEditor(...)` via the `x-data` HTML attribute (where `<%= JSON.stringify(...) %>` HTML-escaping is correct — the browser un-escapes the attribute value back to canonical JSON before Alpine reads it). The inline `<script>` tag now only contains JS code with no user-data substitution; all user-controlled values reach Alpine through the safe attribute path. Defence-in-depth: the `invoiceEditor()` initialiser also `typeof === 'string'` checks each field before assignment, so even a malformed `initialClient` object can't crash the editor. `taxRate` was already in script context but is `Number()`-coerced server-side — the `<%= Number(invoice.tax_rate) %>` makes the safety explicit.
+
+Tests: `tests/recent-clients.test.js` continues to assert the recentClients data reaches the `invoiceEditor(...)` call (ensures the attribute serialisation didn't break). Full suite still 34 files, 0 failures.
+
+**Income relevance:** Indirect — closes a pre-deploy XSS regression on the same audit cycle that introduced it. Pairs with the existing `helmet()` CSP (H4 — DONE) which would have blunted the impact via `script-src 'self' 'unsafe-inline'`, but defence-in-depth at the source code level is preferable.
 
 ---
 
@@ -1655,7 +1687,7 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ---
 
-### 63. [GROWTH] Quick-pick recent clients dropdown on invoice form (added 2026-04-27 PM audit) [XS]
+### 63. [DONE 2026-04-27 PM-2] [GROWTH] Quick-pick recent clients dropdown on invoice form (added 2026-04-27 PM audit) [XS]
 
 **App:** QuickInvoice (Node.js)
 **Impact:** MEDIUM — most freelancers invoice the same 3-5 clients repeatedly. Today every new invoice requires re-typing client name, email, address from memory (or copy-pasting from the previous invoice). Adding a "Recent clients" dropdown above the client-name input (auto-populated from the last 10 distinct `client_email` values on the user's invoices) cuts the create-invoice flow from ~30 seconds to ~5 seconds for repeat clients. This is the highest-leverage activation/retention micro-feature still missing — every Pro user feels the friction multiple times per month.
@@ -1669,6 +1701,14 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 4. New `tests/recent-clients.test.js` (4 tests): query returns most-recent unique-by-email client; query returns empty array for new user; route exposes `recentClients` to the template; form template renders the dropdown only when `recentClients.length > 0` (regression guard against empty-state UI clutter).
 
 **Income relevance:** Activation lift on every invoice creation after the first. Reduces friction in the most-frequent action in the product. Compounds with retention (lower friction ⇒ more invoices created ⇒ more data ⇒ stickier user).
+
+**Resolution (2026-04-27 PM-2):** Implemented end-to-end. `db.js` adds `getRecentClientsForUser(userId, limit = 10)` — single SELECT against `invoices` using `DISTINCT ON (LOWER(COALESCE(NULLIF(client_email, ''), client_name)))` to dedupe by lowercased email (or name when no email), ordered by `created_at DESC` so the most-recent invoice to each unique client wins. The outer `ORDER BY created_at DESC LIMIT $2` then top-Ns the deduped list by recency. `limit` is clamped to `[1, 50]` defence-in-depth (parses with explicit radix; rejects NaN). `routes/invoices.js` wraps the new helper in a small `loadRecentClients(userId)` adapter that returns `[]` on any DB failure, so a Postgres outage in the recent-clients query never blocks the invoice form from rendering. `GET /new`, the `POST /new` validation-error re-render, the `POST /new` catch-branch re-render, and `GET /:id/edit` all `Promise.all` the recent-clients lookup with their other DB calls — adding the dropdown costs zero extra round-trip latency.
+
+`views/invoice-form.ejs` renders an Alpine `<select>` above the client name/email/address inputs **only when** `recentClients.length > 0` (regression-guarded by tests against an empty `<select>` shipping to first-time users). Selecting an option triggers `fillFromRecent()` — pure client-side, no network — which copies `client_name`, `client_email`, and `client_address` from the picked entry into the existing form fields via Alpine `x-model`. The user can still edit each field after fill. The full `recentClients` array is JSON-serialised into the `invoiceEditor()` initialiser so the picker handler doesn't need a server round-trip. Existing invoice/edit forms keep their original behaviour because `clientName`/`clientEmail`/`clientAddress` are seeded from `invoice.*` when editing.
+
+New `tests/recent-clients.test.js` (5 assertions): (1) DB-helper dedupe-by-lowercased-email + recency-first against an in-memory pg fake; (2) DB-helper returns `[]` for a new user; (3) `GET /invoices/new` exposes `recentClients` to the rendered template (asserts both the "Recent clients" label and a sample client name/email surface in the HTML); (4) template hides the dropdown wrapper + label when `recentClients = []` (regression guard for the empty-state UX); (5) template renders the dropdown wrapper, options, Alpine `x-model="picked"`, `@change="fillFromRecent()"`, and serialises the recentClients into the `invoiceEditor(...)` Alpine initialiser. Wired into `package.json` `test` script. Full suite: 34 test files (was 33), 0 failures.
+
+**[Master action]** none required — pure SELECT against the existing `invoices` table; no schema migration, no env var, no third-party dependency.
 
 ---
 
@@ -1705,6 +1745,95 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 6. New `tests/templates.test.js` (5 tests): save-as-template persists items + notes + tax_rate; list returns only the user's own templates (IDOR guard); delete is owner-scoped (IDOR guard); new-from-template pre-fills the form items; free-user POST returns 403 with upsell flash.
 
 **Income relevance:** Activation + retention double-up. Every minute saved on invoice creation is repeated dozens of times per month per Pro user. Templates also create a small switching-cost moat — a user with 5+ saved templates is less likely to migrate. Adds a concrete bullet to the Pro upgrade modal copy ("save reusable invoice templates") that resonates with retainer/agency users.
+
+---
+
+### 66. [GROWTH] Auto-CC accountant on every invoice email (Pro feature) (added 2026-04-27 PM-2 audit) [XS]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MED-HIGH retention — every freelancer who works with an accountant currently forwards each invoice email to them by hand (or sets up a Gmail filter, then breaks it the next time their accountant changes email). A single "Accountant email" field in `/billing/settings` (Pro) that auto-BCCs every outgoing invoice email closes that loop. High switching cost once a Pro user has set it — uninstalling means re-rebuilding the forward chain. Zero perceived friction (the freelancer toggles it once and forgets).
+**Effort:** Very Low
+**Prerequisites:** Email delivery (#13 — DONE) is live; Resend API key activated by Master.
+
+**Sub-tasks:**
+1. `db/schema.sql`: idempotent `ALTER TABLE users ADD COLUMN IF NOT EXISTS accountant_email VARCHAR(255);`. Bundle with the next migration that touches `users` to minimise Master deploy steps.
+2. `routes/billing.js POST /settings`: validate `accountant_email` with the same local@host regex used for `reply_to_email` (max 255). Reject if invalid; store via `db.updateUser`.
+3. `views/settings.ejs`: add a Pro-gated input under the existing `reply_to_email` field — "Auto-CC accountant" + tooltip explaining it's BCC, not CC (so clients don't see the email).
+4. `lib/email.js sendInvoiceEmail`: when `owner.accountant_email` is set AND `owner.plan` is Pro/Business/Agency, add it to the `bcc` field of the Resend payload. Resend's SDK `bcc` is `string | string[]`. Free-plan users with the field set (downgrade case) — silently ignore.
+5. `tests/email.test.js`: add 3 assertions — Pro user with accountant_email → BCC populated; Free user with accountant_email → no BCC (graceful downgrade); empty/null accountant_email → no BCC field on the payload.
+
+**Income relevance:** Switching-cost lever — every Pro user with a real accountant who sets this becomes much harder to churn. Tangible new bullet for the Pro upgrade modal copy ("Auto-CC your accountant on every invoice").
+
+---
+
+### 67. [GROWTH] Tip-on-pay toggle for invoice Pay links (Pro feature) (added 2026-04-27 PM-2 audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM — Stripe Payment Links support an optional "Adjustable tip" parameter (`adjustable_quantity` is for line items; the tip flag is a separate `payment_link.create` field that adds a tip selector to the Pay page). For freelancers in service categories where tipping is normal (creators, designers commissioned by individuals, photographers, writers), a 5-10% opt-in tip lift on every paid invoice compounds quickly. The freelancer toggles it per-invoice or per-account; the client sees the tip selector only when enabled. Zero impact on B2B clients who don't tip.
+**Effort:** Low
+**Prerequisites:** Stripe Payment Links are already live (INTERNAL_TODO #2 — DONE).
+
+**Sub-tasks:**
+1. `db/schema.sql`: idempotent `ALTER TABLE users ADD COLUMN IF NOT EXISTS pay_link_tip_enabled BOOLEAN DEFAULT false;` plus `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tip_enabled BOOLEAN DEFAULT NULL;` (per-invoice override; NULL inherits the user-level toggle). Bundle with next users-table migration.
+2. `views/settings.ejs`: Pro-gated toggle "Show optional tip on invoice payment pages" with a one-line "Most appropriate for creators / individual clients" hint.
+3. `views/invoice-form.ejs`: Pro-gated checkbox "Allow client to add a tip" defaulting to the user-level setting.
+4. `lib/stripe-payment-link.js createInvoicePaymentLink`: when the resolved `tip_enabled` flag is true, pass `payment_intent_data: { setup_future_usage: null }` and the Stripe Payment Link `custom_text` + `restrictions` for tip support. (Stripe's exact API: `payment_link.create({ allow_promotion_codes: true, ... })` does not currently expose tip directly — verify against the live SDK and either use `custom_fields` with a numeric tip input that's added to the line items in the webhook, or `payment_intent_data` adjustments. Spike this in a 30-min discovery before committing.)
+5. `tests/payment-link.test.js`: add 2 assertions — tip-enabled flag flows from user preference to the payment-link creation call; per-invoice override beats user-level default.
+
+**Income relevance:** Direct revenue lift on a sub-segment (creator economy). Pro-feature differentiator. Zero downside on B2B clients (the toggle is opt-in).
+
+---
+
+### 68. [GROWTH] Customisable invoice email template (Pro feature) (added 2026-04-27 PM-2 audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM — every Pro user currently sends the exact same boilerplate "Invoice X from Y" email body. Branding-conscious freelancers (designers, agencies, lawyers) want to control the email body's tone — formal vs. casual, with their own thank-you line, payment-terms reminder, etc. Pro feature with a tangible "your tool, your voice" appeal that resonates with the same persona who pays for #15 (custom logo/color branding).
+**Effort:** Low
+**Prerequisites:** Email delivery (#13) is DONE.
+
+**Sub-tasks:**
+1. `db/schema.sql`: `ALTER TABLE users ADD COLUMN IF NOT EXISTS invoice_email_subject_template TEXT;` and `... invoice_email_body_template TEXT;`. Bundle with next users-table migration.
+2. `views/settings.ejs`: Pro-gated textareas for "Invoice email subject template" and "Invoice email body template" with a {{placeholder}} legend (`{{invoice_number}}`, `{{client_name}}`, `{{business_name}}`, `{{total}}`, `{{due_date}}`, `{{pay_link}}`).
+3. `lib/email.js`: extend `buildInvoiceSubject` / `buildInvoiceHtml` to interpolate the user's templates when present, falling back to the existing defaults when null. Strict whitelist of placeholder names (no arbitrary template eval — defence against template-injection XSS even when the source is user-controlled).
+4. `routes/billing.js POST /settings`: cap each template at 2000 chars. Strip raw HTML from the body template — render it as escaped text wrapped in `<p>` tags (same escapeHtml pipeline as existing invoice body). Reject if > 2000 chars or if the body contains `<script` (defence-in-depth).
+5. `tests/email.test.js`: add 4 assertions — subject template interpolation happy path; body template interpolation happy path; template with `<script>` is rejected at save time; template with unknown `{{xyz}}` placeholder leaves it literal (doesn't crash).
+
+**Income relevance:** Pro power-user retention. Branding-tier users feel the product is "theirs" rather than "QuickInvoice's." Same retention dynamic as #15 (logo + color).
+
+---
+
+### 69. [GROWTH] Embeddable "Pay this invoice" JS widget for freelancer websites (added 2026-04-27 PM-2 audit) [M]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MED-HIGH virality — Calendly's growth was driven by the embeddable widget on every freelancer's website becoming a passive ad. Offer a `<script>` tag every Pro freelancer can paste on their site: "Pay your latest invoice" widget that fetches the most recent unpaid invoice for a slug-identified user and renders a Pay button + amount. Each embed is a passive distribution touchpoint. Compounds with #43 (public read-only invoice URL) — the widget is just a styled fetch + button on top of #43.
+**Effort:** Medium (gated on #43)
+**Prerequisites:** #43 (public read-only invoice URL `/i/:token`) — currently OPEN. #69 is gated until that ships.
+
+**Sub-tasks:**
+1. `routes/landing.js GET /embed.js`: serve a small, cached vanilla-JS file that exports `window.QuickInvoice.renderPayButton({ user_slug, container, brand_color })`. Reads the public-invoice JSON from `GET /api/i/:token/latest` (a thin public-read wrapper around #43). No dependencies — single iframe-free script.
+2. `views/settings.ejs`: Pro-gated "Embed code" section with a copy-to-clipboard button containing the user's snippet.
+3. `routes/landing.js`: `GET /api/i/:slug/latest` returns `{ amount, currency, pay_link_url, invoice_number, due_date, status }` for the most recent unpaid invoice belonging to `slug`. CORS-allow `*` because this is a fetch from any freelancer's domain.
+4. `lib/css-budget`: keep the rendered widget under 4 KB minified — power users will reject anything heavier on their site.
+5. `tests/embed-widget.test.js`: 5 assertions — embed.js served with long Cache-Control; CORS headers correct; latest endpoint returns correct shape; latest endpoint returns 404 on bogus slug; widget renders Pay button only when payment_link_url is present.
+
+**Income relevance:** Each embed is a free, indefinitely-running distribution touchpoint on the freelancer's most-trafficked surface (their personal site). Particularly valuable for content-creator freelancers who already have audience.
+
+---
+
+### 70. [GROWTH] Receipt PDF for paid invoices (added 2026-04-27 PM-2 audit) [S]
+
+**App:** QuickInvoice (Node.js)
+**Impact:** MEDIUM — once an invoice flips to `paid`, the freelancer often needs to send the client a "receipt" or "paid statement" — a separate document confirming payment was received. Today the freelancer either re-sends the same invoice with a "PAID" stamp (unprofessional) or reaches into their accounting software. Adding a `GET /invoices/:id/receipt` route that renders a styled "Receipt for INV-X — Paid in full on YYYY-MM-DD" page (HTML + print-to-PDF via the existing `invoice-print.ejs` pattern) fills that gap.
+**Effort:** Low
+**Prerequisites:** None — reuses existing print/render infra.
+
+**Sub-tasks:**
+1. New `views/invoice-receipt.ejs` — based on `invoice-print.ejs` but with a "PAID IN FULL" banner across the top, payment-received date pulled from `updated_at` (or a future `paid_at` column when #49 lands), and the same line-item table.
+2. `routes/invoices.js GET /:id/receipt` — auth + ownership guard (same as `/print`); render only when `status === 'paid'` (else flash "Invoice not yet paid" + redirect to `/invoices/:id`). Pass through `noindex: true`.
+3. `views/invoice-view.ejs` — when `invoice.status === 'paid'`, surface a "Send Receipt" button next to the existing "Print" button. Mailto: link with the receipt URL pre-filled in the body, OR (Pro+) a one-click "Email receipt to client" that reuses `sendInvoiceEmail` with a subject "Receipt for INV-X — Paid".
+4. `tests/receipt.test.js`: 4 assertions — owner can render receipt for paid invoice; non-paid invoice → redirect with flash; IDOR (non-owner) → /dashboard; receipt body includes "PAID IN FULL" banner.
+
+**Income relevance:** Professionalism signal that B2B-buyer freelancers care about (clients want a paper trail; agencies need it for audit). Complements #61 (PDF attached to invoice email) by closing the post-payment side of the same loop.
 
 ---
 

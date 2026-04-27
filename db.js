@@ -215,6 +215,35 @@ const db = {
     return rows[0] || null;
   },
 
+  /*
+   * Returns up to `limit` most-recent unique clients for a user, deduplicated
+   * by email-then-name. Powers the "quick-pick recent clients" dropdown on
+   * the invoice form (INTERNAL_TODO #63). DISTINCT ON groups by the
+   * lowercased email (or the lowercased name when email is missing) so two
+   * invoices to the same address don't produce two dropdown entries even if
+   * the freelancer typed the email with different casing.
+   */
+  async getRecentClientsForUser(userId, limit = 10) {
+    const cap = Math.max(1, Math.min(50, parseInt(limit, 10) || 10));
+    const { rows } = await pool.query(
+      `SELECT client_name, client_email, client_address
+         FROM (
+           SELECT DISTINCT ON (LOWER(COALESCE(NULLIF(client_email, ''), client_name)))
+                  client_name, client_email, client_address, created_at
+             FROM invoices
+            WHERE user_id = $1
+              AND client_name IS NOT NULL
+              AND client_name <> ''
+            ORDER BY LOWER(COALESCE(NULLIF(client_email, ''), client_name)),
+                     created_at DESC
+         ) AS uniq
+         ORDER BY created_at DESC
+         LIMIT $2`,
+      [userId, cap]
+    );
+    return rows;
+  },
+
   async getNextInvoiceNumber(userId) {
     const { rows } = await pool.query(
       'SELECT COUNT(*) as count FROM invoices WHERE user_id=$1',

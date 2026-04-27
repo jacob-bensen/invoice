@@ -56,9 +56,15 @@
       <form action="/invoices/<%= invoice.id %>/status" method="POST" class="inline">
         <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
         <input type="hidden" name="status" value="paid">
-        <button class="border border-green-300 text-green-700 font-semibold px-5 py-2.5 rounded-lg hover:bg-green-50 transition">
-          ✅ Mark as Paid
-        </button>
+        <% if (invoice.status === 'sent' || invoice.status === 'overdue') { %>
+          <button class="bg-green-600 text-white font-semibold px-5 py-2.5 rounded-lg hover:bg-green-700 transition flex items-center gap-2">
+            ✅ Mark as Paid
+          </button>
+        <% } else { %>
+          <button class="border border-green-300 text-green-700 font-semibold px-5 py-2.5 rounded-lg hover:bg-green-50 transition">
+            ✅ Mark as Paid
+          </button>
+        <% } %>
       </form>
     <% } %>
     <form action="/invoices/<%= invoice.id %>/delete" method="POST" class="inline"

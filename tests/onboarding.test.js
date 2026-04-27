@@ -336,15 +336,23 @@ function testEmptyStateProTipShownToFreeUsers() {
     invoices: [],
     user: { plan: 'free', invoice_count: 0, subscription_status: null }
   });
-  assert.match(html, /Pro tip:/, 'Free user empty state must include the Pro tip');
+  // The Pro callout in the empty state was reworded 2026-04-27 PM-2 from
+  // "Pro tip: with Pro, every invoice auto-generates a Stripe Pay button..."
+  // to the more concrete, action-oriented "Pro adds a 'Pay now' button to
+  // every invoice — clients pay in one click via Stripe." The regression
+  // guards now key off the action-button language ("Pay now" button) and
+  // the trial CTA copy, both of which are the load-bearing parts of the
+  // upsell.
+  assert.match(html, /Pro adds a/,
+    'Free user empty state must include the Pro upsell callout');
+  assert.match(html, /["“]Pay now["”]\s*<\/strong>?\s*button|"Pay now" button/,
+    'Empty-state callout must reference the concrete "Pay now" button benefit');
   assert.match(html, /Try Pro free for 7 days/,
-    'Pro tip must include the "Try Pro free for 7 days" CTA copy');
+    'Empty-state callout must include the "Try Pro free for 7 days" CTA copy');
   assert.match(html, /href=["']\/billing\/upgrade["']/,
-    'Pro tip CTA must link to /billing/upgrade');
-  // Stripe Pay button language is the actual differentiator surfaced — verify
-  // we don't silently soften the value prop.
-  assert.match(html, /Stripe Pay button/,
-    'Pro tip must reference the Stripe Pay button (the concrete Pro feature)');
+    'Empty-state CTA must link to /billing/upgrade');
+  assert.match(html, /Stripe/,
+    'Empty-state callout must mention Stripe (the concrete payment processor)');
 }
 
 function testEmptyStateProTipHiddenForPaidPlans() {
@@ -353,19 +361,19 @@ function testEmptyStateProTipHiddenForPaidPlans() {
       invoices: [],
       user: { plan, invoice_count: 0, subscription_status: 'active' }
     });
-    assert.ok(!/Pro tip:/.test(html),
-      `${plan} users must NOT see the Pro tip in the empty state (already paid)`);
+    assert.ok(!/Pro adds a/.test(html),
+      `${plan} users must NOT see the Pro callout in the empty state (already paid)`);
     assert.ok(!/Try Pro free for 7 days/.test(html),
       `${plan} users must NOT see the trial CTA in the empty state`);
   }
 }
 
 function testEmptyStateProTipHiddenWhenInvoicesExist() {
-  // The Pro tip is bound to the "no invoices yet" empty state — once a Free
-  // user creates an invoice, the empty-state container is replaced with the
-  // stats grid, and the upsell shifts to the contextual upgrade modal /
-  // pricing page. Defence-in-depth check that the regex doesn't match
-  // anywhere outside the empty-state branch.
+  // The Pro callout is bound to the "no invoices yet" empty state — once a
+  // Free user creates an invoice, the empty-state container is replaced
+  // with the stats grid, and the upsell shifts to the contextual upgrade
+  // modal / pricing page. Defence-in-depth check that the regex doesn't
+  // match anywhere outside the empty-state branch.
   const html = renderDashboard({
     invoices: [{
       id: 1, invoice_number: 'INV-1', client_name: 'Acme', total: '100.00',
@@ -374,8 +382,8 @@ function testEmptyStateProTipHiddenWhenInvoicesExist() {
     }],
     user: { plan: 'free', invoice_count: 1, subscription_status: null }
   });
-  assert.ok(!/Pro tip:/.test(html),
-    'Pro tip must not appear once the user has any invoices (empty-state branch is gone)');
+  assert.ok(!/Pro adds a/.test(html),
+    'Pro callout must not appear once the user has any invoices (empty-state branch is gone)');
 }
 
 async function testDismissHandlerCallsDbAndRedirects() {

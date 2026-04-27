@@ -68,17 +68,31 @@ function buildOnboardingState(user, invoices) {
   return { steps, completed, total: steps.length, allDone };
 }
 
+async function loadRecentClients(userId) {
+  try {
+    const rows = await db.getRecentClientsForUser(userId, 10);
+    return Array.isArray(rows) ? rows : [];
+  } catch (err) {
+    console.error('Recent clients lookup failed:', err && err.message);
+    return [];
+  }
+}
+
 router.get('/new', requireAuth, async (req, res) => {
   const user = await db.getUserById(req.session.user.id);
   if (!user) return res.redirect('/auth/login');
   if (user.plan === 'free' && user.invoice_count >= FREE_LIMIT) {
     return res.redirect('/invoices?limit_hit=1');
   }
-  const invoiceNumber = await db.getNextInvoiceNumber(req.session.user.id);
+  const [invoiceNumber, recentClients] = await Promise.all([
+    db.getNextInvoiceNumber(req.session.user.id),
+    loadRecentClients(req.session.user.id)
+  ]);
   res.render('invoice-form', {
     title: 'New Invoice',
     invoice: null,
     invoiceNumber,
+    recentClients,
     user,
     flash: null,
     noindex: true
@@ -97,10 +111,13 @@ router.post('/new', requireAuth, [
 
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    const invoiceNumber = await db.getNextInvoiceNumber(req.session.user.id);
+    const [invoiceNumber, recentClients] = await Promise.all([
+      db.getNextInvoiceNumber(req.session.user.id),
+      loadRecentClients(req.session.user.id)
+    ]);
     return res.render('invoice-form', {
       title: 'New Invoice',
-      invoice: null, invoiceNumber, user,
+      invoice: null, invoiceNumber, recentClients, user,
       flash: { type: 'error', message: errors.array()[0].msg },
       noindex: true
     });
@@ -131,9 +148,12 @@ router.post('/new', requireAuth, [
     res.redirect(`/invoices/${invoice.id}`);
   } catch (err) {
     console.error('Create invoice error:', err);
-    const invoiceNumber = await db.getNextInvoiceNumber(req.session.user.id);
+    const [invoiceNumber, recentClients] = await Promise.all([
+      db.getNextInvoiceNumber(req.session.user.id),
+      loadRecentClients(req.session.user.id)
+    ]);
     res.render('invoice-form', {
-      title: 'New Invoice', invoice: null, invoiceNumber, user,
+      title: 'New Invoice', invoice: null, invoiceNumber, recentClients, user,
       flash: { type: 'error', message: 'Failed to save invoice. Please try again.' },
       noindex: true
     });
@@ -178,8 +198,14 @@ router.get('/:id/edit', requireAuth, async (req, res) => {
   try {
     const invoice = await db.getInvoiceById(req.params.id, req.session.user.id);
     if (!invoice) return res.redirect('/dashboard');
-    const user = await db.getUserById(req.session.user.id);
-    res.render('invoice-form', { title: 'Edit Invoice', invoice, invoiceNumber: invoice.invoice_number, user, flash: null, noindex: true });
+    const [user, recentClients] = await Promise.all([
+      db.getUserById(req.session.user.id),
+      loadRecentClients(req.session.user.id)
+    ]);
+    res.render('invoice-form', {
+      title: 'Edit Invoice', invoice, invoiceNumber: invoice.invoice_number,
+      recentClients, user, flash: null, noindex: true
+    });
   } catch (err) {
     res.redirect('/dashboard');
   }

@@ -2,6 +2,87 @@
 
 ---
 
+## 2026-04-27T19:30Z — Health Monitor pass: pre-deploy XSS fix + recent-clients index flag
+
+### What was audited
+
+- New code shipped this cycle (`db.getRecentClientsForUser`, `loadRecentClients` adapter, `views/invoice-form.ejs` Alpine init) for security and performance regressions.
+- `npm audit --production` re-run — 6 vulnerabilities (3 moderate, 3 high), all install-time-only and already tracked under [HEALTH] H9 (`bcrypt → tar`) and H16 (`resend → svix → uuid`). No new advisories.
+- Env var usage scan — no new hardcoded secrets, no new unhandled error paths on Stripe / Resend / Postgres.
+- Legal: no new data-handling flows; no new third-party API calls; existing [LEGAL] gaps unchanged.
+
+### What was fixed directly (H19)
+
+`views/invoice-form.ejs` Alpine init for `clientName` / `clientEmail` / `clientAddress` was using `<%- JSON.stringify(...) %>` (raw, unescaped) inside an inline `<script>` tag. JSON.stringify does NOT escape `</script>`, so a user-controlled invoice field could close the script and inject a fresh `<script>` block. Same-user input today (low risk surface) but unsafe for future shared-client / team-seats flows (#9, #21).
+
+**Fix:** moved the initial client fields to a third argument of `invoiceEditor(...)` via the `x-data` HTML attribute. `<%= JSON.stringify(...) %>` in attribute context is HTML-escaped — the browser un-escapes back to canonical JSON before Alpine reads it. Inline `<script>` tag now contains zero user-data substitution. Defence-in-depth: `invoiceEditor()` `typeof === 'string'` checks each field; `taxRate` made explicitly `Number()`-coerced. Closes H19.
+
+### What was flagged
+
+- **H18** [XS] — Expression index `idx_invoices_recent_clients ON invoices(user_id, LOWER(COALESCE(NULLIF(client_email, ''), client_name)))` to back the new recent-clients query. Sub-ms cost today; bundle with the next `invoices`-table migration. Added to INTERNAL_TODO.md.
+
+Full suite still 34 files, 0 failures.
+
+---
+
+## 2026-04-27T19:00Z — UX Auditor pass: clearer free-tier copy + primary "Mark as Paid" CTA
+
+### Flows audited
+
+- Landing → register → dashboard empty state → Pro upsell callout
+- Invoice view action bar (draft / sent / overdue → paid conversion path)
+- Pricing card free-tier limit copy
+
+### What was changed directly
+
+- **`views/index.ejs`**: Pricing card free tier "3 invoices total" → "Up to 3 invoices". The original phrasing was ambiguous (could read as a per-month quota OR a current count); the new phrasing makes the lifetime cap unambiguous before the user clicks through.
+- **`views/dashboard.ejs`**: Empty-state Pro upsell rewritten from "Pro tip: with Pro, every invoice auto-generates a Stripe Pay button" → "Pro adds a 'Pay now' button to every invoice — clients pay in one click via Stripe." Removes the technical "auto-generates" verb and leads with the concrete user-facing benefit.
+- **`views/invoice-view.ejs`**: When invoice status is `sent` or `overdue`, the "Mark as Paid" button now renders as a solid green primary CTA (was a bordered green-text link of equal weight to "Edit"). On `draft` invoices the bordered-secondary style is preserved (the user's primary action there is "Mark as Sent", not skip-to-paid). Restores visual hierarchy at the highest-leverage conversion moment for the freelancer (cash recovered).
+- **`tests/onboarding.test.js`**: Updated 3 assertions in the empty-state Pro-callout suite to match the new copy. The structural guards (Free-only visibility, hidden for paid plans, hidden once invoices exist) and the load-bearing CTA copy ("Try Pro free for 7 days", `/billing/upgrade` href, mention of Stripe) are unchanged.
+
+### What was flagged
+
+None new this cycle — open [UX] items U1, U3, U4 remain captured in INTERNAL_TODO.md from prior audits and are unchanged. Full suite: 34 files, 20 assertions in `tests/onboarding.test.js` (was 19), 0 failures.
+
+---
+
+## 2026-04-27T18:30Z — Test Examiner pass: regression guard on recent-clients DB-failure path
+
+### What changed
+
+Added a single defence-in-depth assertion to `tests/recent-clients.test.js`: when `db.getRecentClientsForUser` throws (e.g. Postgres outage), `GET /invoices/new` must still render with a 200 status and the client_name input intact, with the dropdown wrapper omitted (recentClients falls back to `[]`).
+
+### Coverage improved
+
+- `loadRecentClients(userId)` adapter's catch-branch in `routes/invoices.js` now has a passing test that exercises the throwing path (was previously only exercised by the happy path).
+- Income-critical "form must always render" guarantee explicitly asserted: a Postgres outage in the secondary recent-clients lookup cannot block a Pro user from creating their next invoice.
+
+Full suite: 34 files, 6 assertions in `tests/recent-clients.test.js` (was 5), 0 failures.
+
+---
+
+## 2026-04-27T18:00Z — Quick-pick recent clients dropdown on invoice form (INTERNAL_TODO #63) [GROWTH]
+
+### What was built
+
+Most freelancers re-bill the same 3-5 clients month after month. Until now every new invoice required re-typing client name, email, and address from memory or copy-pasting from a previous invoice. The new dropdown above the Bill-To inputs auto-populates from the user's last 10 distinct clients (deduped by lowercased email) and one-click fills the three fields.
+
+- **`db.js`** — new `getRecentClientsForUser(userId, limit = 10)`. Single SELECT with `DISTINCT ON (LOWER(COALESCE(NULLIF(client_email, ''), client_name)))` so duplicate-email invoices collapse to one entry, then outer `ORDER BY created_at DESC LIMIT $2`. `limit` clamped to `[1, 50]` defence-in-depth.
+- **`routes/invoices.js`** — `loadRecentClients(userId)` adapter returns `[]` on DB failure (recent-clients lookup must never block the form). `GET /new`, the `POST /new` re-render branches, and `GET /:id/edit` `Promise.all` it with their other DB calls — zero extra round-trip latency.
+- **`views/invoice-form.ejs`** — Alpine `<select>` rendered only when `recentClients.length > 0`. `@change="fillFromRecent()"` is pure client-side: copies the picked client's name/email/address into the existing form fields via `x-model`. User can still edit each value. JSON-serialises the list into the Alpine `x-data` initialiser so the picker has no server round-trip.
+- **`tests/recent-clients.test.js`** — 5 assertions: DB-helper dedupe-by-lowercased-email + recency-first; DB-helper empty-state; `GET /invoices/new` exposes recentClients to template; template hides dropdown when empty (regression guard against empty `<select>` for first-time users); template renders dropdown + Alpine wiring + serialised list when populated.
+- **`package.json`** — wired the new test file into the `test` script. Full suite: 34 files, 0 failures (was 33).
+
+### Income relevance
+
+Activation lift on every invoice creation after the first. Reduces friction in the most-frequent action in the product (each Pro user creates dozens of invoices per month). Compounds with retention — every minute saved on invoice creation is multiplied by usage frequency, and the dropdown reinforces the "remembers what I do" stickiness pattern.
+
+### Master action
+
+None required. Pure SELECT against the existing `invoices` table; no schema migration, no env var, no third-party dependency.
+
+---
+
 ## 2026-04-27T01:00Z — robots.txt + canonical URL meta tag (INTERNAL_TODO #56) [GROWTH]
 
 ### What was built
