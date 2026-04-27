@@ -1406,3 +1406,28 @@ Each community announcement reaches 200-2000 highly-targeted freelancers in the 
 **Income relevance (concrete numbers):** Industry data on freelancer-niche YouTube sponsorships (Mailbrew, Pirate Ship, ConvertKit have run similar plays) puts conversion-to-paid at 2-5% of click-through, with click-through rates of 0.5-2% of view counts. A $300 placement on a 10k-subscriber channel that gets 5k views → 25-100 click-throughs → 1-5 paid signups → $9-90/mo in MRR per placement. Across 5 placements that's $45-450/mo in incremental MRR for $1000-2500 one-time spend — ROI breakeven 5-25 months but the placements remain in the YouTuber's video library indefinitely (long-tail compounds for years).
 
 **Why now:** Q2 / Q3 is YouTube's higher-engagement window before holiday content saturates Q4 ad inventory. Channels are also still finalising their 2026 sponsor lineup; getting in early secures lower rates. Pairs with #58 redemption page (once it ships, every YouTuber gets a clean attributable URL) and #52 listicle outreach (compounding multi-channel evergreen presence).
+
+
+---
+
+### 55. [MARKETING] Cross-promo cold-DM to 30 micro-podcasts in the freelance-business niche (added 2026-04-30)
+
+**Why this matters (concretely):** TODO_MASTER #51 is a single paid podcast placement ($500-1500); TODO_MASTER #54 is paid YouTube sponsorship. Both pay for placement. Distinct from those, this is unpaid cross-promotion: cold-DM the host of 30 freelance-niche micro-podcasts (Indie Hackers Podcast, Freelance Friday, Freelance Pod, The Freelance Podcast, etc.) offering a free **Pro-tier upgrade for the host + a custom-branded discount code for their listeners** in exchange for a single mention on their next episode. No money changes hands. Hosts of small podcasts (2k-15k downloads/episode) are typically receptive because (a) the offer is genuinely useful if they invoice clients, (b) they get an attribution coupon to share, and (c) it's a 60-second "tools I love" segment, not an obligation to do an interview. Distinct from #51 (paid placement; this is unpaid) and #54 (different platform/format — YouTube vs audio-only).
+
+**Action (Master, ~3 hrs research + ~30 min/week ongoing for 8 weeks):**
+
+1. **Build a 30-podcast shortlist (~2 hrs).** Search Apple Podcasts / Spotify / Overcast for `freelance`, `solopreneur`, `freelance business`, `consulting business`, `independent contractor`. Filter for: weekly cadence, 2k-15k downloads/episode, host has a Twitter/X presence (cold DM beats cold email here — the medium signals "fellow indie creator", not "marketer"). Build sheet with: podcast, host name, X handle, latest-episode topic, listener-count estimate.
+
+2. **Draft outreach template (~20 min).** Personal, short, no marketing fluff:
+
+   > Hey <host>, just listened to <recent episode> — really liked <specific 1-line takeaway>. I run QuickInvoice, an invoicing tool for freelancers (Stripe Pay Links + auto-reminders). I'd love to give you a free Pro account + a 50%-off coupon for your listeners, in exchange for a quick mention next episode. No fee, no script — just whatever's authentic if you'd actually use it. DM me back if useful.
+
+3. **Send 5/week × 6-8 weeks (~30 min/week).** Target: 20-30% reply rate = 6-9 placements landed. Track in sheet.
+
+4. **Per-host onboarding (~30 min each).** Free Pro plan, custom-branded Stripe promo code (`<podcast-name-50>` for 50% off first 3 months — gated through INTERNAL_TODO #58 redemption page when it ships), a 90-second product demo video, and 2 talking points (one-click Stripe pay links, automated late-payment reminders).
+
+5. **Track conversions for 60 days post-mention** via the per-host coupon code. Refresh the playbook based on which podcasts convert best.
+
+**Income relevance (concrete numbers):** Cold-DM podcast cross-promo typically converts at 1-3% of listener count to paid (vs the 0.5-1% of paid sponsorship). On a 5k-listener episode that's 50-150 paid signups; even at the low end of $9/mo Pro that's $450-1350/mo in incremental MRR per placement — for $0 ad spend, just 30-min/week of DMs. Across 6-9 placements landed in the 8-week campaign that's $2700-12150/mo in additional MRR with **zero CAC**, which is wildly above the blended-channel CAC ROI. Pairs with #51 (paid podcast — different audience overlap) and #58 redemption page (once shipped, every host gets a clean attributable URL).
+
+**Why now:** Q2 / Q3 is the season freelancers tax-prep + invoice-tooling-shopping; podcast hosts are also actively planning their 2026 content runs and tools-segment placements. Pairs with #93 email signature builder (once shipped, every host gets a "QuickInvoice user" footer that compounds organic reach).

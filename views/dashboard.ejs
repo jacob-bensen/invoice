@@ -227,6 +227,7 @@
     </div>
 
     <!-- Invoice table -->
+    <% const isProUser = user && (user.plan === 'pro' || user.plan === 'agency'); %>
     <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden">
       <table class="w-full text-sm">
         <thead class="bg-gray-50 border-b border-gray-200">
@@ -236,6 +237,9 @@
             <th class="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
             <th class="text-right px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
             <th class="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+            <% if (isProUser) { %>
+              <th class="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide print:hidden">Pay link</th>
+            <% } %>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
@@ -258,6 +262,32 @@
                   <%= inv.status.charAt(0).toUpperCase() + inv.status.slice(1) %>
                 </span>
               </td>
+              <% if (isProUser) { %>
+                <td class="px-4 py-4 text-right print:hidden" onclick="event.stopPropagation()">
+                  <% if (inv.payment_link_url) { %>
+                    <span x-data="{ copied: false }" class="inline-flex">
+                      <button
+                        type="button"
+                        data-pay-link-url="<%= inv.payment_link_url %>"
+                        @click.stop="navigator.clipboard.writeText($event.currentTarget.dataset.payLinkUrl).then(() => { copied = true; setTimeout(() => copied = false, 2000); })"
+                        data-testid="copy-pay-link-<%= inv.id %>"
+                        :title="copied ? 'Copied to clipboard' : 'Copy payment link'"
+                        :aria-label="copied ? 'Payment link copied' : 'Copy payment link to clipboard'"
+                        class="inline-flex items-center gap-1.5 border border-gray-200 text-gray-600 hover:text-brand-700 hover:border-brand-300 hover:bg-brand-50 px-2.5 py-1.5 rounded-lg transition text-xs font-medium"
+                      >
+                        <svg x-show="!copied" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        <span x-show="!copied">Copy link</span>
+                        <svg x-show="copied" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span x-show="copied" class="text-green-600">Copied</span>
+                      </button>
+                    </span>
+                  <% } %>
+                </td>
+              <% } %>
             </tr>
           <% }) %>
         </tbody>

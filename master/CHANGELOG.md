@@ -2,6 +2,150 @@
 
 ---
 
+## 2026-04-30T10:10Z — Role 6 (Health Monitor): defence-in-depth XSS guard on payment_link_url Alpine handlers + clean cycle
+
+**What was audited (focused on this cycle's diff: dashboard.ejs + tests + 2 mailto changes):**
+
+- **Security review of the diff:**
+  - **`views/dashboard.ejs` new 6th column.** First inspection found a defence-in-depth concern: the original `@click.stop="navigator.clipboard.writeText('<%= inv.payment_link_url %>')..."` pattern interpolates `payment_link_url` directly into a JS string literal inside the Alpine `@click` attribute. EJS's `<%= %>` HTML-escapes the URL, so a single-quote becomes `&#39;` in the attribute source — but the browser un-escapes the attribute value back to `'` before passing it to Alpine as a JS expression. A hostile DB write or future code path that lets a user set `payment_link_url` (e.g. via form input) would create stored XSS via `'+alert(1)+'`. Today's data path has zero exploitability: `setInvoicePaymentLink(id, userId, url, linkId)` is only fed by `createInvoicePaymentLink(updated, user)` which uses Stripe's response URL, and Stripe URLs match `https://buy.stripe.com/[a-zA-Z0-9_]+` (no apostrophe / backslash / newline).
+  - **Fixed directly this cycle (XS, contained, safe):** moved the URL into a `data-pay-link-url` attribute and switched the `@click` handler to read via `$event.currentTarget.dataset.payLinkUrl` (dashboard) / `$root.querySelector('[data-pay-link-url]').dataset.payLinkUrl` (invoice-view). Browsers expose `dataset` values as plain strings — Alpine never evaluates them as JS expressions, so user-controlled bytes can never reach the JS interpreter. Same fix applied to the pre-existing `views/invoice-view.ejs` "Copy" button (`writeText('<%= invoice.payment_link_url %>')` → dataset read), eliminating the entire class from the codebase. Three new test assertions in `tests/dashboard-copy-pay-link.test.js` (defence-in-depth XSS-guard regression test): asserts the `data-pay-link-url` attribute exists with the URL, asserts the dataset-based handler shape, asserts NO call site interpolates `writeText('https?:` directly. Net: 16 assertions on the file (was 13), 11 tests still passing.
+  - **`views/auth/login.ejs` + `views/not-found.ejs` mailto subject lines.** Pure static-string changes (`?subject=Password%20reset%20request` and `?subject=Help%20with%20a%20broken%20link`). No interpolation, no user input path. Zero security surface.
+  - **New `tests/dashboard-copy-pay-link.test.js` and `tests/not-found-handler.test.js`.** Test code only — no production-runtime path. The 404 handler integration tests use a transient `http.createServer` + `server.listen(0)` per test with explicit `server.close()` in the resolve callback — no port leakage, no orphan sockets across test boundaries.
+
+- **`npm audit --production`:** 6 vulnerabilities (3 moderate, 3 high) — **all pre-existing**, all install-time only. `bcrypt → @mapbox/node-pre-gyp → tar` (3 high, install-time) tracked under [HEALTH] H9; `resend → svix → uuid` (3 moderate, install-time) tracked under H16. Runtime exposure remains nil. No new advisories surfaced this cycle (no new dependencies — all changes are pure-EJS / pure-JS in stdlib).
+
+- **Performance:** Zero new DB queries — `getInvoicesByUser` already SELECT *. The new 6th column adds ~60 bytes of HTML per Pro-user invoice row + ~30 bytes of Alpine state. For a 100-row Pro dashboard that's ~9 KB of HTML + ~3 KB of client-side memory — well within the existing R14 budget. No N+1, no missing indexes introduced. The `data-pay-link-url` attribute adds 1 string allocation per row (already there as the `value=` of the existing readonly input on `invoice-view.ejs`; pure HTML on `dashboard.ejs`).
+
+- **Code quality:** New helpers + new test files have clear single-responsibility boundaries. The new dashboard table block sits cleanly inside the existing branch structure — no nested conditionals beyond what the row already had. The 404-handler test file replays the handler verbatim on a minimal express app; that pattern can be reused for any future server.js-only handler tests if needed.
+
+- **Dependencies:** zero changes — no new `npm i`, no `package-lock.json` shifts.
+
+- **Legal:** No new dependencies, no license changes, no new user-data collection. The mailto subject prefills (`?subject=Password%20reset%20request` / `?subject=Help%20with%20a%20broken%20link`) are pure UX — no PII is sent automatically; the user types their reset request body in their own mail client. No PCI-DSS scope change (no payment surfaces touched). No GDPR / CCPA implications (no new tracking, no new collection, no new processor relationship). The new dashboard column displays an existing DB column to its rightful owner only (RBAC scoped to `WHERE user_id = $1`) — same access pattern as the rest of the dashboard.
+
+**No CRITICAL / hardcoded-secret findings. No new flags for TODO_MASTER.** The 8 existing open [HEALTH] items remain (H8 composite (user_id, status) index, H9 bcrypt bump, H10 parseInt radix, H11 pagination, H15 Promise.all, H16 resend bump, H17 trial-nudge partial index, H18 expression index for recent-clients, H20 currency-formatter DRY). All are bundle-with-next-migration / next-touch hygiene items, none are blocking work.
+
+**Net delta this cycle:** +1 [HEALTH] class fully eliminated (XSS-via-attribute-as-JS pattern); 0 new [HEALTH] items added. Strong defence-in-depth posture for a class of vulnerabilities that's notoriously hard to spot in EJS + Alpine codebases.
+
+---
+
+## 2026-04-30T09:55Z — Role 5 (Task Optimizer): 13th-pass audit — header refreshed, #91 archived, priority queue re-ordered
+
+**Audit deltas this pass:**
+- **#91 archived as [DONE]** at the entry-detail block above the [HEALTH] section. Retained the archive entry rather than excising entirely so the in-file regression history (mirrors CHANGELOG) survives if CHANGELOG ever rotates.
+- **Top of file metadata** rewritten: 12th-pass narrative folded into the "Compacted history" line; 13th-pass narrative now occupies the lead block. Cross-overlap rationale for #96-#100 written into both the audit header and the entries themselves so the next optimizer pass has the differentiation cached.
+- **Priority queue re-sorted** — #96 + #97 promoted to the top of the XS-GROWTH bucket (both are pure-form-change "trust artefact" wins — highest impact per effort and ungated by Master prerequisites). #98 / #99 / #100 added to the S-GROWTH bucket in priority order: #98 first (highest virality compounding), #99 second (TAM expansion to non-EN), #100 third (long-tail moat / values lever; partly Master-gated on partner-charity Stripe accounts but code can be 80% built without Master input). #93 / #94 retained at #4-#5 in S-GROWTH (slot order preserved from cycle 12).
+- **Open task index re-counted:** 95 GROWTH items total; 8 [HEALTH] items open (H8/H9/H10/H11/H15/H16/H17/H18/H20); 1 [UX] item (U1 Resend-blocked, U3 ships after #28 legal pages); 0 [TEST-FAILURE]. **No new [BLOCKED] items this cycle.**
+- **TODO_MASTER reviewed:** all 55 items checked against this cycle's CHANGELOG. None flip to [LIKELY DONE - verify] — every prior Master action remains pending its respective external step (Stripe Dashboard / Resend API key / Plausible domain / G2 listing / Capterra listing / podcast outreach / YouTuber outreach / podcast cold-DM / etc).
+- **Duplicate consolidation pass:** ran cross-checks on the 6 new items (5 GROWTH + 1 MARKETING) vs the 95+54 existing items. Zero duplicates. Closest near-overlaps explicitly differentiated in-line (item-level) so the next cycle inherits the rationale.
+- **Archive trigger:** file at ~2.5k lines, trigger at 1.5k. Overdue 8 cycles. Defer again — fragmentation cost (split context across two files) currently exceeds size-bloat cost.
+
+**Priority order at end of 13th pass (top 12 items, all unblocked):**
+
+| # | ID | Tag | Cx | Title (1-line) |
+|--:|------|------|-----|------|
+| 1 | U1 | UX | M | Self-serve password reset (gated on Resend) |
+| 2 | U3 | UX | S | Authed pages global footer (gated on #28) |
+| 3 | #96 | GROWTH | XS | "Send a copy to me too" checkbox on invoice send |
+| 4 | #97 | GROWTH | XS | Stripe Receipt-emails default-on toggle |
+| 5 | #92 | GROWTH | XS | WhatsApp/SMS/Email share-intent buttons |
+| 6 | #95 | GROWTH | XS | Tab-title flash + favicon dot on paid notification |
+| 7 | #82 | GROWTH | XS | Plan comparison table on dashboard for free users |
+| 8 | #88 | GROWTH | XS | "Frequent non-payer" dashboard alert |
+| 9 | #84 | GROWTH | XS | Auto-generate plain-language email body |
+| 10 | #44 | GROWTH | XS | In-app "✨ What's new" changelog widget |
+| 11 | #98 | GROWTH | S | Public review/testimonial collection page |
+| 12 | #99 | GROWTH | S | Multi-language invoice PDF (ES/FR/PT/DE) |
+
+The Resend-gated XS items (#66, #71, #77, #80, #90) sit lower in the queue — they're shovel-ready code-wise but unprovable in production until Master ships the API key (TODO_MASTER #18). #93 / #94 / #100 sit in the S-GROWTH band for the next code cycle.
+
+---
+
+## 2026-04-30T09:45Z — Role 4 (UX Auditor): direct fixes on dashboard column header + 2 mailto subject lines
+
+**Flows audited (full first-visit-to-paying-user walk):**
+- Landing (`/`) → register (`/auth/register`) → onboarding checklist → invoice creation (`/invoices/new`) → invoice view → mark-as-sent → upgrade flow at limit / via /pricing → Stripe Checkout → success → dashboard with trial banner.
+- Dashboard with new (this cycle) Pro "Copy pay link" column.
+- Settings (`/billing/settings`) including the Slack/Discord webhook quick-start panels.
+- Login + register pages including the manual forgot-password stopgap copy.
+- 404 / not-found page (newly tested this cycle).
+- Empty-state and past-due banner branches on the dashboard.
+
+**Direct fixes shipped this cycle:**
+
+1. **Dashboard "Pay link" column header copy** — `views/dashboard.ejs`. The 6th column shipped earlier this session (#91) had an `aria-label="Row actions"`-only header (visually empty <th>). For a Pro user whose dashboard contains drafts (no `payment_link_url` yet), this rendered as a column of empty cells under an empty header — visually confusing dead space that read as a layout glitch. Now the header reads "Pay link" so the column is self-describing even when most cells are empty (drafts), and so the user sees a Pro-feature surface they can map their workflow to. Test `testProUserSeesCopyButtonOnRowWithLink` updated to assert the new header copy + that it carries `print:hidden`. All 11 tests still passing.
+
+2. **Login forgot-password mailto pre-filled subject** — `views/auth/login.ejs`. The forgot-password stopgap is the manual mailto until U1 (full self-serve flow) ships. The mailto previously opened the user's default mail client with **no subject prefilled** — meaning the support inbox got generic "(no subject)" messages that take longer to triage and reset. Now `mailto:support@quickinvoice.io?subject=Password%20reset%20request` prefills the subject, so the support inbox can pattern-match → fast-path reset. Copy also updated from "we'll reset it for you" to "we usually reset within a few hours" (concrete time signal builds trust + tells the user when to expect a reply, which reduces follow-up emails). Conversion-defending: every minute of password-reset latency is a churn-risk minute.
+
+3. **Not-found mailto pre-filled subject** — `views/not-found.ejs`. Same pattern: `mailto:support@quickinvoice.io?subject=Help%20with%20a%20broken%20link` so a 404-driven support email arrives pre-categorised, letting the support inbox triage broken-link reports separately from password resets and billing tickets.
+
+**Already correct, no fix needed:**
+- The new dashboard Copy-pay-link button (#91) action affordance, copied-state affordance, and click-propagation guards are all working as designed (verified by 11-test file).
+- 404 page session-aware copy (anon vs authed) renders correctly (verified by 8-test file shipped today).
+- Action-bar visual hierarchy on `views/invoice-view.ejs` is correctly state-aware (closed in 2026-04-27 PM-3).
+- Trial urgent-day-1 banner shipped 2026-04-28 (closed under #45).
+- Empty-state Pro-tip below "Create your first invoice" CTA is gated correctly (closed in U2).
+
+**Flagged for future work (no new INTERNAL_TODO entries needed; existing items cover):**
+- The Pro empty-state on the dashboard (zero invoices) doesn't yet surface a Pro-tier-specific value reminder ("you've got Pay Links unlocked!"). Not big enough to add a [UX] task — it can ride a future dashboard touch when paired with #82 plan-comparison table.
+- The auth pages still use the manual forgot-password stopgap; full flow is U1 (already tracked, gated on Resend).
+
+---
+
+## 2026-04-30T09:30Z — Role 3 (Growth Strategist): 5 new [GROWTH] items (#96-#100) + 1 [MARKETING] (#55)
+
+**5 new INTERNAL_TODO entries** (cross-checked for non-overlap against the 95 prior items + 54 prior TODO_MASTER items):
+
+- **#96** [XS] — "📩 Send a copy to me too" checkbox on invoice send (all tiers; sticky default after first toggle). Distinct from #71 always-on Pro auto-BCC (different scope — per-invoice user choice vs always-on Pro feature) and from #84 plain-language client body (different surface — freelancer CC vs client-facing copy). Closes the "did the email actually fire?" trust gap for first-time senders. Pure form change + one boolean column.
+- **#97** [XS] — Stripe Receipt-emails default-on toggle. Stripe natively sends a free professional payment-receipt email when `receipt_email` is set on the Payment Link, but today we leave it unset, missing the freelancer a free professionalism signal. Distinct from #55 auto thank-you (different sender — Stripe vs QuickInvoice — and different content), distinct from #61 attach-PDF-on-send (different surface — pre-payment vs post-payment), distinct from #70 receipt PDF (different artefact — Stripe email vs QuickInvoice-rendered PDF).
+- **#98** [S] — Public review/testimonial collection page `/r/<user-slug>` for Pro users (MED-HIGH virality + retention compounding). Every paid client is a potential review source. Distinct from #20 social proof (uses QuickInvoice's own collected reviews on landing — not the user's), #57 NPS (internal churn signal, not external trust artefact), #78 freelancer profile (#78 surfaces "latest unpaid invoice"; #98 surfaces collected reviews — different content type).
+- **#99** [S] — Multi-language invoice PDF rendering (initial: ES / FR / PT / DE) (MED activation expansion). LATAM/IBERIAN/DACH freelancer market is currently underserved by US-first invoicing tools. Translate the ~15 static labels in `views/invoice-print.ejs` via a small `lib/i18n.js` helper. Distinct from #24 multi-currency — currency and language are orthogonal concerns. Pairs with #25 niche landing pages.
+- **#100** [S] — Stripe Climate / charity round-up toggle on invoice pay links (Pro feature) (MED retention via emotional/values-aligned moat). 1% of each successful payment auto-donated to a Stripe Climate-listed climate fund or one of 3 partner charities. Distinct from #67 tip toggle (different recipient — charity vs freelancer), #79 BNPL (different `payment_method_types` family). Adds a "carbon-neutral invoicing" landing-page bullet that's defensible vs FreshBooks/Wave/Bonsai.
+
+**1 new TODO_MASTER entry:**
+
+- **#55** [MARKETING] — Cross-promo cold-DM to 30 micro-podcasts in the freelance-business niche (Indie Hackers Podcast, Freelance Friday, Freelance Pod, etc.). Unpaid placement: free Pro upgrade for the host + a 50%-off custom coupon for their listeners in exchange for a "tools I love" mention. Distinct from #51 (paid podcast placement; #55 is unpaid cross-promotion), #54 (paid YouTuber outreach; different platform/format), #14 (Reddit; different channel), #25 (cold email to agencies; different recipient archetype — host vs agency).
+
+**Cross-overlap audit:** all 5 new GROWTH items checked against the existing #1-#95 + the 54 prior TODO_MASTER items. No duplicates. Income relevance for each item explicitly differentiates from the closest prior entries — written into the items themselves so the optimizer cycle has the differentiation cached.
+
+**Strategic theme this cycle:** The five additions cluster on **trust artefacts** (#96 send-copy-to-me, #97 Stripe receipts, #98 review wall) + **TAM expansion levers** (#99 multi-language, #100 Climate moat). The trust-artefact bucket addresses the recurring activation/retention pattern — every freelancer's first 5 sends are anxiety-loaded ("did this go through?", "does my client trust this?"), and three near-zero-cost surfaces compound on each other. The TAM-expansion bucket starts unlocking non-EN markets and values-aligned niches that competitors don't currently address.
+
+---
+
+## 2026-04-30T09:15Z — Role 2 (Test Examiner): coverage backfill — 404 handler + dashboard #91 button
+
+**What was audited (focused on the cycle's diff + recent uncovered surfaces):**
+- The 404 / not-found handler shipped 2026-04-28 PM (cycle 11) had **zero direct tests** — the `views/not-found.ejs` view existed, the `server.js` handler existed, but no test file asserted either the handler logic or the rendered view. A regression where someone re-introduced the silent `res.redirect('/')` would have shipped silently. This is high-leverage to defend: the 404 page is both a search-engine signal (correct status code + noindex) and a UX signal (a real user mistyped or followed a stale link must be told what happened, not silently dropped on the marketing page).
+- The new #91 dashboard Copy-pay-link button shipped earlier this session has its own test file `tests/dashboard-copy-pay-link.test.js` (11 tests, all passing).
+
+**Tests added this cycle:**
+- `tests/not-found-handler.test.js` — new file, 8 tests, all passing. Asserts: render-only path (homeHref+homeLabel locals wire correctly, anon vs authed copy differs, noindex meta is present, hostile homeLabel is HTML-escaped); integration path on a minimal express app replaying the handler verbatim (HTTP 404 not 3xx, anon request doesn't crash, no redirect status code, noindex appears in body). The integration tests use `http.createServer` against the actual handler shape (not a stubbed mock) so a future regression to `res.redirect('/')` trips a test immediately. The integration suite uses a transient `server.listen(0)` + `server.close()` per request — no port leakage across tests.
+- `package.json` — test runner extended.
+
+**Why integration vs render:** `server.js` doesn't export the express `app`, so the test mounts the handler verbatim on a fresh express instance. This is intentional — the handler is the unit under test, and replaying it in isolation gives the strongest assertion that a regression to the old `res.redirect('/')` behaviour trips a test, without coupling the test to the entire `server.js` boot sequence (which requires PostgreSQL session-store provisioning that's outside scope for a 404 unit test).
+
+**Test results:** new tests **8 passed, 0 failed**. Full suite re-run: **0 regressions** across all 39 prior test files (340+ assertions total now).
+
+**No flaky / failing tests found.** No INTERNAL_TODO additions this cycle (no [TEST-FAILURE] items).
+
+---
+
+## 2026-04-30T09:00Z — Role 1 (Feature Implementer): #91 closed — Dashboard "Copy pay link" icon button per row
+
+**What was built:** End-to-end "Copy pay link" icon button on every dashboard invoice row for Pro & Agency users. Cuts the share-invoice-link-with-client flow from 3 clicks (open invoice → click Payment Link card → click Copy) to 1 click straight from the dashboard table.
+
+**Why income-relevant:** This is the single most-frequent post-send action a Pro freelancer takes — paste the pay link into Slack/email/SMS to chase a slow-paying client. Cutting friction at the highest-velocity moment in the daily Pro workflow compounds: every saved click reinforces the perceived value of Pro vs. the free-tier dashboard, defending against churn (the #1 retention lever for tools that get used 5-30×/day). Also doubles as a soft Pro feature-marker — Free users see the column is missing, and the visual asymmetry on a multi-row table reads as a real Pro affordance, not just a marketing-bullet "custom branding" promise.
+
+**Code changes:**
+- `views/dashboard.ejs` — new conditional 6th column in the invoice table for `user.plan === 'pro' || 'agency'`. Each row renders a per-row Alpine `x-data="{ copied: false }"` scope wrapping a real `<button type="button">` with both an SVG copy-icon and the visible label "Copy link". Click handler is `@click.stop` (Alpine's stop-propagation modifier) PLUS the wrapping `<td>` carries `onclick="event.stopPropagation()"` as a defence-in-depth layer (so clicks inside the cell never bubble to the row's `window.location` navigation, even if Alpine isn't yet hydrated). Successful copy flips to a green ✓ + "Copied" affordance for 2s, then snaps back. The column header + cell both carry `print:hidden` so the action affordance never bleeds into the PDF print output. Rows whose invoice has no `payment_link_url` (typically drafts) render an empty cell with the same propagation guard, preserving table layout.
+- `tests/dashboard-copy-pay-link.test.js` — new file, 11 tests, all passing. Asserts: Pro+Agency see the column; Free users never do (hard-gated to a 5-vs-6 column count assertion); each row gets its own independent Alpine scope so two rows clicking won't share state; row navigation propagation is stopped at both layers; print:hidden on header + cell; real-button + reactive `:aria-label` for keyboard / screen-reader users; empty-state branch still renders cleanly for a Pro user with zero invoices. The data-testid `copy-pay-link-{id}` makes future end-to-end-tooling assertions trivial.
+- `package.json` — test runner extended with the new file.
+
+**Test results:** new tests **11 passed, 0 failed**. Full suite re-run: **0 regressions** across all 38 prior test files. (The transient "Recent clients lookup failed: db.getRecentClientsForUser is not a function" stderr lines are from the pre-existing `recent-clients.test.js` defensive-branch coverage of the same condition — those tests assert that the route survives the missing-helper case; the warnings are expected and assertional.)
+
+**Next-cycle considerations:** This pairs naturally with #92 (WhatsApp/SMS/Email share-intent buttons on the public payment-link card) — both reduce time-to-share. Once #92 lands, the dashboard Copy button could grow a small dropdown of share-intents alongside Copy, but for now (before #92), the icon-button-only design is the right minimum.
+
+---
+
 ## 2026-04-29T10:40Z — Role 6 (Health Monitor): clean cycle (post-#75 + 5 GROWTH adds + pricing copy fix)
 
 **What was audited (focused on this cycle's diff: lib/outbound-webhook.js + tests + 2 view changes):**

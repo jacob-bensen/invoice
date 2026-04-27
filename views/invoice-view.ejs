@@ -179,9 +179,10 @@
         <p class="text-gray-400 text-xs mb-3">Clients can pay via <%= methodCopy %>.</p>
         <div class="flex items-center gap-2">
           <input type="text" readonly value="<%= invoice.payment_link_url %>"
+            data-pay-link-url="<%= invoice.payment_link_url %>"
             class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-gray-50 font-mono" />
           <button type="button"
-            @click="navigator.clipboard.writeText('<%= invoice.payment_link_url %>').then(() => { copied = true; setTimeout(() => copied = false, 2000); })"
+            @click="navigator.clipboard.writeText($root.querySelector('[data-pay-link-url]').dataset.payLinkUrl).then(() => { copied = true; setTimeout(() => copied = false, 2000); })"
             class="border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-gray-50 transition text-sm">
             <span x-show="!copied">Copy</span>
             <span x-show="copied" class="text-green-600">Copied!</span>
