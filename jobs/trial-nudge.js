@@ -26,18 +26,9 @@
 
 const { db: realDb } = require('../db');
 const { sendEmail: realSendEmail } = require('../lib/email');
+const { escapeHtml } = require('../lib/html');
 
 const DEFAULT_SCHEDULE = '0 10 * * *'; // 10:00 UTC daily
-
-function escapeHtml(value) {
-  if (value === null || value === undefined) return '';
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
 
 function daysLeft(trialEndsAt, now = new Date()) {
   if (!trialEndsAt) return 0;

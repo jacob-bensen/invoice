@@ -29,26 +29,11 @@
 
 const { db: realDb } = require('../db');
 const { sendEmail: realSendEmail } = require('../lib/email');
+const { escapeHtml, formatMoney } = require('../lib/html');
 
 const DEFAULT_COOLDOWN_DAYS = 3;
 const DEFAULT_SCHEDULE = '0 9 * * *'; // 09:00 UTC daily
 const PAID_PLANS = new Set(['pro', 'business', 'agency']);
-
-function escapeHtml(value) {
-  if (value === null || value === undefined) return '';
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function formatMoney(amount) {
-  const n = Number(amount);
-  if (!Number.isFinite(n)) return '$0.00';
-  return `$${n.toFixed(2)}`;
-}
 
 function formatDate(d) {
   if (!d) return '';

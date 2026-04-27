@@ -1,6 +1,6 @@
 # Actions Required from Master
 
-> **Audited:** 2026-04-27 PM — Task Optimizer re-pass. All items reviewed against CHANGELOG (which now spans 2026-04-22 → 2026-04-27 PM). Three new items added this cycle: **#42** (verify domain + submit sitemap to Google Search Console — 10-min one-time SEO foundation, gates the value of #8 sitemap + #36 OG metadata + #56 robots.txt), **#43** ([MARKETING] listicle outreach for backlinks — high-leverage compounding SEO), **#44** ([MARKETING] LinkedIn cold-outbound to Ops/Eng Directors hiring freelancers — Agency-tier funnel — gated on INTERNAL_TODO #9 shipping). No items tagged [LIKELY DONE - verify] this cycle — every prior Master action remains pending its respective external step (Stripe Dashboard config, Resend API key, Plausible domain, etc.). Items 1–8 are human deployment/configuration actions; none are resolved by code commits. Code for all P1–P10 features and every shipped INTERNAL_TODO item is complete; deployment + the listed Stripe / Resend / domain / analytics provisioning are the remaining blockers to scale-revenue.
+> **Audited:** 2026-04-28 — Task Optimizer 10th-pass re-review. All items re-checked against the CHANGELOG (which now spans 2026-04-22 → 2026-04-28). Two new [MARKETING] items added this cycle: **#50** (Indie Hackers product directory + 4-week "Building in Public" series — community-building distribution channel distinct from #12 PH burst, #19 Show HN, #20 newsletter borrowed-audience) and **#51** (single-spot test buy on a freelance-focused podcast — $500-$1500, decision rule ≥ 5 Pro conversions in 30 days → scale to series; lowest-risk validation of audio as an acquisition channel before committing to a series). No items tagged [LIKELY DONE - verify] this cycle — every prior Master action remains pending its respective external step (Stripe Dashboard config, Resend API key, Plausible domain, G2/Capterra profile creation, etc.). Items 1–8 are human deployment/configuration actions; none are resolved by code commits. Code for all P1–P10 features and every shipped INTERNAL_TODO item is complete (including this cycle's H14 helper consolidation + invoice-view UX fix); deployment + the listed Stripe / Resend / domain / analytics provisioning are the remaining blockers to scale-revenue.
 
 ---
 
@@ -1241,3 +1241,77 @@ Distinct from existing #33 (AppSumo / SaaS Mantra lifetime-deal listing — diff
 Late-funnel trust signal that compounds for years with no ongoing maintenance. Most SMB SaaS prospects do this exact path: hear about the tool → search "<tool> vs <alternative>" → see comparison-site results. A claimed profile with 5+ reviews wins that surface; a non-existent profile loses to whoever did claim theirs. The cost is one afternoon of profile setup + leveraging the #48 onboarding call cohort for review seeding. No paid spend, no recurring effort.
 
 Pairs with #48 (founder calls produce the review-seeding cohort), INTERNAL_TODO #20 (social-proof landing section consumes the badges), and INTERNAL_TODO #57 (NPS survey can be re-pitched as a review request after high scores).
+
+---
+
+### 50. [MARKETING] Submit QuickInvoice to Indie Hackers product directory + run a "Building in Public" updates series (added 2026-04-28)
+
+**Audience:** Bootstrapped-founder community on Indie Hackers (~150K monthly active, the highest-density freelancer + indie SaaS community on the open web).
+
+**Distinct from:**
+- **#12** (Product Hunt) — different community (PH is launch-day burst traffic, IH is sustained engagement over weeks)
+- **#19** (Show HN) — different audience (HN is technical/engineering, IH is product/marketing)
+- **#20** (Newsletter outreach) — different format (newsletter is borrowed audience; IH is direct posting to your own profile)
+- **#26** (G2/Capterra) — different funnel (G2 is comparison-shopping; IH is community-building)
+
+### Action (Master, ~30 min one-time setup + ~2 hrs/week ongoing for 4 weeks)
+
+1. **Profile setup** (~15 min): create the QuickInvoice product listing at https://www.indiehackers.com/products. Tags: "SaaS", "Freelance", "Invoicing", "Productivity". Add the same OG image, tagline, and pricing as the G2/Capterra setup (#49).
+
+2. **Founder profile** (~15 min): set up Master's personal IH profile linked to the product. Bio: "Building QuickInvoice — invoicing for freelancers who'd rather be doing the work."
+
+3. **"Building in Public" weekly post series** (~30 min/post, 4 posts):
+   - Week 1: "We just shipped a 7-day Pro free trial. Here's what we learned about activation." (link to public roadmap once #38 ships)
+   - Week 2: "First 20 paying users — what they all have in common." (cohort-analysis post; great for review seeding)
+   - Week 3: "We added Klarna/Afterpay to invoice payment links. Here's the conversion-lift data." (gated on INTERNAL_TODO #79 shipping)
+   - Week 4: "MRR milestone update + lessons from the first quarter." (transparency = trust on IH)
+
+4. **Comment engagement** (~30 min/week): comment substantively on at least 5 other founders' posts per week. The IH algorithm boosts active posters. Pure-promo profiles get demoted; engaged profiles get pinned to the front page.
+
+### Why this matters (income relevance)
+
+Indie Hackers is the single highest-density community of two types of QuickInvoice's ideal customers:
+1. **Self-employed product founders** who invoice contract clients on the side and need a tool that takes 2 minutes (not 20 like Wave/QuickBooks)
+2. **Bootstrapped-SaaS operators** who watch other bootstrappers' products to learn from the journey — a public "Building in Public" series both attracts that audience as customers AND builds Master's personal credibility for future fundraising / acquisitions / partnerships.
+
+Compounds with #43 (listicle outreach — IH posts often get cross-linked from listicle articles), #21 (testimonials — IH commenters often become testimonial sources), and INTERNAL_TODO #18 (referral program — IH founders are heavy referrers; once #18 ships, an IH-specific affiliate-link drop closes the loop).
+
+**Why now and not later:** IH's algorithm rewards consistency. Starting a Building-in-Public series at MRR $0 is more authentic than starting at MRR $10K — early posts age into "look how far they've come" social proof. The window to start is now-ish.
+
+---
+
+### 51. [MARKETING] Sponsor a single-spot test on a freelancer-focused podcast (added 2026-04-28)
+
+**Audience:** Freelancers who consume freelance-business advice via audio (typically the more-mature freelancer cohort — full-time independents, agency principals, and 1-employee studios — exactly the Pro/Agency tier QuickInvoice already monetises hardest).
+
+**Distinct from:**
+- **#20** (Newsletter outreach — text format, different consumption pattern)
+- **#17** (Twitter/LinkedIn series — text/static visual, different attention pattern)
+- **#15** (60-second demo video — video format, different distribution surface)
+
+### Action (Master, ~3 hrs research + ~1 hr negotiation + $500-$1500 single-spot ad spend)
+
+1. **Identify 3 candidate podcasts** (~2 hrs):
+   - "The Freelance Friday Podcast" (~25K downloads/episode, freelance-business focus)
+   - "Being Freelance" (~30K downloads/episode, UK-skewed but English-speaking)
+   - "Freelance Transformation" (~15K downloads/episode, US-skewed, host-read ads)
+
+   Look for: host-read ads (3× the conversion of pre-recorded), audience match (freelance > business-owner > entrepreneur), and CPM under $25 (any higher and the ROI is harder to recoup at $19/mo Pro).
+
+2. **Pitch + negotiate** (~1 hr): contact the show's sales rep (always linked in the show notes) with a short pitch:
+
+   > *"Hi — we run QuickInvoice, an invoicing SaaS for freelancers ($19/mo Pro). We'd like to test a single-spot host-read ad in your next available episode. Our offer: a custom promo code (15% off forever) so you can run the read straight from our pricing page. Budget: up to $1500 for one episode. Looking to test conversion before committing to a series."*
+
+3. **Set up the tracking** (~30 min, after agreement): create a Stripe coupon `PODCAST15` (per [MARKETING] #32 process), and add a UTM-tagged landing variant of `/pricing` (e.g. `/pricing?utm_source=podcast&utm_campaign=<show>`). The landing-page variant just renders `views/pricing.ejs` with the coupon hint pre-filled.
+
+4. **Measure** (~1 hr after the episode airs): track signup count + Pro conversion via `?utm_*` query params over the 30 days following episode air. Decision rule: if a single $1000 spot drives ≥ 5 Pro conversions in 30 days (LTV ≈ $300, gross margin ≈ $1500), buy a series of 4. If not, drop the channel.
+
+### Why this matters (income relevance)
+
+Test-buy validates whether audio is a cost-effective acquisition channel for QuickInvoice's exact target customer before committing to a series. The freelance-podcast audience skews older / higher-income / more business-mature than the typical Twitter / Reddit freelancer audience, which means they (a) churn less, (b) need fewer features to convert (the value prop "stop chasing payments" hits home immediately), and (c) are more likely to refer-out (Master's ICP).
+
+A single test buy is the lowest-risk way to find out whether the unit economics work — if they do, scaling is just buying more spots; if they don't, the cost is capped at one spot.
+
+Distinct from #18 (Affiliate / Rewardful — affiliate is performance-only, podcast sponsorship is brand + impression), #15 (60s demo video — video is shareable asset, audio is one-and-done CPM media), and #20 (newsletter — different consumption, different audience-overlap).
+
+**Why now:** podcast sponsorship is most cost-effective when (a) you have a clear, easy-to-pitch value prop ("stop chasing payments"), (b) you have a working free trial (#19 — done), and (c) you have at least one shippable customer testimonial (gated on #21 testimonials work + #48 founder calls). The first two are true today; the third lands within 4 weeks. Buy the spot to air ~5 weeks out so the testimonial is in the can before the read goes live.

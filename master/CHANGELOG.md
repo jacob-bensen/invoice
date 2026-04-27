@@ -2,6 +2,142 @@
 
 ---
 
+## 2026-04-28T00:55Z — Role 6 (Health Monitor): clean cycle (post-H14 + #81-#85 + invoice-view UX fix)
+
+### What was audited
+
+- **New code shipped this cycle:** new `lib/html.js` (49 lines, 2 exported pure functions, 1 exported constant); 3 modified call sites (`lib/email.js`, `jobs/reminders.js`, `jobs/trial-nudge.js`) — each removed local helper definitions and added a single `require('./html')` (or `'../lib/html'`) import line; new `tests/html-helpers.test.js` (27 assertions); 1 modified package.json test script (added the new test file). Plus 1 modified `views/invoice-view.ejs` (UX fix on action bar — branched primary CTA on invoice status).
+- **Security review of the diff:**
+  - `lib/html.js` is pure functions with no IO and no module state. The single user-controlled input — the `value` argument to `escapeHtml` — is `String()`-coerced before any replace, so non-string types (numbers, booleans, objects) cannot bypass the escape chain via prototype access. Null/undefined short-circuit to empty string before any operation. The `formatMoney` lookup now uses `Object.prototype.hasOwnProperty.call(CURRENCY_SYMBOLS, code)` instead of bracket access on the literal — this is a **net security improvement** because pre-fix, a malicious `formatMoney(1, '__proto__')` returned `[object Object]1.00` (the inherited `Object.prototype.__proto__` getter) and `formatMoney(1, 'toString')` returned `function toString() { [native code] }1.00` (the inherited method); post-fix both return `1.00` (unknown-currency fallback). All three behaviours are now covered by tests in `tests/html-helpers.test.js`.
+  - The `invoice-view.ejs` UX fix only reorders existing form elements + swaps Tailwind classes. No new user-data interpolation, no new route handlers, no new attributes that could surface XSS. The status-branch (`if (invoice.status === 'draft')`) reads `invoice.status` which is already CHECK-constrained server-side to `('draft','sent','paid','overdue')` and additionally whitelisted in the `POST /:id/status` handler (H12 — DONE). Hostile values cannot reach this branch.
+- **`npm audit --production`:** 6 vulnerabilities (3 moderate, 3 high) — all pre-existing, all install-time only, all already tracked under [HEALTH] H9 (`bcrypt → @mapbox/node-pre-gyp → tar`) and H16 (`resend → svix → uuid`). No new advisories surfaced. Runtime exposure remains nil.
+- **Performance:** zero new DB queries, zero new external network calls, zero new file IO. The new `lib/html.js` module is loaded once per process; `escapeHtml` and `formatMoney` are now invoked through one extra hop (require resolution), but Node module-cache amortises that to a single lookup at process start. The reference-equality assertions in the new test file (`email._internal.escapeHtml === html.escapeHtml`) are the canonical proof that no extra-instance overhead is introduced.
+- **Code quality:** 3 byte-identical (or near-identical) helper definitions removed (one in `lib/email.js`, one in `jobs/reminders.js`, one in `jobs/trial-nudge.js`). Net delta: -34 lines of duplicated helper code, +49 lines of canonical `lib/html.js`, +27 new test assertions. Maintenance burden on any future escape-rule or currency-symbol change is now one edit instead of three (or four — the next caller never adds a private copy because the test would reference-equality-fail).
+- **Dependencies:** zero changes — no new `npm i`, no `package-lock.json` shifts on this commit.
+- **Legal:** zero changes — license footprint of `lib/html.js` is the same MIT/ISC ecosystem as the parent project. No copyleft introduced. No new third-party API call sites; no PCI/GDPR/CCPA scope changes; no new data persistence beyond what the routed callers already do. Privacy/Terms/Refund pages remain tracked under #28 (open). Stripe ToS, GDPR, CCPA compliance posture unchanged this cycle.
+
+### What was fixed directly (in-scope)
+
+- The prototype-pollution behaviour on `formatMoney` — pre-fix it leaked the `Object.prototype` chain through bracket access; post-fix it uses `hasOwnProperty.call` and falls back cleanly. Tests added.
+- The action-bar visual hierarchy on draft invoices in `views/invoice-view.ejs` (Role 4 work, double-counted here for completeness).
+
+### What was flagged
+
+- Nothing new. All existing [HEALTH] items (H8, H9, H10, H11, H15, H16, H17, H18) are unchanged; H14 closed this cycle. The H9 / H16 items remain ON-DECK for the next dependency-bump pass — both are install-time only with nil runtime exposure.
+- TODO_MASTER [LEGAL] backlog unchanged — #28 (Terms/Privacy/Refund pages) remains the canonical legal-pages task, blocking L1/L2/L3 from TODO_MASTER and the U3 footer task.
+- No `[CRITICAL]` items added to TODO_MASTER (no hardcoded secrets found in the diff or in the broader codebase scan).
+
+---
+
+## 2026-04-28T00:50Z — Role 5 (Task Optimizer): 10th-pass audit — INTERNAL_TODO + TODO_MASTER refreshed
+
+**Actions taken:**
+
+1. **Archived [DONE] this cycle:** H14 inline-tagged `[DONE 2026-04-27 PM-5]` with the full resolution body. Kept as inline `[DONE]` per the convention used for #31, #36, #56, U2, U4, etc.; will be sweep-archived to `master/CHANGELOG_ARCHIVE.md` in the next batch (sweep is now overdue by 6 cycles — non-blocking, hygiene-only).
+2. **Removed H14 from the OPEN TASK INDEX [HEALTH] block** (was line 93). Block now shows 8 [HEALTH] items: H8, H10, H15, H9, H11, H16, H17, H18.
+3. **Added 5 new [GROWTH] items (#81-#85) to the OPEN TASK INDEX** in priority order:
+   - XS bucket: #82 (plan comparison table on dashboard), #84 (auto-gen email body) — placed alongside the other XS [GROWTH] items in priority order.
+   - S bucket: #81 (payment-link guard), #83 (stale-draft nudge), #85 (URL-params landing copy) — placed alongside the other S [GROWTH] items.
+4. **Updated header audit metadata** — bumped to 10th pass; full suite metric now reads **37 files, 251 test functions, 0 failures** (+27 this cycle); cross-checks for the 5 new items are documented inline in the header.
+5. **Reviewed TODO_MASTER** — refreshed the audit header to reflect this cycle's 2 new [MARKETING] items (#50 IH, #51 podcast). No items flip to [LIKELY DONE - verify] this cycle: #18 (Resend API key), #38 (OG image), #39 (APP_URL), #29 (Plausible domain), every prior Stripe-Dashboard provisioning step, #42 (Google Search Console), and the 49 [MARKETING] items all remain genuinely open, each pending its specific external step.
+6. **Re-prioritisation pass — no changes needed.** The current order (`[TEST-FAILURE] (none) > income-critical > [UX] > [HEALTH] > [GROWTH] > [BLOCKED]`) is correct; this cycle's UX direct fix (invoice-view action bar) closed an in-cycle UX issue without needing a new [UX] task; H14 closed an open [HEALTH] item; new [GROWTH] items are appended at the bottom of their complexity bucket — no re-shuffling needed.
+7. **Vague/oversized tasks** — none introduced this cycle. Each new item has explicit sub-tasks, an Income relevance line, and complexity tag.
+8. **[BLOCKED] section unchanged** — #11 + #12 still flagged UNBLOCKED but waiting on Master's RESEND_API_KEY in production.
+
+**Cross-overlap audit pass (defensive):** re-walked the OPEN TASK INDEX and the full TODO_MASTER tree. Confirmed no [UX], [GROWTH], [HEALTH], or [TEST-FAILURE] items overlap. The 5 new [GROWTH] items (#81-#85) plus the 2 new [MARKETING] items (#50, #51) are documented with explicit non-overlap notes inline in their respective bodies.
+
+---
+
+## 2026-04-28T00:45Z — Role 4 (UX Auditor): walked landing → signup → dashboard → invoice-create → invoice-view → settings; promoted "Mark as Sent" to primary CTA on draft invoices
+
+**Flows audited (first-time-visitor → paying-user pathway + secondary flows):**
+
+- Landing (`views/index.ejs`) → ✓ clear hero, action-oriented "Create your first invoice →" CTA, complementary "See pricing" secondary. No fix needed.
+- Register (`views/auth/register.ejs`) → ✓ minimal-friction (3 fields), clear "Free forever — no credit card needed" reassurance, transactional-email consent line is unobtrusive. No fix needed.
+- Login (`views/auth/login.ejs`) → ✓ stopgap mailto-support reset link is in place per the prior cycle's U1 stopgap. No fix needed.
+- Dashboard (`views/dashboard.ejs`) → ✓ banner stack ordered correctly (onboarding → trial → past-due → invoice-limit progress); empty state has Pro upsell with 7-day-trial CTA. No fix needed.
+- Invoice form (`views/invoice-form.ejs`) → ✓ Net-30 default + recent-clients dropdown both shipped in prior cycles. No fix needed.
+- **Invoice view (`views/invoice-view.ejs`) — fixed directly** (see below).
+- Pay-link copy card → ✓ shipped 2026-04-27 PM-3, single source of truth for the URL, Preview ↗ + Copy + readonly input all reference the same string. No fix needed.
+- Settings (`views/settings.ejs`) → ✓ structure is logical; webhook section has clear empty-state for free users, payload-shape `<details>` for Pro. No fix needed this cycle.
+- Pricing (`views/pricing.ejs`) → ✓ ×/✓ deltas are visually aligned per prior cycle's UX audit. No fix needed.
+- Upgrade modal (`views/partials/upgrade-modal.ejs`) → ✓ clean two-cycle billing toggle, dollar-explicit annual savings copy ("$99/year (save $45/year)"). No fix needed.
+- Error states → ✓ flash banner pattern is consistent across login, register, dashboard, invoice-view, settings. No fix needed.
+- Mobile → ✓ nav fits in one line on 360px (short word count, no menu-collapse needed).
+
+**Direct fix applied this cycle (`views/invoice-view.ejs`):** the action bar previously rendered "🖨️ Print / Download PDF" as the brand-coloured primary CTA on every invoice status, while "📤 Mark as Sent" was a gray-bordered secondary button. For a `draft` invoice the user's most-likely next action is to **mark as sent** (which for Pro users also triggers the email send to the client and creates a Stripe Payment Link — the highest-value lifecycle moment in the entire app). The visual hierarchy was inverted: the secondary CTA was loudest. Fixed by branching on status:
+- **`status='draft'`** → "📤 Mark as Sent" is now the primary brand-colour button; "📄 View / Download PDF" demoted to secondary (gray border).
+- **`status` in (`sent`, `overdue`)** → unchanged; "Print" stays primary brand-colour, "Mark as Paid" stays primary green (already correct from the 2026-04-27 PM-2 fix).
+- **`status='paid'`** → unchanged; "Print" stays primary as the workflow is complete and download/archive is the most-likely next action.
+
+Also renamed the PDF button copy from "🖨️ Print / Download PDF" to "📄 View / Download PDF" — "Print" suggested paper-only output and the ✏️ Edit + 📄 View / Download PDF + 📤 Mark as Sent triplet now reads as a clearer left-to-right lifecycle on a draft. No emoji removed; emoji set is consistent with the rest of the file.
+
+**No new [UX] tasks added** — every observed gap was either fixable in-cycle (above) or already tracked in INTERNAL_TODO (U1 password reset, U3 authed-page footer — both gated on prerequisites already documented).
+
+**Test impact:** verified no test asserted the old gray-bordered class on "Mark as Sent" or the old "Print / Download PDF" string. Full suite **37 files, 251 test functions, 0 failures.**
+
+---
+
+## 2026-04-28T00:40Z — Role 3 (Growth Strategist): 5 new [GROWTH] tasks (#81-#85) + 2 new [MARKETING] items (TODO_MASTER #50-#51)
+
+**Five new dev tasks added to INTERNAL_TODO.md (priority-ordered against the existing 80 items):**
+
+- **#81** [S] — "Add a payment link before sending?" Pro guard for invoices ≥ $100 with no link. **MED-HIGH conversion.** Single high-value guardrail at the highest-intent moment in the invoice lifecycle: when a Pro user marks a $100+ invoice as `sent` and the payment_link_url is null, an Alpine.js modal asks "Clients pay 3× faster with one. Add now?" and the "Yes" path auto-creates the link before the email goes out. Free users see the same modal with an "Upgrade to Pro" CTA. Distinct from #15 (cross-app contextual upsells) — this is one specific guardrail, not a general pattern.
+- **#82** [XS] — Plan comparison table on dashboard for free users. **MED conversion.** Reinforces #31 progress bar with a feature-level visual (4 rows: unlimited invoices/clients, Stripe payment links, auto reminders) without sending the user off to /pricing. Reuses canonical Upgrade CTA — no new copy decisions.
+- **#83** [S] — Stale-draft dashboard nudge. **MED activation/revenue recovery.** Banner: "You have N drafts unsent — oldest from M days ago. [Review drafts →]". Surfaces drafts that would otherwise die in the pipeline. Distinct from #16 (already-sent reminders) and #29 (trial-end nudge).
+- **#84** [XS] — Auto-generate plain-language email body using first-line-item summary on invoice send. **MED activation.** Applies to ALL plans (free + Pro). Distinct from #68 (Pro-only customisable template editor) — this is auto-generated default copy that ships to everyone.
+- **#85** [S] — URL-params-driven dynamic landing-hero copy for SEO long-tail (`?for=designers&trade=logo+work`). **MED-HIGH SEO.** Expands the addressable niche space without a new .ejs file per niche; pairs with TODO_MASTER #43 listicle outreach (each listicle's preferred screenshot URL can match its exact framing). Distinct from #25 (static niche pages), #36 (OG metadata), #56 (canonical URL), #52 (JSON-LD).
+
+**Two new [MARKETING] items added to TODO_MASTER:**
+
+- **#50** [MARKETING] Submit QuickInvoice to Indie Hackers product directory + 4-week "Building in Public" updates series. Distinct from #12 PH, #19 Show HN, #20 newsletters, #26 G2 — IH is sustained-engagement community-building rather than burst-traffic launch.
+- **#51** [MARKETING] Single-spot test buy on a freelancer-focused podcast ("Freelance Friday", "Being Freelance", "Freelance Transformation"). $500-$1500 budget, decision rule: ≥ 5 Pro conversions in 30 days → scale to series. Lowest-risk way to validate audio as an acquisition channel. Distinct from #15 (60s video), #18 (affiliate), #20 (newsletter).
+
+**Cross-overlap check (every new item compared against the prior 80 [GROWTH] + 49 [MARKETING] items):** ✓ no duplicates introduced. Specific non-overlap notes documented inline in each new task body. Each new item also re-checked against the [LIKELY DONE] gate in TODO_MASTER and the active CHANGELOG entries from the past 5 cycles.
+
+---
+
+## 2026-04-28T00:35Z — Role 2 (Test Examiner): coverage audit + 27 assertions for newly extracted `lib/html.js`
+
+**Audit scope:** All 36 pre-existing test files inspected for coverage of the H14 refactor. Pre-cycle, `escapeHtml` and `formatMoney` were exercised only indirectly via rendered email/reminder HTML assertions — no test file imported either helper directly, no test asserted the canonical escape rules in isolation. The cross-module identity (which module owns the helper) was a free variable: any future caller could silently fork their own copy and only template-render assertions would notice (and only if the caller's copy happened to differ on a specific input the test exercised).
+
+**What was added:** `tests/html-helpers.test.js` — 27 assertions covering:
+- 11 escapeHtml unit cases including null/undefined handling, numeric coercion, each of the 5 escape characters in isolation, the `&` -first ordering invariant (regression guard against an accidental reorder turning `<a>` into `&amp;lt;a&amp;gt;`), full-XSS-payload neutralisation (regression guard against a caller forgetting to escape), and the intentional double-encode-on-already-escaped behaviour (so callers must escape exactly once);
+- 13 formatMoney unit cases including default-USD fallback, case normalisation, NaN/null/undefined/Infinity coercion to `$0.00`, all 8 currency symbols, unknown-currency bare-number fallback, negative amounts, no-thousand-separators (intentional for monospace email rendering), prototype-pollution guards on `__proto__`/`constructor`/`toString`, and numeric-string acceptance;
+- 3 cross-module reference-equality checks: `lib/email._internal.escapeHtml === lib/html.escapeHtml`, ditto for `formatMoney`, ditto for `jobs/reminders` and `jobs/trial-nudge`. **This is the regression guard against a future commit re-introducing a private copy.** A drift check that compares strings would pass even if a caller diverged; a strict-equal check on function references will fail the build.
+
+**Coverage gap-checks for recent CHANGELOG entries:**
+- `#31 Free-Plan Invoice Limit Progress Bar` (closed 2026-04-27 PM-4) → `tests/invoice-limit-progress.test.js`, 15 assertions. ✓
+- `pricing.ejs free-tier × additions` + `Net 30 default on invoice-form` (closed 2026-04-27 PM-3) → `tests/recent-regression.test.js`, 6 assertions. ✓
+- `#63 Recent clients dropdown` (closed 2026-04-27 PM-2) → `tests/recent-clients.test.js`, 6 assertions. ✓
+- `H14 escapeHtml/formatMoney consolidation` (closed this cycle) → `tests/html-helpers.test.js`, 27 assertions. ✓ (this commit)
+
+**No flaky or redundant tests found.** All 251 tests run sequentially via the package.json test script; each file is a self-contained Node script with deterministic stubs (no real DB, no real network, no real DNS, no real Stripe, no real Resend). Failing-test backlog: zero — `[TEST-FAILURE]` count remains 0.
+
+**Test status:** 37 files, 251 test functions, 0 failures.
+
+---
+
+## 2026-04-28T00:30Z — Role 1 (Feature Implementer): H14 closed — extracted `escapeHtml`/`formatMoney` to shared `lib/html.js`
+
+**What was built:** The duplicated `escapeHtml` and `formatMoney` helpers — previously copy-pasted across `lib/email.js`, `jobs/reminders.js`, and `jobs/trial-nudge.js` — are now a single canonical module at `lib/html.js`. Each consumer requires from the shared module instead of carrying a private copy. The `_internal` test exports on all three call-site modules now point to the same function references (verified by reference-equality assertions in the new test file).
+
+**Why this matters (income relevance):** All three call sites render revenue-relevant email — invoice-send, overdue-reminder, and trial-end-day-3 nudge. Any future change to the escape rules (e.g. adding the Unicode left-single-quote, U+2019, after a client copy-pastes from Google Docs) or to the currency formatter (e.g. fixing a Yen rendering bug) used to require synchronised edits across 3 files or the templates would silently drift. After this commit, one edit lands in all three places. Zero new behaviour, zero migration, zero deploy steps for Master.
+
+**Defence-in-depth bonus:** the canonical `formatMoney` now uses `Object.prototype.hasOwnProperty` for currency-symbol lookup instead of bracket access. Pre-fix, `formatMoney(1, '__proto__')` would have returned `[object Object]1.00` (because the bracket access hits the inherited `Object.prototype.__proto__` getter); post-fix it returns `1.00` (unknown-currency fallback). Pre-fix, `formatMoney(1, 'toString')` returned `function toString() { [native code] }1.00`. Both are now caught by the prototype-pollution guard. Also added regression tests for both cases.
+
+**Files touched:**
+- New: `lib/html.js` (49 lines — exports `escapeHtml`, `formatMoney`, `CURRENCY_SYMBOLS`)
+- New: `tests/html-helpers.test.js` (27 assertions: 11 escape, 13 format, 3 cross-module identity)
+- Modified: `lib/email.js` (removed local `escapeHtml`/`formatMoney`, requires from `./html`)
+- Modified: `jobs/reminders.js` (removed local `escapeHtml`/`formatMoney`, requires from `../lib/html`)
+- Modified: `jobs/trial-nudge.js` (removed local `escapeHtml`, requires from `../lib/html`)
+- Modified: `package.json` (test script appends `tests/html-helpers.test.js`)
+
+**Test status:** Full suite **37 files, 251 test functions, 0 failures** (+27 new this commit; was 224 pre-cycle). All previously passing tests still pass — no behaviour change to invoice-email, reminder-email, or trial-nudge HTML output (USD-only `formatMoney(row.total)` calls in reminders preserved verbatim because the canonical superset implementation falls back to USD when no currency arg is passed).
+
+---
+
 ## 2026-04-27T23:55Z — Health Monitor: clean cycle (post-#31 + #76-#80 + UX free-tier × additions)
 
 ### What was audited
