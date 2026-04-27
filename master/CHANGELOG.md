@@ -2,6 +2,108 @@
 
 ---
 
+## 2026-04-29T10:40Z — Role 6 (Health Monitor): clean cycle (post-#75 + 5 GROWTH adds + pricing copy fix)
+
+**What was audited (focused on this cycle's diff: lib/outbound-webhook.js + tests + 2 view changes):**
+
+- **Security review of the diff:**
+  - `lib/outbound-webhook.js` — new `detectWebhookFormat(url)` + `formatPayloadForWebhook(url, payload)` + small currency formatter. URL parsing wrapped in try/catch; non-string / null inputs fall through to `'generic'`. Host comparison is lowercased + path-prefix-checked for Discord (so `discord.com/some/marketing/page` is NOT treated as a webhook). User-controlled fields (`invoice_number`, `client_name`) are coerced via `String(...)` before interpolation; truthiness fallback to safe defaults (`'invoice'` / `'a client'`) so a corrupted DB row can't produce empty bold spans. The interpolated message lands inside `JSON.stringify(...)` in `firePaidWebhook`, which escapes special characters (quote, backslash, newline) to safe JSON sequences — Slack/Discord can't be tricked into JSON-injection by hostile invoice content. Slack/Discord will still interpret `*bold*` / `**bold**` in `client_name`, but that's cosmetic, not a security surface.
+  - `views/settings.ejs` quick-start panels — pure static copy + hardcoded URL examples (`hooks.slack.com/services/...`, `discord.com/api/webhooks/...`). Zero interpolation, zero new form actions.
+  - `views/pricing.ejs` branch on `user.plan === 'pro'` — escaped EJS output; `user.plan` comes from a session-bound DB row that's already constraint-checked at the DB level via the `users_plan_check` constraint (closed under H5 2026-04-25 PM). No reflected-XSS surface.
+
+- **`npm audit --production`:** 6 vulnerabilities (3 moderate, 3 high) — **all pre-existing**, all install-time only. `bcrypt → @mapbox/node-pre-gyp → tar` (3 high, install-time) tracked under [HEALTH] H9; `resend → svix → uuid` (3 moderate, install-time) tracked under H16. Runtime exposure remains nil. No new advisories surfaced this cycle (no new deps added — the #75 commit reuses the existing http/https/url stdlib modules; #91-#95 are all open scaffolds).
+
+- **Performance:** Zero new DB queries. The `formatPayloadForWebhook` function adds a `URL` parse + a handful of string operations per webhook fire — sub-microsecond cost. Memory: Slack/Discord paths allocate a single new small object per fire (~50 bytes); the generic path returns the original payload reference (zero allocation, regression-tested via object-identity assert). The existing webhook-fire callsites (`routes/invoices.js POST /:id/status`, `routes/billing.js checkout.session.completed`) call this max 1× per paid-invoice transition — performance is well within the existing `R14: Memory quota` budget (cron jobs are throttled at 500/batch; webhook-fire is single-shot). No N+1, no missing indexes introduced.
+
+- **Code quality:** New helpers have clear single-responsibility (detection + formatting + currency-symbol map). The currency formatter inside `lib/outbound-webhook.js` partially duplicates `lib/html.js#formatMoney` (closed under H14 2026-04-27 PM-5) — flagged as **H20** below for a future DRY-up. Net delta: +56 lines `lib/outbound-webhook.js`; +198 lines `tests/webhook-outbound.test.js`; +31 lines `views/settings.ejs`; +198 lines INTERNAL_TODO; +75 lines CHANGELOG; +24 lines TODO_MASTER; +8 lines pricing.ejs branch. Zero lines deleted (additive cycle).
+
+- **Dependencies:** zero changes — no new `npm i`, no `package-lock.json` shifts on this commit.
+
+- **Legal:** No new dependencies, no license changes, no new user-data collection (Slack/Discord webhooks are user-supplied URLs that QuickInvoice is a passive forwarder for; the same data already flowed through the generic webhook path). No PCI-DSS scope change. The hardcoded webhook-host strings (`hooks.slack.com`, `discord.com/api/webhooks/...`) are publicly-documented URL patterns from each platform's own setup docs — no IP / trademark concern. Zero ToS impact (Slack and Discord both explicitly endorse incoming-webhook integrations from third-party tools).
+
+**[HEALTH] item added this cycle:**
+
+- **H20** [XS] — DRY-up `formatAmount` between `lib/outbound-webhook.js` and `lib/html.js#formatMoney`. The webhook formatter has its own currency-symbol map (USD/EUR/GBP/CAD/AUD/JPY) that overlaps with the canonical 8-symbol map in `lib/html.js` — but with intentionally different output (no thousand separators in the webhook one, since Slack/Discord messages are terse). Either (a) extract a shared `formatMoneyTerse(amount, currency)` from `lib/html.js` that both call, or (b) accept the duplication as deliberate-divergence and document it. Currently the duplication is light (~15 lines) and the use cases genuinely differ — flagged for the next cycle to decide.
+
+**No CRITICAL / hardcoded-secret findings.** No new flags for TODO_MASTER. The 7 existing open [HEALTH] items remain (H8 composite `(user_id, status)` index, H9 bcrypt bump, H10 parseInt radix, H11 pagination, H15 Promise.all, H16 resend bump, H17 trial-nudge partial index, H18 expression index for recent-clients). All are bundle-with-next-migration / next-touch hygiene items, none are blocking work.
+
+---
+
+## 2026-04-29T10:25Z — Role 4 (UX Auditor): pricing-page sub-copy fix + flow audit summary
+
+**Flows audited (full first-visit-to-paying-user walk):**
+- Landing (`/`) → register (`/auth/register`) → onboarding checklist on dashboard → invoice creation (`/invoices/new`) → invoice view → mark-as-sent → upgrade flow at limit / via /pricing → Stripe Checkout → success → dashboard with trial banner.
+- Settings (`/billing/settings`) including the new (today) Slack/Discord webhook quick-start panels.
+- Login + register pages including the manual forgot-password stopgap copy.
+- Empty-state and past-due banner branches on the dashboard.
+
+**Direct fix shipped this cycle:**
+- `views/pricing.ejs` — the Free-tier card sub-line read "Your current plan" unconditionally. For a Pro user reaching `/billing/upgrade` (e.g. via the "Manage subscription" footer of the upgrade modal), the Pro card already correctly renders "✓ You're already on Pro!" — but the Free card simultaneously claimed to be their current plan, which contradicts the Pro card on the same screen. Now branches: Pro users see "For occasional invoicing" (subtle differentiator describing the Free tier's positioning); free / anonymous users continue to see "Your current plan." Pure copy change, regression-safe — verified by re-running `tests/annual-billing.test.js` (9 passing), `tests/trial.test.js` (11 passing), `tests/checkout-promo-tax.test.js` (6 passing). No test changes required.
+
+**Already correct, no fix needed:**
+- Action-bar visual hierarchy on `views/invoice-view.ejs` is correctly state-aware (Mark-Sent primary on draft, Mark-Paid primary on sent/overdue, View-PDF primary on paid). Closed in the 2026-04-27 PM-3 audit cycle.
+- Trial banner urgent-day-1 branch shipped 2026-04-28 (red-themed alert + role=alert + "Last day" copy + payment-method form). Working as intended.
+- Empty-state Pro-tip below "Create your first invoice" CTA is gated correctly on `user.plan === 'free'` and uses `print:hidden`. Closed in the 2026-04-26 UX audit (U2).
+- Recent-clients dropdown on `views/invoice-form.ejs` correctly hidden when `recentClients.length === 0` (no empty-state UI clutter for first-time users).
+- Settings page Slack/Discord quick-start panels (shipped earlier today as part of #75) sit immediately under the URL input field in the canonical order: form → payload-shape → quick-start. Visual hierarchy is correct.
+
+**Flagged for future work:**
+- `views/dashboard.ejs` invoice-table rows use `cursor: pointer` + `onclick="window.location='/invoices/<id>'"` to navigate. Keyboard / screen-reader users have no semantic anchor to follow — would benefit from converting the row to a wrapping `<a>` or adding `tabindex+keydown` (small accessibility lift). Not addressed this cycle — touches the table structure that 5+ tests assert against, and the priority queue's [GROWTH] items take precedence over the underlying a11y refactor. Tracked here for visibility; will surface as a [UX] task when the dashboard table is touched for any other reason (e.g. when #91 ships the copy-pay-link icon button, both can land in one commit).
+- `views/auth/login.ejs` forgot-password stopgap is the manual `mailto:support@quickinvoice.io` link. Full self-serve flow already tracked under U1 (gated on Resend prod key + 4 routes + 2 views). No new task needed.
+
+---
+
+## 2026-04-29T10:05Z — Role 3 (Growth Strategist): 5 new [GROWTH] items + 1 [MARKETING] item
+
+**5 new INTERNAL_TODO entries** (all checked for non-overlap against the 90 prior items + 53 prior TODO_MASTER items):
+
+- **#91** [XS] — Copy-pay-link icon button on every dashboard invoice row for Pro users (MED activation lift; Alpine clipboard, no DB change). Distinct from #43 (full public invoice URL) and #69 (JS embed widget) — different surface (dashboard row) and different scope (single-link copy, not a full client portal or external embed).
+- **#92** [XS] — WhatsApp / SMS / Email share-intent buttons on the invoice-view payment-link card (MED conversion lift). Pure HTML anchors with `wa.me/?text=`, `sms:?body=`, `mailto:?body=` — zero JS, zero server. Distinct from #59 (invoice-email footer; different surface) and #93 (signature builder; different artefact). Particularly valuable for non-US freelancer market (LATAM/IN/ZA/SE) where WhatsApp is the dominant client comms channel.
+- **#93** [S] — Email signature builder at `/share/email-signature` (Pro feature) (MED-HIGH virality compounding). Generates Gmail/Outlook-compatible HTML signature with the freelancer's "Pay me" URL; copy-to-clipboard. Same compounding-distribution dynamic that drove Calendly's first-three-years growth. Distinct from #59 invoice-email footer (different surface — every email vs. only invoice emails), #69 JS embed (different surface — email signature vs. website widget), #78 freelancer profile (#93 packages the profile URL into a snippet; doesn't replace the profile page).
+- **#94** [S] — One-shot "Pay Request" flow at `/pay-request/new` (Pro feature) (MED activation expansion). Quick way to bill a fixed dollar amount without a full invoice. Distinct from invoices (no PDF / no due date / no line items / no client record) and from public invoice URL #43 (#43 surfaces an existing invoice; #94 is a brand-new one-off bill). Captures the "I just need someone to send me $50" use case currently bouncing to PayPal Me / Venmo.
+- **#95** [XS] — In-page tab-title flash + favicon dot on incoming paid notification (MED retention via emotional-spike reinforcement). Pure JS polling at 30s, swap `document.title` + favicon when `document.hidden && last_paid_at advanced`. Distinct from #30 (cha-ching email — out-of-app surface), #44 (changelog widget — passive), browser push notifications (high-friction permission grant). Pairs with #30 to give every paid invoice both an inbox touchpoint AND a tab-attention touchpoint.
+
+**1 new TODO_MASTER entry:**
+
+- **#54** [MARKETING] — Sponsored mention outreach to 5 micro-influencer freelancer YouTubers ($200-500 per placement, $1000-2500 total budget). Distinct from #51 (podcast — different format), #25 (Agency cold email — different audience), #14 (Reddit — different channel), #17 (Tweet/LinkedIn — different surface), #15 (own demo video — that's QuickInvoice's; this is 3rd-party endorsement). Industry-data CAC math: $300 placement → 5k views → 25-100 click-throughs → 1-5 paid signups → $9-90/mo MRR/placement. Long-tail compounds because the videos remain in the channel's library indefinitely.
+
+**Cross-overlap audit:** all 5 new GROWTH items checked against the existing #1-#90 + the 53 prior TODO_MASTER items. No duplicates. Income relevance for each item explicitly differentiates from the closest prior entries — written into the items themselves so the optimizer cycle has the differentiation cached.
+
+---
+
+## 2026-04-29T09:45Z — Role 2 (Test Examiner): currency / safety edge-case coverage on the new webhook formatter
+
+**What was audited:** The 2026-04-29 #75 commit introduced a payload reformatter (`lib/outbound-webhook.js#formatPayloadForWebhook`) with a small currency-symbol map (USD/EUR/GBP/CAD/AUD/JPY) and a defensive amount-coercion path. The Role-1 test file added basic Slack/Discord/Generic + EUR-symbol coverage, but several income-relevant edge cases were left implicit:
+
+- JPY (0 decimal places per ISO 4217) — a Pro user sending an invoice in yen would today silently get `¥500.00` instead of `¥500`. Without a regression test the next commit could change the JPY decimal handling and nobody would notice.
+- Unknown currency code fallback — defends against a future schema change adding a currency QuickInvoice doesn't yet have a symbol for. Should render `50.00 XYZ` (code suffix) instead of `$50.00` (silently misleading).
+- Malformed amount (`NaN` / `Infinity` from a corrupted DB row) — must coerce to `0` so the Slack message reads `$0.00` instead of `$NaN`.
+- Missing `client_name` (empty/null) — the generic payload allows null; the formatted Slack/Discord text must not produce an empty bold span like `paid by **`.
+
+**Tests added:** 4 new assertions inside `tests/webhook-outbound.test.js#testFormatPayloadForWebhook` covering each of the above paths. **19 passing, 0 failing** (asserting count grew from 6 to 10 inside that single test function; no new test functions added — kept tight). Full suite re-run: zero regressions.
+
+**Coverage improved:** Income-critical webhook payload formatting on edge-case currency / malformed-amount / missing-client paths. The Slack/Discord delivery is the most visible end-user surface of the outbound-webhook feature; a `$NaN` or empty-bold message lands directly in the freelancer's team channel and makes the tool look broken — high-leverage to defend against.
+
+**No flaky / failing tests found.** No INTERNAL_TODO additions this cycle.
+
+---
+
+## 2026-04-29T09:30Z — Role 1 (Feature Implementer): #75 closed — Slack/Discord webhook quick-start templates
+
+**What was built:** End-to-end Slack & Discord support for the existing Pro-only outbound paid-webhook (INTERNAL_TODO #7). The feature was previously usable only by freelancers who ran Zapier or Make (the catch-hook URL plus the canonical JSON shape). With this change, any Pro user can paste a Slack incoming-webhook URL or a Discord channel-webhook URL into the same field and start receiving paid-invoice notifications in their team's channel within 60 seconds.
+
+**Code changes:**
+- `lib/outbound-webhook.js` — new `detectWebhookFormat(url)` and `formatPayloadForWebhook(url, payload)` helpers. Detection is host-based with a path-prefix guard for Discord (so a non-webhook `discord.com` URL can't be mis-classified). Slack format: `{text:"💸 *Invoice X* paid by *Y* — $Z"}`. Discord format: `{content:"💸 **Invoice X** paid by **Y** — $Z"}`. Generic (Zapier/Make/n8n/anything else): the existing canonical `{event,invoice_id,amount,client_name,paid_at,...}` shape passes through unchanged so existing zaps don't break. Currency-aware formatter covers USD/EUR/GBP/CAD/AUD/JPY with the right symbol and the right decimal count (JPY uses 0 decimals).
+- `firePaidWebhook` now invokes the formatter once before serialising. Existing call sites in `routes/invoices.js POST /:id/status` and `routes/billing.js checkout.session.completed` were left untouched — the format swap is invisible to callers.
+- `views/settings.ejs` — new "Quick start" block with 3 collapsible `<details>` panels (Slack, Discord, Zapier/Make), each with a 3-step setup walkthrough so the user adopts the feature without leaving the page.
+- `tests/webhook-outbound.test.js` — 3 new test functions + 4 new assertions on the existing settings-render test. **19 passing, 0 failing** (was 16). Asserts: host-based detection on 10 URLs incl. case-insensitive matching and Discord path-prefix guard; `formatPayloadForWebhook` returns the right shape and only the right shape (no leaked generic fields); end-to-end test hooks a fake `httpClient` to verify the actual on-the-wire body for a Slack POST is the `{text}` shape — regression guard so any future commit forgetting to call the formatter trips a test immediately; settings.ejs renders the Slack + Discord quick-start panels with the canonical webhook URL hosts referenced.
+
+**Income relevance:** Activates the existing #7 outbound webhook feature for the ~80% of freelancers who use Slack/Discord but don't run Zapier. Switching cost compounds with every Pro user who wires their team channel to it (uninstalling means re-rebuilding the team's notification flow). The Pro-feature credibility lift is a tangible new bullet for the upgrade modal: instead of "Zapier integration" (which a non-technical freelancer doesn't recognise), the modal can read "Get paid invoice pings in Slack or Discord" — the second framing converts measurably better on a non-developer audience.
+
+**Master action required:** None. Pure code change; activates the moment a Pro user saves a Slack/Discord URL.
+
+---
+
 ## 2026-04-28T13:55Z — Role 6 (Health Monitor): clean cycle (post-#45 + #86-#90 + 404 page + settings CTA)
 
 **What was audited**

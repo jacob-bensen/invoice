@@ -1382,3 +1382,27 @@ Each placement of QuickInvoice in a "best invoicing software 2026" listicle is a
 Each community announcement reaches 200-2000 highly-targeted freelancers in the exact moment they're most receptive (community context = high trust). One moderator-driven announcement is worth ~5x a generic ad placement because the framing is "your trusted community recommends" not "we're paying to be in front of you." The vacation-mode story is unusually portable — it's a 1-line feature description that sells itself in any community where seasonal-income freelancers gather, which is most of them.
 
 **Why now:** the feature's value proposition is acutely seasonal — outreach in Q2 / Q3 catches the summer-vacation cohort and Q4 holiday cohort. Ship the outreach within 30 days of the feature shipping so the announcement is news rather than backfilled history.
+
+---
+
+### 54. [MARKETING] Sponsored mention outreach to 5 micro-influencer freelancer YouTubers (added 2026-04-29)
+
+**Why this matters (concretely):** Established cold-email and Reddit/X channels (TODO_MASTER #14, #17, #25) cover community surfaces; podcast sponsorship (#51) covers audio; listicle-author outreach (#52) covers SEO referrals. The remaining un-touched channel is YouTube, where freelance-niche channels (designer / developer / consultant tutorials) routinely place a "tools I use" sponsor segment in their 5-15 minute videos. A 30-second mention from a 10k-subscriber freelance YouTuber typically converts at 0.5-2% of view count to a /pricing visit — for $200-500 per placement that's ~$0.30-1.00 per high-intent visitor, well below QuickInvoice's blended CAC. Distinct from #51 podcast (different format/audience overlap minimal) and #15 demo video (that's QuickInvoice's own; this is third-party endorsement on someone else's audience).
+
+**Action (Master, ~4 hrs research + ~1 hr/week ongoing during 6-week campaign + $1000-2500 ad spend total):**
+
+1. **Build a YouTuber shortlist (~2 hrs).** Search YouTube for `freelance designer tools`, `freelance developer business`, `consultant invoicing`, `freelance accounting` — filter for channels with 5k-50k subs (sweet spot: large enough audience to matter, small enough that ad rates are negotiable). Pull 20-30 channels into a Google Sheet with: subscriber count, recent video views, niche, contact (channel about page, business email, Twitter/X). Prioritise channels that have placed a sponsor segment in the last 6 months — they're already accepting sponsorships.
+
+2. **Draft outreach template (~30 min).** Pitch is short — YouTubers get 100+ inbound pitches/week:
+
+   > Hi <name>, big fan of <recent video>. We run QuickInvoice — a freelancer invoicing tool with one-click Stripe payment links + automated late reminders. We're testing a small sponsorship budget across 5 freelance-niche YouTubers and would love to sponsor a 30-60s segment in one of your upcoming videos. Budget: $200-500 depending on placement. We send a free Pro plan + a custom referral coupon for your audience. Reply if useful — happy to send a 60s product demo.
+
+3. **Send 5-10/week (~30-45 min/week).** Track in the same Google Sheet. Target: 20% reply rate = 5-6 placements landed across 4-6 weeks.
+
+4. **Per-placement onboarding (~1 hr each).** Send each YouTuber a free Pro plan account, a custom Stripe promo code (`<creator-handle-50>` for 50% off first 3 months — gated through INTERNAL_TODO #58 redemption page once it ships), a 60s product-demo video they can voice-over, and 3 talking points (Stripe Pay Links, automated reminders, free 7-day trial).
+
+5. **Track conversions for 60 days post-mention.** Per-placement coupon code makes attribution exact. Refresh the playbook based on which placements outperform.
+
+**Income relevance (concrete numbers):** Industry data on freelancer-niche YouTube sponsorships (Mailbrew, Pirate Ship, ConvertKit have run similar plays) puts conversion-to-paid at 2-5% of click-through, with click-through rates of 0.5-2% of view counts. A $300 placement on a 10k-subscriber channel that gets 5k views → 25-100 click-throughs → 1-5 paid signups → $9-90/mo in MRR per placement. Across 5 placements that's $45-450/mo in incremental MRR for $1000-2500 one-time spend — ROI breakeven 5-25 months but the placements remain in the YouTuber's video library indefinitely (long-tail compounds for years).
+
+**Why now:** Q2 / Q3 is YouTube's higher-engagement window before holiday content saturates Q4 ad inventory. Channels are also still finalising their 2026 sponsor lineup; getting in early secures lower rates. Pairs with #58 redemption page (once it ships, every YouTuber gets a clean attributable URL) and #52 listicle outreach (compounding multi-channel evergreen presence).

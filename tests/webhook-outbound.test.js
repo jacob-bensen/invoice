@@ -359,6 +359,191 @@ async function testFirePaidWebhookGracefulOnInvalidUrl() {
   };
 }
 
+async function testDetectWebhookFormat() {
+  clearReq('../lib/outbound-webhook');
+  const real = require('../lib/outbound-webhook');
+  assert.strictEqual(real.detectWebhookFormat('https://hooks.slack.com/services/T0/B0/abc'), 'slack',
+    'hooks.slack.com is detected as Slack');
+  assert.strictEqual(real.detectWebhookFormat('https://HOOKS.SLACK.COM/services/T0/B0/abc'), 'slack',
+    'host comparison is case-insensitive');
+  assert.strictEqual(real.detectWebhookFormat('https://discord.com/api/webhooks/123/abc'), 'discord',
+    'discord.com /api/webhooks is detected as Discord');
+  assert.strictEqual(real.detectWebhookFormat('https://discordapp.com/api/webhooks/123/abc'), 'discord',
+    'legacy discordapp.com /api/webhooks is detected as Discord');
+  assert.strictEqual(real.detectWebhookFormat('https://canary.discord.com/api/webhooks/123/abc'), 'discord',
+    'canary.discord.com is also a valid Discord webhook host');
+  assert.strictEqual(real.detectWebhookFormat('https://discord.com/some/other/path'), 'generic',
+    'discord.com without /api/webhooks must NOT be treated as Discord');
+  assert.strictEqual(real.detectWebhookFormat('https://hooks.zapier.com/hooks/catch/1/abc'), 'generic',
+    'Zapier catch-hook stays generic (regression guard for existing zaps)');
+  assert.strictEqual(real.detectWebhookFormat('https://example.com/hook'), 'generic',
+    'arbitrary URL stays generic');
+  assert.strictEqual(real.detectWebhookFormat('not a url'), 'generic',
+    'unparseable URL falls back to generic');
+  assert.strictEqual(real.detectWebhookFormat(null), 'generic',
+    'null URL falls back to generic');
+  // Restore stub.
+  require.cache[require.resolve('../lib/outbound-webhook')] = {
+    id: require.resolve('../lib/outbound-webhook'),
+    filename: require.resolve('../lib/outbound-webhook'),
+    loaded: true,
+    exports: outboundStub
+  };
+}
+
+async function testFormatPayloadForWebhook() {
+  clearReq('../lib/outbound-webhook');
+  const real = require('../lib/outbound-webhook');
+  const generic = {
+    event: 'invoice.paid',
+    invoice_id: 7,
+    invoice_number: 'INV-2026-0007',
+    amount: 1234.5,
+    currency: 'usd',
+    client_name: 'Acme Corp',
+    client_email: 'billing@acme.com',
+    paid_at: '2026-04-27T12:00:00.000Z'
+  };
+
+  // Generic URL: payload passes through unchanged (object identity preserved).
+  const passThrough = real.formatPayloadForWebhook('https://hooks.zapier.com/hooks/catch/1/abc', generic);
+  assert.strictEqual(passThrough, generic,
+    'generic URL keeps the existing object reference (zero allocation)');
+
+  // Slack: { text } shape, dollar-formatted amount.
+  const slack = real.formatPayloadForWebhook('https://hooks.slack.com/services/T/B/abc', generic);
+  assert.deepStrictEqual(Object.keys(slack), ['text'],
+    'Slack payload must contain ONLY the text field');
+  assert.ok(slack.text.includes('INV-2026-0007'),
+    'Slack text must include invoice number');
+  assert.ok(slack.text.includes('Acme Corp'),
+    'Slack text must include client name');
+  assert.ok(slack.text.includes('$1234.50'),
+    'Slack text must include amount with 2 decimals');
+  assert.ok(slack.text.startsWith('💸'),
+    'Slack text must lead with the cha-ching emoji');
+
+  // Discord: { content } shape with bold markdown.
+  const discord = real.formatPayloadForWebhook('https://discord.com/api/webhooks/1/abc', generic);
+  assert.deepStrictEqual(Object.keys(discord), ['content'],
+    'Discord payload must contain ONLY the content field');
+  assert.ok(discord.content.includes('**Invoice INV-2026-0007**'),
+    'Discord content must wrap the invoice label in Markdown bold');
+  assert.ok(discord.content.includes('**Acme Corp**'));
+  assert.ok(discord.content.includes('$1234.50'));
+
+  // Currency: EUR amount renders with euro sign.
+  const eur = real.formatPayloadForWebhook(
+    'https://hooks.slack.com/services/T/B/abc',
+    { ...generic, amount: 99.9, currency: 'eur' }
+  );
+  assert.ok(eur.text.includes('€99.90'),
+    'EUR amount must render with the € symbol');
+
+  // JPY uses zero decimal places per ISO 4217 (yen has no sub-unit).
+  const jpy = real.formatPayloadForWebhook(
+    'https://hooks.slack.com/services/T/B/abc',
+    { ...generic, amount: 1234, currency: 'jpy' }
+  );
+  assert.ok(jpy.text.includes('¥1234'),
+    'JPY must render with ¥ and 0 decimal places');
+  assert.ok(!jpy.text.includes('¥1234.00'),
+    'JPY must NOT render fractional yen');
+
+  // Unknown currency falls back to bare amount + ISO code (no symbol invented).
+  const xyz = real.formatPayloadForWebhook(
+    'https://hooks.slack.com/services/T/B/abc',
+    { ...generic, amount: 50, currency: 'xyz' }
+  );
+  assert.ok(xyz.text.includes('50.00 XYZ'),
+    'unknown currency must render the ISO code as a suffix instead of inventing a symbol');
+
+  // Defence against malformed amount: NaN/Infinity coerce to 0 instead of "$NaN".
+  const nan = real.formatPayloadForWebhook(
+    'https://hooks.slack.com/services/T/B/abc',
+    { ...generic, amount: NaN, currency: 'usd' }
+  );
+  assert.ok(nan.text.includes('$0.00'),
+    'NaN amount must coerce to $0.00 instead of leaking "NaN" into the message');
+
+  // Missing client_name still produces a valid message.
+  const noClient = real.formatPayloadForWebhook(
+    'https://hooks.slack.com/services/T/B/abc',
+    { ...generic, client_name: null }
+  );
+  assert.ok(noClient.text.includes('a client'),
+    'missing client_name falls back to the generic "a client" wording');
+
+  // Restore stub.
+  require.cache[require.resolve('../lib/outbound-webhook')] = {
+    id: require.resolve('../lib/outbound-webhook'),
+    filename: require.resolve('../lib/outbound-webhook'),
+    loaded: true,
+    exports: outboundStub
+  };
+}
+
+async function testFirePaidWebhookSlackPayloadShape() {
+  // End-to-end: firePaidWebhook reformats the payload before POSTing to Slack.
+  clearReq('../lib/outbound-webhook');
+  const real = require('../lib/outbound-webhook');
+  real.setHostnameResolver(async (hostname) => {
+    if (hostname === 'hooks.slack.com') return [{ address: '52.1.2.3', family: 4 }];
+    throw new Error('ENOTFOUND ' + hostname);
+  });
+
+  let receivedBody = '';
+  const fakeHttpClient = {
+    request(_opts, cb) {
+      const fakeReq = {
+        _body: '',
+        write(b) { this._body += b.toString('utf8'); },
+        end() {
+          receivedBody = this._body;
+          const fakeRes = {
+            statusCode: 200,
+            on(evt, h) { if (evt === 'end') setImmediate(h); }
+          };
+          cb(fakeRes);
+        },
+        on() {},
+        destroy() {}
+      };
+      return fakeReq;
+    }
+  };
+
+  const result = await real.firePaidWebhook(
+    'https://hooks.slack.com/services/T/B/abc',
+    {
+      event: 'invoice.paid',
+      invoice_id: 7,
+      invoice_number: 'INV-2026-0007',
+      amount: 250,
+      currency: 'usd',
+      client_name: 'Acme Corp'
+    },
+    { httpClient: fakeHttpClient }
+  );
+
+  assert.strictEqual(result.ok, true);
+  const parsed = JSON.parse(receivedBody);
+  assert.ok(parsed.text, 'Slack payload must have a text field');
+  assert.ok(!('event' in parsed),
+    'Slack payload must NOT include the generic event field — Slack would reject the message');
+  assert.ok(!('invoice_id' in parsed),
+    'Slack payload must NOT carry the generic invoice_id field');
+  assert.ok(parsed.text.includes('INV-2026-0007'));
+
+  // Restore stub.
+  require.cache[require.resolve('../lib/outbound-webhook')] = {
+    id: require.resolve('../lib/outbound-webhook'),
+    filename: require.resolve('../lib/outbound-webhook'),
+    loaded: true,
+    exports: outboundStub
+  };
+}
+
 async function testSaveWebhookUrlProUser() {
   resetStore();
   users.set(1, { id: 1, plan: 'pro', email: 'p@x.com' });
@@ -552,6 +737,16 @@ async function testSettingsRendersWebhookFormForPro() {
     'input must be named webhook_url');
   assert.ok(html.includes('https://hooks.zapier.com/hooks/catch/5/abc'),
     'existing URL must be prefilled');
+  // Slack/Discord quick-start panels should appear next to the URL field so
+  // non-Zapier Pro users can adopt the feature without copy-pasting from docs.
+  assert.ok(html.includes('Use with Slack'),
+    'Slack quick-start panel must render');
+  assert.ok(html.includes('hooks.slack.com'),
+    'Slack quick-start must reference the canonical Slack webhook host');
+  assert.ok(html.includes('Use with Discord'),
+    'Discord quick-start panel must render');
+  assert.ok(html.includes('discord.com/api/webhooks'),
+    'Discord quick-start must reference the canonical Discord webhook URL pattern');
 }
 
 async function testSettingsShowsLockedPlaceholderForFree() {
@@ -581,6 +776,9 @@ async function run() {
     ['buildPaidPayload returns documented shape', testBuildPaidPayload],
     ['firePaidWebhook POSTs JSON with headers', testFirePaidWebhookPostsJson],
     ['firePaidWebhook graceful on invalid URL', testFirePaidWebhookGracefulOnInvalidUrl],
+    ['detectWebhookFormat: Slack/Discord/Generic detection', testDetectWebhookFormat],
+    ['formatPayloadForWebhook: Slack {text} + Discord {content} shapes', testFormatPayloadForWebhook],
+    ['firePaidWebhook: Slack URL → POSTs the {text} payload shape, not the generic JSON', testFirePaidWebhookSlackPayloadShape],
     ['POST /billing/webhook-url: Pro saves webhook_url', testSaveWebhookUrlProUser],
     ['POST /billing/webhook-url: empty input clears to null', testClearWebhookUrlWhenEmpty],
     ['POST /billing/webhook-url: invalid URL rejected, not saved', testRejectInvalidWebhookUrl],

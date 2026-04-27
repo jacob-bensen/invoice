@@ -94,6 +94,37 @@
   "paid_at": "2026-04-23T14:30:00.000Z"
 }</pre>
       </details>
+
+      <div class="mt-5 border-t border-gray-100 pt-4 space-y-2">
+        <p class="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Quick start</p>
+        <details class="text-xs text-gray-600">
+          <summary class="cursor-pointer font-medium text-gray-700">💬 Use with Slack</summary>
+          <div class="mt-2 space-y-2 pl-1">
+            <ol class="list-decimal pl-4 space-y-1">
+              <li>Open your Slack workspace, then go to <strong>Apps</strong> → <strong>Manage</strong> → <strong>Custom Integrations</strong> → <strong>Incoming Webhooks</strong>.</li>
+              <li>Click <strong>Add to Slack</strong>, choose the channel, and copy the generated <code class="bg-gray-100 rounded px-1">https://hooks.slack.com/services/…</code> URL.</li>
+              <li>Paste it above and save. Each paid invoice will post a message like <em>“💸 Invoice INV-2026-0123 paid by Acme Corp — $500.00”</em>.</li>
+            </ol>
+            <p class="text-gray-400 text-[11px]">No formatting setup needed — QuickInvoice detects Slack URLs and sends the right payload automatically.</p>
+          </div>
+        </details>
+        <details class="text-xs text-gray-600">
+          <summary class="cursor-pointer font-medium text-gray-700">🎮 Use with Discord</summary>
+          <div class="mt-2 space-y-2 pl-1">
+            <ol class="list-decimal pl-4 space-y-1">
+              <li>In your Discord server, open the channel and click the gear icon → <strong>Integrations</strong> → <strong>Webhooks</strong>.</li>
+              <li>Click <strong>New Webhook</strong>, name it (e.g. “Invoices”), then copy the URL — it starts with <code class="bg-gray-100 rounded px-1">https://discord.com/api/webhooks/…</code>.</li>
+              <li>Paste it above and save. Paid invoices will post in the channel automatically.</li>
+            </ol>
+          </div>
+        </details>
+        <details class="text-xs text-gray-600">
+          <summary class="cursor-pointer font-medium text-gray-700">⚡ Use with Zapier or Make</summary>
+          <div class="mt-2 pl-1 text-gray-500">
+            Use any catch-hook URL (Zapier, Make, n8n, your own server). QuickInvoice will POST the JSON shape shown above.
+          </div>
+        </details>
+      </div>
     <% } else { %>
       <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
         <p class="text-sm text-gray-600 mb-2">
