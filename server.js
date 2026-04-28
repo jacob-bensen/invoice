@@ -12,6 +12,7 @@ const landingRoutes = require('./routes/landing');
 const { csrfProtection } = require('./middleware/csrf');
 const { securityHeaders } = require('./middleware/security-headers');
 const { requireAuth } = require('./middleware/auth');
+const { formatTrialCountdown } = require('./lib/html');
 
 const app = express();
 
@@ -45,6 +46,13 @@ app.use(session({
 
 app.use((req, res, next) => {
   res.locals.user = req.session.user || null;
+  // Global nav trial-countdown pill (INTERNAL_TODO #106). Persistent across
+  // every authed page so trial urgency is not confined to the dashboard
+  // banner. Reads from session.user.trial_ends_at (populated on login /
+  // register / dashboard refresh) — no extra DB hit per request.
+  res.locals.trialCountdown = req.session.user
+    ? formatTrialCountdown(req.session.user.trial_ends_at)
+    : null;
   next();
 });
 

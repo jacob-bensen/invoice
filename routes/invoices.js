@@ -29,7 +29,8 @@ router.get('/', requireAuth, async (req, res) => {
         ...req.session.user,
         plan: user.plan,
         subscription_status: user.subscription_status || null,
-        invoice_count: user.invoice_count
+        invoice_count: user.invoice_count,
+        trial_ends_at: user.trial_ends_at || null
       };
     }
     let days_left_in_trial = 0;

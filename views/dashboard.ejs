@@ -169,7 +169,7 @@
           <% if (locals.invoiceLimitProgress) { %>
             Free plan · <a href="/billing/upgrade" class="text-brand-600 hover:underline font-medium">Upgrade for unlimited</a>
           <% } else { %>
-            Free plan · <%= user.invoice_count || 0 %>/3 invoices used ·
+            Free plan · <%= user.invoice_count || 0 %> of 3 invoices used ·
             <a href="/billing/upgrade" class="text-brand-600 hover:underline font-medium">Upgrade for unlimited</a>
           <% } %>
         <% } else { %>
