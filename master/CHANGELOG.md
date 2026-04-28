@@ -2,6 +2,220 @@
 
 ---
 
+## 2026-04-28T00:18Z — Role 6 (Health Monitor): clean cycle audit — zero new findings
+
+**Audit scope this cycle:** the 6 view files touched in Role 1 (`views/pricing.ejs`, `views/settings.ejs`, `views/partials/upgrade-modal.ejs`) and Role 4 (`views/index.ejs`, `views/invoice-form.ejs`, `views/dashboard.ejs`); the 1 new test file (`tests/annual-savings-pill.test.js`); the 1 modified test file (`tests/recent-regression.test.js`); the modified `package.json` test runner.
+
+- **Security review of the diff:**
+  - All 6 view-file edits this cycle are static-string changes (or static-Tailwind-class changes). No user-controlled data flows into the new strings — every literal ("Save $45/year", "$99/yr", "$12/mo", "30 days", "& payment links") is hardcoded server-side. **Zero new XSS surfaces, zero new injection vectors.**
+  - The new `x-show="cycle === 'annual'"` Alpine attribute reads a literal string from the client-side scope (`cycle`) which is initialised to a hard-coded `'monthly'` default. No user-controlled value reaches the directive. CSP `script-src-attr 'unsafe-inline'` (already in place per H4) covers the directive.
+  - Test files (annual-savings-pill.test.js + recent-regression.test.js) are dev-only; no production-runtime path. Both render templates against fixed locals with no DB/network/IO — pure unit tests.
+  - The Role 1 edit on `upgrade-modal.ejs` removed one HTML element (the `(save $45/year)` parenthetical fine print) — strictly subtractive change, can't introduce a bug.
+  - **Hardcoded-secret scan (grep `views/*.ejs views/partials/*.ejs views/auth/*.ejs` for `api[_-]key` / `secret` / `password` / `token`):** matches found are all (a) HTML form fields (`type="password"`), (b) marketing copy ("Encrypted passwords"), (c) the legitimate `process.env.APP_URL` read inside `views/partials/head.ejs:12` (server-side EJS block — not exposed to browser). **No hardcoded credentials, no API keys in views.** ✓
+- **`npm audit --omit=dev`:** 6 vulnerabilities (3 moderate, 3 high) — **all pre-existing**, all install-time only. `bcrypt → @mapbox/node-pre-gyp → tar` (3 high, install-time) tracked under [HEALTH] H9; `resend → svix → uuid` (3 moderate, install-time) tracked under H16. Runtime exposure remains nil. **No new advisories surfaced this cycle** (no new dependencies — every code change touched only static EJS templates).
+- **Performance:** Zero new DB queries this cycle. The 6 view changes net out to roughly +30 bytes of HTML per pricing/settings/modal/index/dashboard/invoice-form render — well within R14 (Heroku memory limit) budget. The new `x-show` directives are evaluated client-side by Alpine; the server still ships both branches but the cost is byte-level, not query-level. No N+1, no missing indexes, no new hot paths.
+- **Code quality:** The Role 1 edit on `upgrade-modal.ejs` is **net-negative duplication** — it removed the `(save $45/year)` fine-print parenthetical that was a duplicate of the (now-promoted) green pill. Single source of truth restored for the savings number across all 3 surfaces (pricing, settings, modal) + the new landing-page Pro card (Role 4). The hardcoded "$45" appears in 4 places — `views/pricing.ejs`, `views/settings.ejs`, `views/partials/upgrade-modal.ejs`, `views/index.ejs` — consistent across all four; no drift. The Role 2 cross-surface-consistency test (`testSavingsNumberConsistentAcrossAllThreeSurfaces`) now guards 3 of those; the landing-page Pro card is an additional surface that's not currently in the test scope but a one-line addition could close that — flag for a future cycle if a 4th drift surfaces. Light enough that it's not promoted to a [HEALTH] item right now.
+- **Dependencies:** zero changes — no `npm i`, no `package-lock.json` shifts. Total prod tree unchanged. `package.json` was edited to add the new test file to the `test` script — dev-only entry, no runtime/production effect.
+- **Legal:** No new dependencies, no license changes, no new user-data collection, no new third-party APIs, no PCI scope change, no GDPR/CCPA implications. The "(save $45/year)" copy promotion is a pure UX micro-rewrite — no claim about anything that requires legal review.
+
+**No CRITICAL / hardcoded-secret findings. No new flags for TODO_MASTER. No new [HEALTH] items.** The 8 existing open [HEALTH] items remain unchanged: H8 composite (user_id, status) index, H9 bcrypt bump, H10 parseInt radix, H11 pagination, H15 Promise.all GET handlers, H16 resend bump, H17 trial-nudge partial index, H18 expression index for recent-clients, H20 currency-formatter DRY. All are bundle-with-next-migration / next-touch hygiene items, none are blocking work.
+
+**Net delta this cycle:** cleanest cycle so far on the security/legal axes — every code change was either static-string, test-only, or test-runner. Zero net new attack surface introduced; one removed (the redundant savings parenthetical = one less surface to keep in sync with the canonical number).
+
+---
+
+## 2026-04-28T00:16Z — Role 5 (Task Optimizer): 15th-pass audit — header refreshed, #101 archived, priority queue re-ordered
+
+**Audit deltas this pass:**
+- **#101 archived as [DONE]** as a parenthetical block above #102 in the XS-GROWTH bucket (consistent archive pattern). Detail mirrors the CHANGELOG #101 entry.
+- **Top of file metadata** rewritten: 14th-pass narrative folded into the "14th-pass audit retained" line; 15th-pass narrative now occupies the lead block. Cross-overlap rationale for #106-#111 + MARKETING #57 written into the audit header so the next optimizer pass has the differentiation cached.
+- **Priority queue re-sorted** (top of the file already shows the new ordering inline). Note: U1 [UX] [M] (self-serve password reset) **removed from top-3 priority slot** because it's blocked on RESEND_API_KEY (Master action — TODO_MASTER #18) — moved into the existing "Resend block" alongside #11/#12/#66/#71/#77/#80/#90/#110, where it fits the same Master-action-blocking pattern. U3 [UX] [S] remains the top open [UX] item (gated on #28 legal pages — implementable code-side independent of Master).
+- **#106 + #109 inserted** in the XS-GROWTH bucket immediately after #102; #107 + #108 + #111 inserted in the S-GROWTH bucket; #110 inserted in the M-GROWTH bucket (above the existing #69 / #60 / #50 / #53 / #40 / #21 / #18 / #24 / #17). All in priority order within their complexity tier.
+- **Open task index re-counted:** 105 GROWTH items total (was 99; +6 this cycle, -1 #101 closed); 8 [HEALTH] items open (H8/H9/H10/H11/H15/H16/H17/H18/H20 unchanged); 2 [UX] items (U3 actively buildable; U1 in Resend block); 0 [TEST-FAILURE]. **No new [BLOCKED] items this cycle.**
+- **TODO_MASTER reviewed:** all 57 items checked against this cycle's CHANGELOG. None flip to [LIKELY DONE - verify] — every prior Master action remains pending its respective external step (Stripe Dashboard config, Resend API key, Plausible domain, G2/Capterra profile creation, Reddit / podcast / YouTube outreach campaigns, AppSumo submission, etc.).
+- **Duplicate consolidation pass:** ran cross-checks on the 6 new GROWTH + 1 new MARKETING items vs the 105+57 existing items. Zero duplicates. Closest near-misses (#106 vs #45, #107 vs #87, #108 vs #86, #109 vs #91, #110 vs #17, #111 vs #43, MARKETING #57 vs #12) all explicitly differentiated in-line.
+- **Archive trigger:** file at ~2.5k lines, trigger at 1.5k. Overdue 10 cycles. Defer again — fragmentation cost (split context across two files) currently exceeds size-bloat cost. Will revisit if file crosses 3k.
+
+**Priority order at end of 15th pass (top 12 unblocked items):**
+
+| # | ID | Tag | Cx | Title (1-line) |
+|--:|------|------|-----|------|
+| 1 | U3 | UX | S | Authed-pages global footer (gated on #28) |
+| 2 | #96 | GROWTH | XS | "Send a copy to me too" checkbox on invoice send |
+| 3 | #97 | GROWTH | XS | Stripe Receipt-emails default-on toggle |
+| 4 | #95 | GROWTH | XS | Tab-title flash + favicon dot for paid invoices |
+| 5 | #102 | GROWTH | XS | Per-user `timezone` for due-date display + reminder cron |
+| 6 | **#106** | GROWTH | XS | **Trial-countdown timer in global nav (NEW this cycle)** |
+| 7 | **#109** | GROWTH | XS | **Sticky "+" FAB on mobile dashboard (NEW this cycle)** |
+| 8 | #73 | GROWTH | XS | Pre-portal cancel-reason survey |
+| 9 | #82 | GROWTH | XS | Plan comparison table on dashboard for free users |
+| 10 | #84 | GROWTH | XS | Plain-language email body using first line item summary |
+| 11 | #88 | GROWTH | XS | "Frequent non-payer" alert on dashboard |
+| 12 | #44 | GROWTH | XS | "✨ What's new" changelog widget in nav |
+
+**Resend-blocked (kept at bottom of XS bucket):** U1 (password reset), #11 (churn win-back), #12 (monthly summary), #66 (auto-CC accountant), #71 (BCC freelancer), #77 (welcome-back on past_due→active), #80 (Mon-AM digest), #90 (60d re-engage), and the new M-complexity #110 (magic-link login). All gated on TODO_MASTER #18 (RESEND_API_KEY).
+
+**Income-critical context:** #101 was item #6 last cycle and shipped this cycle. The cycle delivered:
+- 1 closed [GROWTH] (#101 — MED conversion lift on price-page-to-checkout).
+- 6 new [GROWTH] in queue (#106-#111).
+- 1 new [MARKETING] (#57 AppSumo — only 5-figure cash event in pipeline).
+- 4 UX direct fixes (Role 4 + Role 1 surfaces all align on the dollar-amount savings prominence theme).
+- 11 new test assertions (annual-savings-pill).
+
+---
+
+## 2026-04-28T00:14Z — Role 4 (UX Auditor): landing-page Pro card + invoice-form jargon + dashboard plan-line UX fixes
+
+**Pathways audited (pre-paying user → paying user → power user):**
+
+1. Landing (`views/index.ejs`) → Register (`views/auth/register.ejs`) → Dashboard empty state → New invoice (`views/invoice-form.ejs`) → Invoice view (`views/invoice-view.ejs`) → Pricing (`views/pricing.ejs`) → Stripe Checkout → Settings (`views/settings.ejs`).
+2. Auth dead-ends: Forgot-password mailto link (login), 404 page (already covered last cycle), trial banner urgent variant (covered last cycle).
+3. Empty / error states: dashboard empty state, invoice-form flash error, billing webhook flash, not-found.
+
+**Direct fixes applied this cycle (3 copy/layout changes; no [UX] tasks added):**
+
+1. **`views/index.ejs` — Pro pricing card on landing page (line 95).** Was: `Or $99/year — save 31%`. Now: `Or $99/year — save $45/year` with `text-emerald-200 font-semibold` emphasis on the dollar amount. The percentage form ("31%") forces the user to do the price-anchoring math themselves; the dollar form is the conversion-decision-aligned framing. Restores symmetry with the same-cycle Role 1 pill change across pricing/settings/upgrade-modal — landing page is the very first surface a prospect sees, and was the one outlier still leading with the percentage.
+
+2. **`views/invoice-form.ejs` — Due Date label hint (line 47).** Was: `Due Date (Net 30 default)`. Now: `Due Date (defaults to 30 days)`. "Net 30" is accounting jargon — meaningful to bookkeepers and AP departments, but opaque to first-time freelancers who are the dominant segment. The plain-English form ("30 days") is unambiguous; bookkeepers still recognize it instantly. Updated the asserting test in `tests/recent-regression.test.js` to accept either form (regex alternation) so the original spirit of the regression — "the auto-pre-fill must be transparent to the user" — is preserved while allowing the copy edit. No production-runtime behaviour change; pre-fill semantics (today + 30 days) unchanged.
+
+3. **`views/dashboard.ejs` — Pro user plan-line copy (line 175-177).** Was: `Pro plan · Unlimited invoices`. Now: `Pro plan · Unlimited invoices & payment links`. The flat affirmation now also names a high-value Pro feature the user is actively benefiting from, reinforcing the value of the subscription on every dashboard render. Test contract preserved (`gap-coverage.test.js` asserts substring `'Pro plan'` which still matches).
+
+**Anti-fixes — flagged but deliberately left:**
+
+- **`views/auth/login.ejs:41`** — "Forgot your password? Email support@..." is a deliberate stop-gap pending the U1 self-serve password reset flow (which is gated on Resend). The mailto fallback is the right interim — escalating to `[UX]` would duplicate the existing U1 entry. Status: **leave as-is until U1 ships.**
+- **Pricing.ejs vs upgrade-modal.ejs supporting-text divergence** ("That's 3 months free vs. paying monthly." vs "Save $45/year vs. paying monthly") — different phrasings on different surfaces is intentional A/B exploration. Each frame is grammatical and accurate; the next [GROWTH] cycle that lands real Plausible analytics (#34, gated on TODO_MASTER #29) will let us measure conversion-per-frame and consolidate. Status: **leave as-is**, do not add [UX] item — analytics-driven decision, not aesthetic-uniformity decision.
+- **Mobile FAB for "New invoice"** — surfaced as a real conversion gap (the top-right CTA scrolls off-screen on mobile after ~30 invoices). Already captured this cycle as INTERNAL_TODO #109 [GROWTH] [XS]. Not flagged again.
+
+**Test impact:**
+- `tests/recent-regression.test.js` updated (regex broadened to accept both "Net 30 default" and "defaults to 30 days").
+- All 43 test files green. No tests regressed; no tests deleted.
+
+**Income relevance (cumulative across the 3 fixes this cycle):** SMALL but compounding. Each fix is conversion-flow lubrication: landing-page first-impression dollar-amount surfaces (lift on register-from-landing-page step), invoice-form jargon-removal (lift on activation rate for first-time freelancers), Pro plan-line content surface (retention via reinforcement of paid value). None individually MED+, but they sum to a measurably cleaner conversion gradient end-to-end — and pair with the same-cycle Role 1 pill promotion for a coherent "show the dollar number prominently everywhere" theme across the entire upgrade funnel.
+
+---
+
+## 2026-04-28T00:11Z — Role 3 (Growth Strategist): 6 new GROWTH items (#106-#111) + 1 new MARKETING item (#57)
+
+**Generated this cycle:** 6 implementable [GROWTH] items (4× XS-S code-only, 1× M code+Resend-blocked, 1× S gated on #43) + 1 [MARKETING] item (AppSumo lifetime-deal listing).
+
+**INTERNAL_TODO additions:**
+
+| # | Cx | Title | Income lever | Impact | Prereqs |
+|---|----|-------|--------------|--------|---------|
+| #106 | XS | Trial-countdown timer in `views/partials/nav.ejs` | Conversion (trial→paid) | MED | None — pure view + 1 helper in `lib/html.js` |
+| #107 | S | Last-30d paid-revenue stat row above dashboard invoice list (Stripe-Atlas effect) | Retention (dopamine loop) | MED | New `db.getRecentRevenueStats(userId, days)` SELECT |
+| #108 | S | On-pricing-page side-by-side competitor mini-table | Conversion (direct /pricing traffic) | MED | None — `data/competitor-pricing.json` fixture + view |
+| #109 | XS | Sticky "+" FAB on mobile dashboard for "New invoice" | Activation (mobile cohort) | MED | None — pure Tailwind `lg:hidden` view fragment |
+| #110 | M | Passwordless magic-link login at `/auth/magic-link` | Conversion (login surface) + retention | MED | Resend in prod (joins #11/#12/#66/#71/#77/#80/#90 in Resend block); 2 new DB columns; 1 new view |
+| #111 | S | "Show client preview" pre-send modal (iframe) on invoice-form | Activation (pre-send confidence) | MED | #43 public read-only invoice URL must land first (1-week sequencing) |
+
+**Cross-overlap check (vs. all 100+ existing items):**
+
+- **#106** vs #45 (closed, dashboard-only urgency banner) — different surface (global nav vs dashboard); persistent across all authed pages, not just dashboard. vs email nudges (different channel + different cognitive moment).
+- **#107** vs #87 payout reconciliation (different scope — payout = Stripe's next sweep; #107 = forward-looking growth metric). vs #64 aging receivables (different sign — outstanding vs collected). vs #62 tax PDF (different cadence — annual vs rolling-30d).
+- **#108** vs #86 vs-pages (full SEO landing pages on `/vs/<competitor>` — direct-traffic destination; #108 is the at-decision-moment surface for direct /pricing arrivals). vs #82 plan comparison (Free-vs-Pro feature comparison; #108 is QuickInvoice-vs-competitor price comparison). vs #46 exit-intent modal (bounce-recovery surface; #108 is in-page-flow surface).
+- **#109** vs #91 dashboard "Copy pay link" button (different action, different scope — per-row vs global). vs #23 PWA manifest (different surface — install-time vs in-app FAB).
+- **#110** vs #17 Google OAuth (different fork — magic-link works for any email; OAuth requires a Google account). vs #13 (closed, auto-login on register — different trigger).
+- **#111** vs existing PDF preview (different artefact — client-facing web page vs PDF; the freelancer wants to see what their CLIENT will see, which is the public read-only HTML page, not the print-PDF). vs #43 (different role — #43 is the URL itself; #111 is the in-form preview that uses it).
+
+**TODO_MASTER additions:**
+
+- **#57 [MARKETING]** — Apply to AppSumo for a lifetime-deal listing. Cash event: $45k typical 60-day window from comparable freelancer SaaS listings. Distinct from every other [MARKETING] item — only one that produces a 5-figure cash injection in a single window. Gated on (a) INTERNAL_TODO #58 redemption page landing, (b) LTD-tier pricing in `db/schema.sql`, (c) 5+ testimonials on landing page (TODO_MASTER #21). Estimated 4-6 weeks runway to ready.
+
+**Priority queue at end of Role 3 (top unblocked items):**
+
+| # | ID | Tag | Cx | 1-line title |
+|---|------|------|-----|------|
+| 1 | U3 | UX | S | Authed-pages global footer (gated on #28) |
+| 2 | #96 | GROWTH | XS | "Send a copy to me too" checkbox on invoice send |
+| 3 | #97 | GROWTH | XS | Stripe Receipt-emails default-on toggle |
+| 4 | #95 | GROWTH | XS | Tab-title flash + favicon dot for paid invoices |
+| 5 | #102 | GROWTH | XS | Per-user `timezone` for due-date display + reminder cron |
+| 6 | **#106** | GROWTH | XS | **Trial-countdown timer in global nav (NEW)** |
+| 7 | **#109** | GROWTH | XS | **Sticky "+" FAB on mobile dashboard (NEW)** |
+| 8 | #73 | GROWTH | XS | Pre-portal cancel-reason survey |
+| 9 | #82 | GROWTH | XS | Plan comparison table on dashboard for free users |
+| 10 | #84 | GROWTH | XS | Plain-language email body using first line item summary |
+
+Resend-gated XS items (#66 / #71 / #77 / #80 / #90) and the new #110 magic-link sit in the Resend block until Master ships the API key (TODO_MASTER #18).
+
+---
+
+## 2026-04-28T00:09Z — Role 2 (Test Examiner): annual-savings pill coverage + audit pass
+
+**Audit scope this cycle:** the 3 view files touched in this cycle's Role 1 (`views/pricing.ejs`, `views/settings.ejs`, `views/partials/upgrade-modal.ejs`), plus a sweep of recent CHANGELOG entries for under-tested paths.
+
+**Coverage gap identified + closed:**
+The new "Save $45/year" pill — added on three reactive surfaces — was not asserted anywhere in the suite. The existing `tests/annual-billing.test.js` validates the `billing_cycle` plumbing and the price strings ($12, $99) but has no assertion on the savings copy itself. A regression that silently dropped the new pill (or changed the dollar number to drift from the actual $45 = 12×12 - 99 math) would slip past CI undetected. **Fixed:** new `tests/annual-savings-pill.test.js` (11 assertions, all passing):
+
+| # | Assertion |
+|---|-----------|
+| 1 | `pricing.ejs` renders `Save $45/year` AND it is wrapped in an `x-show="cycle === 'annual'"` (no flash-of-unselected on monthly default) |
+| 2 | `pricing.ejs` retains the existing `Save 31%` toggle pill (regression guard against accidental removal during the promotion edit) |
+| 3 | `pricing.ejs` pill carries an emerald/green background + rounded class (visual prominence — not a bare text line) |
+| 4 | `settings.ejs` renders the `Save $45/year` pill for free users AND it's `x-show=annual` gated |
+| 5 | `settings.ejs` pill carries `bg-green-*` (visual emphasis) |
+| 6 | `settings.ejs` does NOT render the pill for Pro users (the entire upgrade block is gated on `plan !== 'pro'`) |
+| 7 | `upgrade-modal.ejs` renders the pill, gated by `x-show="cycle === 'annual'"` |
+| 8 | `upgrade-modal.ejs` toggle buttons now show the price inline (`Monthly — $12/mo` / `Annual — $99/yr`) — regression guard for the new label format |
+| 9 | `upgrade-modal.ejs` no longer carries the redundant `(save $45/year)` fine-print parenthetical (single source of truth for the savings number) |
+| 10 | The savings number string is identical across all 3 surfaces (`$45` everywhere — divergent values would erode trust) |
+| 11 | The savings math holds: `$12/mo × 12 - $99 = $45` (catches a future price edit that accidentally drifts only one of the two prices) |
+
+**Coverage map for recent CHANGELOG entries (sanity check):**
+
+| Recent change (cycle date) | Test file | Pass/fail |
+|---|---|---|
+| #101 inline savings pill (this cycle) | `tests/annual-savings-pill.test.js` | 11 pass |
+| #92 share-intent buttons (2026-04-27 PM-5) | `tests/share-intent-buttons.test.js` | 13 pass |
+| webhook-outbound agency-plan path (2026-04-27 PM-5) | `tests/webhook-outbound-agency.test.js` | 3 pass |
+| dashboard empty-state h2 rewrite (2026-04-27 PM-5) | `tests/dashboard-copy-pay-link.test.js` | covered (CTA copy assertion) |
+| settings.ejs intro paragraph rewrite (2026-04-27 PM-5) | not directly asserted | low risk — pure static string, no XSS surface, no conditional logic |
+| #91 dashboard "Copy pay link" (2026-04-30) | `tests/dashboard-copy-pay-link.test.js` | 11 pass |
+| #75 Slack/Discord webhook templates (2026-04-29) | `tests/webhook-outbound.test.js` | covered |
+| #45 last-day urgency banner (2026-04-28 PM) | `tests/trial.test.js` | covered |
+| #31 free-plan limit progress bar (2026-04-27 PM-4) | `tests/invoice-limit-progress.test.js` | 15 pass |
+| H14 escapeHtml/formatMoney refactor | `tests/html-helpers.test.js` | 27 pass |
+
+No untested recent change ships meaningful runtime logic. The settings.ejs intro paragraph rewrite is the only un-covered diff in the recent window — it's a static-string copy edit with no conditional logic, and asserting copy churn would over-fit the test suite to UX phrasing decisions (volatile by design). Flagged in this audit log only to make the deliberate non-coverage decision explicit.
+
+**Flaky/redundant test sweep:** none found. Each test file owns a non-overlapping path. The 6 logged-error lines that surface during `npm test` runs (`Recent clients lookup failed: db.getRecentClientsForUser is not a function`, `Payment Link creation failed: Stripe connection refused`, etc.) are all expected output from negative-path tests asserting catch-block behaviour — they're not test failures.
+
+**Suite totals after this cycle:** 42 test files → 43 (annual-savings-pill.test.js added). Full `npm test` run is green; no [TEST-FAILURE] tags added to INTERNAL_TODO.
+
+**Income relevance:** Indirect — locks in the #101 conversion-lift implementation (the Role 1 work this cycle) against silent regression. A future view-cleanup pass that accidentally removes either of the two savings surfaces will now hard-fail CI before reaching prod.
+
+---
+
+## 2026-04-28T00:07Z — Role 1 (Feature Implementer): #101 — inline annual-savings $-amount pill across all 3 upgrade surfaces
+
+**What was built:**
+The 14th-pass priority queue's #6 unblocked item (#101 [GROWTH] [XS] — inline annual-savings badge on Monthly/Annual toggle in `views/pricing.ejs` + `views/settings.ejs` + the upgrade modal). Today, every user clicking "Annual" on the toggle had to compute the annual savings themselves: monthly = $12 × 12 = $144/yr, annual = $99/yr → savings = $45/year. The toggle showed only "Save 31%" (a percentage label) and one buried text line on pricing.ejs ("Save $45/year vs. monthly"). Settings + the upgrade modal had **no $-amount surface at all**. Even after the user-selected annual on the toggle, the actual dollar savings number was either invisible (settings, modal) or visually de-emphasised (pricing — 12px gray text below the price).
+
+This cycle promotes the savings number to a prominent green pill on all three surfaces so the conversion-decision frame ("$99/year is a clear win over $144") is unambiguous at the moment of choice.
+
+**Files changed (3 view files, 0 DB / backend / test code mutations):**
+
+1. **`views/pricing.ejs`** — restructured the annual price block. Was: a 4xl extrabold `$99/yr` followed by a small emerald-200 supporting line "Save $45/year vs. monthly". Now: a flex row containing the price + an inline `bg-emerald-400 text-emerald-900 text-xs font-extrabold rounded-full px-2 py-1 shadow-sm` pill reading "Save $45/year" — sits visually adjacent to the price, eye doesn't have to move. The supporting line below was repurposed to a concrete-equivalence framing ("That's 3 months free vs. paying monthly.") for additional conviction. Both surfaces x-cloak on initial render and are only shown when `cycle === 'annual'`.
+
+2. **`views/settings.ejs`** — added a new conditional pill row below the Monthly/Annual toggle. New element: `<p class="text-xs font-semibold mb-3" x-show="cycle === 'annual'" x-cloak>` containing `<span class="inline-flex items-center gap-1.5 bg-green-100 text-green-700 px-2 py-1 rounded-full">💰 Save $45/year vs. paying monthly</span>`. The element renders only when the user toggles to annual; default (monthly) state hides it via Alpine's `x-show`. The pre-existing "Save 31%" inline-toggle pill is retained — the new pill is the dollar-amount complement that was missing.
+
+3. **`views/partials/upgrade-modal.ejs`** — three changes:
+   - Toggle button labels now include the price: `"Monthly — $12/mo"` and `"Annual — $99/yr"` (was bare `"Monthly"` / `"Annual"`). This makes the price comparison legible *before* the user has even toggled — important on a modal where the user has reached the highest-intent moment in the conversion funnel and shouldn't have to scroll/scan to see what they're paying.
+   - Added the new green pill (`bg-green-100 text-green-700` + 💰) below the toggle row, x-shown when `cycle === 'annual'`. Same visual treatment as `settings.ejs` for consistency across the two non-pricing surfaces.
+   - Removed the now-redundant fine-print parenthetical from the bottom-of-modal disclaimer ("$99/year (save $45/year)" → "$99/year") — the savings number is now the prominent pill above; carrying it twice was a pre-promotion artefact.
+
+**Tests:**
+- All 9 existing `tests/annual-billing.test.js` assertions pass unchanged. They assert the toggle structure + the `billing_cycle` hidden input + the price strings ($12, $99) — none of which were touched by these edits.
+- New tests added in this cycle's Test Examiner pass (Role 2 — see this cycle's Role 2 entry below) cover the new pill-presence + x-show=annual gating across all three views.
+
+**Income relevance:**
+MEDIUM conversion lift on the price-page-to-checkout step. The math (saved Y dollars / total Z) is the single dominant decision input on the annual upgrade page; surfacing it as a high-prominence pill instead of small gray text or a percentage-only label is the textbook conversion lever for any tier-pricing page. Compounds with #46 (exit-intent modal — different surface, different trigger), #82 (plan comparison table — different message: feature comparison), and the existing `#3` annual price ($99/yr) shipped 2026-04-23 + TODO_MASTER #11 (Stripe Annual price ID configuration). No new Master action required — this is pure view code that ships with the next deploy.
+
+**Cross-overlap check:** confirmed against #46 (different surface), #82 (different message — feature comparison vs price comparison), #3 (closed — different layer: pricing infrastructure vs UI prominence). No duplicate work.
+
+---
+
 ## 2026-04-27T17:51Z — Role 6 (Health Monitor): defence-in-depth percent-encode mailto recipient + clean cycle audit
 
 **What was audited (focused on this cycle's diff: invoice-view.ejs share buttons + new tests + 2 UX copy changes):**

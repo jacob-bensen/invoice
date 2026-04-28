@@ -114,8 +114,12 @@ function testInvoiceFormDueDateDefaultsToNet30OnNewInvoice() {
 
 function testInvoiceFormDueDateLabelMentionsNet30() {
   const html = renderInvoiceForm({ invoice: null });
-  assert.match(html, /Due Date[^<]*<[^>]*>\(Net 30 default\)/,
-    'Due Date label must surface the "(Net 30 default)" hint so the pre-fill is transparent');
+  // Copy was rewritten 2026-04-28 from "(Net 30 default)" to
+  // "(defaults to 30 days)" — same meaning, plain English (Net-30 jargon
+  // is opaque to first-time freelancers). Either form must stay surfaced
+  // so the auto-pre-fill remains transparent to the user.
+  assert.match(html, /Due Date[^<]*<[^>]*>\((?:Net 30 default|defaults to 30 days)\)/,
+    'Due Date label must surface a 30-day default hint so the pre-fill is transparent');
 }
 
 function testInvoiceFormDueDatePreservedOnEdit() {

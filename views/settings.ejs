@@ -179,6 +179,12 @@
             <span class="bg-green-100 text-green-700 text-[10px] font-bold px-1.5 py-0.5 rounded">Save 31%</span>
           </button>
         </div>
+        <p class="text-xs font-semibold mb-3" x-show="cycle === 'annual'" x-cloak>
+          <span class="inline-flex items-center gap-1.5 bg-green-100 text-green-700 px-2 py-1 rounded-full">
+            <span aria-hidden="true">💰</span>
+            Save $45/year vs. paying monthly
+          </span>
+        </p>
         <form action="/billing/create-checkout" method="POST">
           <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
           <input type="hidden" name="billing_cycle" :value="cycle">
