@@ -2,6 +2,308 @@
 
 ---
 
+## 2026-04-28T23:00Z — Role 7 (Health Monitor): clean cycle audit + #122 review across 4 dimensions
+
+**Audit scope this cycle:** the 3 production files touched in Roles 2 + 5 (`views/dashboard.ejs`, `master/INTERNAL_TODO.md`, `master/TODO_MASTER.md`); the 1 new test file (`tests/recent-revenue-window-storage.test.js`); the modified `package.json` test runner.
+
+- **Security review of the diff:**
+
+  - **`views/dashboard.ejs#recentRevenueCard()` localStorage layer.** No new DOM-injection surface, no new XSS vector. `readSavedWindow()`'s pipeline is `localStorage.getItem(STORAGE_KEY)` → `parseInt(raw, 10)` → strict-equality whitelist check (`ALLOWED.indexOf(n) !== -1`). The parseInt + whitelist filter together neutralize any non-integer or out-of-set content — a malicious extension that pre-populated `localStorage` with `'<script>alert(1)</script>'` would parseInt to `NaN`, fail the whitelist check, and return `null`. The integer that survives the filter (7, 30, or 90) is then concatenated into a fetch URL via `encodeURIComponent(window)` — defence-in-depth even though the value is already known-safe. No path from localStorage to DOM, no path from localStorage to SQL (the API endpoint also whitelists on the server side per the existing #117 hardening).
+
+  - **`writeSavedWindow(this.days)` — write side.** `this.days` is a server-validated integer (from a successful API response that already enforced `RECENT_REVENUE_WINDOWS.includes(requested)`). The write itself is `localStorage.setItem(STORAGE_KEY, String(n))` — a string-typed scalar, no escape-the-storage-layer vector. Try/catch swallows quota-exceeded, security-error (Safari ITP), and the rare `localStorage` global being `undefined` itself.
+
+  - **The init() silent-restore narrowing (Role 5 fix).** The new `{ silent: true }` opts arg gates only the `errored` flag assignment in the catch block. No other behaviour is gated by the silent flag. A future refactor that accidentally globalised it (e.g., made `silent` default true) would suppress error feedback for user clicks too — that exact risk is locked in by the new test "user-clicked select() still surfaces errored on fetch failure".
+
+  - **`tests/recent-revenue-window-storage.test.js`** — pure-test file. Uses `vm.createContext` to evaluate the extracted factory source in a sandbox with stubbed `localStorage` + `fetch` globals. No live secrets, no production code paths exercised. The brace-counting extraction is fragile to future syntax changes (e.g., a stray `{` in a comment would throw off the count) — flagged as a known limitation but no production risk; the test file fails loudly if the extraction breaks rather than silently green-passing.
+
+  - **Hardcoded-secret scan** of all touched files: zero matches for `API_KEY|SECRET|password.*=|sk_live|sk_test` on the cycle-diff lines. The `sk_test_dummy` fixture in the existing `recent-revenue-window-toggle.test.js` is unchanged. ✓ No new credentials.
+
+- **`npm audit --omit=dev`:** still 6 vulnerabilities (3 moderate, 3 high) — **all pre-existing**, all install-time only. `bcrypt → @mapbox/node-pre-gyp → tar` (3 high — H9 in INTERNAL_TODO); `resend → svix → uuid` (3 moderate — H16). Runtime exposure remains nil. **No new advisories surfaced this cycle** — zero new dependencies (no `npm i`, no `package-lock.json` shifts).
+
+- **Performance:**
+  - **localStorage operations** are synchronous browser-internal calls — sub-millisecond at any reasonable storage size. No I/O.
+  - **Init-driven fetch** (only fires when saved !== SSR initial) is at most one extra network round-trip per dashboard load, only for users who actively chose a non-default window. Steady-state path (saved === 30 OR no saved value) makes ZERO network calls. Cohort-level: most users on most loads pay no perf tax.
+  - **Memory:** the new helper closures + STORAGE_KEY constant + ALLOWED array add ~200 bytes per dashboard render. Negligible. GC'd on dashboard navigate-away.
+  - **No N+1 introduced**, no new SQL, no new indexes needed.
+
+- **Code quality:**
+  - The Alpine factory grew from ~30 lines to ~60 lines but stays single-purpose. The two new helpers (`readSavedWindow`, `writeSavedWindow`) are pure utility functions — testable in isolation, no external mutable state, no side effects beyond localStorage.
+  - The `STORAGE_KEY = 'qi.recentRevenueDays'` constant lives next to the helpers as the single source of truth. The `ALLOWED = [7, 30, 90]` array does the same for the whitelist.
+  - **One DRY note (not new — already implicit, now slightly worsened):** the `[7, 30, 90]` whitelist appears in 3 places: `routes/invoices.js#RECENT_REVENUE_WINDOWS` export, the Alpine `x-for` template literal in `views/dashboard.ejs:238`, and the new client-side `ALLOWED` constant. All three are pinned by tests for drift, but a "single source of truth" refactor (e.g., emit ALLOWED from the server-rendered initial JSON payload) would tighten the contract. **Not raised as a [HEALTH] item this cycle** — the test guards are sufficient and the refactor would expand the SSR payload contract, which is a larger architectural change than the duplication justifies. Flag for next-cycle decision if the whitelist ever changes.
+  - The new test pattern (`vm.createContext` + brace-counting extraction of inline JS) is novel for this codebase. Clean and self-contained — no production dependency, the harness lives entirely in the test file. Future tests that need to exercise inline EJS-embedded JS can re-use the pattern without it leaking into `lib/`.
+
+- **Dependencies:** zero changes — no `npm i`, no `package-lock.json` shifts. `package.json` was edited to add the new test file to the `test` script — dev-only entry, no runtime/production effect. The new test file uses `vm` (Node built-in) and the existing `ejs` dev dependency — no new modules.
+
+- **Legal:** No new dependencies, no license changes. The new code surfaces only the user's own UI-preference data in their own browser's localStorage — no PII expansion, no GDPR/CCPA scope change, no PCI scope change, no third-party API usage. The `localStorage` key `qi.recentRevenueDays` holds a single integer (7, 30, or 90) that's not personally identifying, not behavioural-tracking telemetry, and is strictly functional preference storage. No cookie-consent surface required (it's not a cookie + it's strictly-necessary-for-the-feature under the ePrivacy directive's "strictly necessary" carve-out).
+
+**No CRITICAL / hardcoded-secret findings. No new flags for TODO_MASTER. No new [HEALTH] items added to INTERNAL_TODO.** The 9 existing open [HEALTH] items remain unchanged.
+
+**Net delta this cycle:** the new code is unusually clean. localStorage-only persistence (no server-side state mutation), strict whitelist filtering on both read and parseInt, try/catch around all storage operations, narrowed silent-on-error gate (Role 5 fix), and 19 new assertions across 2 test layers including a new `vm`-sandbox harness pattern. The full test suite is **48 files, 0 failures** — the safety net is intact.
+
+---
+
+## 2026-04-28T22:50Z — Role 6 (Task Optimizer): 19th-pass audit — header refreshed, #122 archived, queue re-ordered + Session Close Summary
+
+**Audit deltas this pass:**
+
+1. **Header refreshed.** Updated INTERNAL_TODO.md audit header to capture this cycle's deltas: #122 closed (XS, ~30 min effort, MED retention shipped); 4 new GROWTH items (#127-#130); 1 new MARKETING (#62 creator outreach); 1 UX direct fix (silent-on-error for init-driven restore). 18th-pass header retained as a one-line summary; 17th-pass retained as well.
+
+2. **#122 archived.** Folded the full description into a one-line `*(...)*` parenthetical at the head of the XS-GROWTH block (same pattern as #91, #92, #101, #106, #107, #117 archives in prior passes). Full detail lives only in CHANGELOG now.
+
+3. **#127-#130 placement.** All 4 new items inserted at the top of the XS / S GROWTH buckets (Cx-tagged appropriately). Cross-referenced against existing items per Role 4's Cross-checks block; zero merges, zero consolidations.
+
+4. **Re-prioritization (priority order unchanged):** [TEST-FAILURE] (none) > income-critical features > [UX] items affecting conversion > [HEALTH] > [GROWTH] > [BLOCKED]. Within GROWTH, XS-first by impact-per-effort. The new #127, #128 are XS and immediately implementable; #129, #130 are S complexity.
+
+5. **Cross-checks for non-overlap (re-validated this cycle):** #127 vs #95 vs #88 (active recovery CTA vs passive tab-flash vs categorical client-pattern alert — three orthogonal signal types); #128 vs #117 vs #122 (keyboard shortcut vs UI toggle vs saved-window — same surface, three input modalities); #129 vs #121 vs #123 vs #107 (personal-record vs consecutive-weeks streak vs vs-prior-period delta vs raw current — four orthogonal data dimensions); #130 vs #23 (in-app gesture vs PWA install — different surfaces, both can ship). All confirmed orthogonal.
+
+6. **TODO_MASTER reviewed:** All 62 items (1-9 legacy InvoiceFlow setup + 50-62 newer marketing/SPEC-REVIEW additions) checked against this cycle's CHANGELOG. **No items flip to [LIKELY DONE - verify]** — every Master action remains pending its respective external step (Stripe Dashboard config, Resend API key, Plausible domain, G2/Capterra profile creation, AppSumo submission, Rewardful signup, creator outreach, etc.). #62 (creator outreach from this cycle's Role 4) is the newest entry.
+
+7. **Compaction status.** INTERNAL_TODO.md now ~2.5k lines (overdue by 12 cycles per the 1.5k archive trigger). Deferred again — not blocking work; full archives remain available via CHANGELOG. Will be revisited when the [DONE]-tagged section weight crosses ~1k lines on its own.
+
+8. **Open task index re-counted:** ~123 GROWTH items total (was 120 + 4 new − 1 #122 closed = 123); 9 [HEALTH] items open unchanged; 2 [UX] items (U3 actively buildable; U1 in Resend block); 0 [TEST-FAILURE]. **No new [BLOCKED] items this cycle.**
+
+**Priority order at end of 19th pass (top 12 unblocked items):**
+
+| # | ID | Tag | Cx | Title (1-line) |
+|--:|------|------|-----|------|
+| 1 | U3 | UX | S | Authed-pages global footer (gated on #28) |
+| 2 | **#127** | GROWTH | XS | **"Quiet window" recovery CTA on revenue card (NEW)** |
+| 3 | **#128** | GROWTH | XS | **Keyboard shortcut (7/3/9) for revenue window (NEW)** |
+| 4 | #123 | GROWTH | XS | "vs prior period" delta badge on revenue card |
+| 5 | #124 | GROWTH | XS | 3-day stale-draft yellow banner |
+| 6 | #118 | GROWTH | XS | Stripe receipt URL on paid invoice view |
+| 7 | #119 | GROWTH | XS | Inline "What's new" pulse-dot on nav |
+| 8 | #120 | GROWTH | XS | `<noscript>` SEO fallback hero |
+| 9 | #109 | GROWTH | XS | Sticky "+" mobile FAB |
+| 10 | #102 | GROWTH | XS | Per-user timezone |
+| 11 | #112 | GROWTH | XS | Live "Trusted by N freelancers" hero counter |
+| 12 | #113 | GROWTH | XS | Per-niche `<meta description>` blurb |
+
+**Resend-blocked (kept at bottom of XS bucket):** U1, #11, #12, #66, #71, #77, #80, #84, #90, and #110 (M-complexity magic-link).
+
+---
+
+# 2026-04-28T22:50Z — Session Close Summary
+
+**What was accomplished this session (across all 7 roles):**
+
+- **Bootstrap** — APP_SPEC.md unchanged (synced last cycle). EPICS.md unchanged (created last cycle). No new bootstrap-time master action filed (#60 SPEC-REVIEW from last cycle remains the standing item).
+- **Role 1 (Epic Manager)** — wrote a Session Briefing identifying #122 as the highest impact-per-effort unshipped item (XS effort, MED retention, sits on top of #117 which just landed). All 9 epic statuses unchanged. 3-active-epic budget held: E2 Trial→Paid Conversion, E3 Activation, E4 Retention.
+- **Role 2 (Feature Implementer)** — shipped **#122 localStorage persistence on revenue-window toggle**. Inside the existing `recentRevenueCard()` Alpine factory in `views/dashboard.ejs`: new `readSavedWindow()` / `writeSavedWindow()` helpers (try/catch + whitelist filter + `typeof localStorage` guard); new `init()` lifecycle hook that fires `select(saved)` only when saved differs from SSR initial (zero fetches when they agree); `writeSavedWindow(this.days)` call inside `select()`'s success branch (never persists on fetch failure). ~33 lines added / 7 removed inside the existing inline script. No DB, no migration, no new API.
+- **Role 3 (Test Examiner)** — added 17 new test assertions in `tests/recent-revenue-window-storage.test.js` across 2 layers: 6 view-source regex assertions (STORAGE_KEY constant, [7,30,90] whitelist, init() hook, writeSavedWindow position relative to catch block, try/catch wrapping, typeof localStorage guard) + 11 in-process behaviour tests via `vm.createContext` sandbox (init no-op without saved value, init restores valid saved value, init no-op when saved === SSR initial, ignores corrupt values, persists on success, doesn't persist on failure, handles QuotaExceeded throws, handles getItem throws, works without localStorage entirely, empty-window response still persists). New testing pattern for this codebase — extracts the factory source from EJS via brace-counting and evaluates inside a sandbox. Full suite: **48 files, 0 failures**.
+- **Role 4 (Growth Strategist)** — added 4 new GROWTH items (#127 Quiet-window recovery CTA, #128 keyboard shortcuts on revenue toggle, #129 🏆 New-record personal-best badge, #130 mobile pull-to-refresh) + 1 new MARKETING item (#62 personalized 90-day Pro comp creator outreach). All cross-checked for non-overlap; all assigned to currently-active epics (2 to E3, 2 to E4); zero items orphaned to [UNASSIGNED].
+- **Role 5 (UX Auditor)** — direct fix on the new init() hook: was firing `errored = true` if the post-hydration restore fetch failed (offline / blip), surfacing a red error line for a background action the user didn't take. Now passes `{ silent: true }` to the restore `select()` call; user-clicked toggles still surface errors (regression-guard test added). Re-walked landing → register → empty-state dashboard → trial banners → pricing → invoice form/view — no regressions in untouched flows. 2 new test assertions added.
+- **Role 6 (Task Optimizer)** — refreshed audit header, archived #122 to one-line parenthetical, re-ordered priority queue (new XS items at top, S items in correct bucket), TODO_MASTER reviewed (no items flip to [LIKELY DONE - verify]).
+- **Role 7 (Health Monitor)** — see next CHANGELOG entry below for full audit.
+
+**Code shipped this cycle:**
+- 1 expanded Alpine factory (`recentRevenueCard()` in `views/dashboard.ejs`) — 4 small additions + 1 silent-on-error narrowing
+- 1 new test file (`tests/recent-revenue-window-storage.test.js` — 19 assertions across 2 layers, including a new `vm.createContext` test pattern for this codebase)
+- 1 `package.json` test-script entry added
+- 4 new INTERNAL_TODO items (#127-#130)
+- 1 new TODO_MASTER item (#62)
+- 1 INTERNAL_TODO #122 archived to one-line parenthetical
+
+**Most important open item heading into the next session:**
+
+**#127 [XS] "Quiet window" recovery CTA on the recent-revenue card** — XS effort (~15 lines on the existing `recentRevenueCard()` Alpine scope + 1 reactive `x-show` block + a `unpaidCount` field threaded through the `buildRecentRevenueCard()` helper), MED activation/recovery impact, immediately compounds with #117/#122 by giving the empty-window state an explicit recovery action. Highest impact-per-effort item available; sits on top of code that just landed and is actively in-mind. Estimated cycle to ship: < 30 min implementation + ~15 min new tests.
+
+**Risks / blockers needing Master attention before next run:**
+
+- **Resend API key (TODO_MASTER #18)** — single most leveraged Master action. Unblocks E9 entirely (~10 ready-to-ship retention/conversion email features: U1 password reset, #11 churn win-back, #12 monthly digest, #66 auto-CC accountant, #71 auto-BCC freelancer, #72 .ics calendar, #77 welcome-back on past_due restore, #80 weekly Monday digest, #84 plain-language email body, #90 60+ day inactive re-engagement, #110 magic-link login).
+- **APP_URL env var (TODO_MASTER #39)** — unset means sitemap.xml + canonical link tags fall back to request host, leaks alternate hosts (Heroku free dyno URL + custom domain) into Google's index. Low-effort fix (one env var); compounding SEO drift.
+- **APP_SPEC review (TODO_MASTER #60)** — auto-reconstructed last cycle, still awaiting human verification.
+
+---
+
+## 2026-04-28T22:40Z — Role 5 (UX Auditor): silent-on-error for init-driven window restoration + flow regression sweep
+
+**Pathways audited this cycle:**
+
+1. Dashboard with localStorage-saved window matching SSR default (steady state — most common path).
+2. Dashboard with localStorage-saved window differing from SSR default (init() fires post-hydration restore fetch — second most common path).
+3. Dashboard with saved window AND user is offline / network blip (the broken case).
+4. Dashboard with corrupt localStorage value (e.g., a future deploy renames the key, leaving stale `7` values around).
+5. Re-walked: landing → register → empty-state dashboard onboarding (regression) → trial banner stacking → invoice form → invoice view → 404. No regressions in untouched flows.
+
+**Direct fix applied this cycle (1 substantive UX bug + 0 cosmetic-only changes):**
+
+1. **`views/dashboard.ejs#recentRevenueCard.init()` — silent-on-error for background restoration.** The Role 2 implementation calls `select(saved)` from `init()` without distinguishing the call from a user click. If the post-hydration restore fetch fails (offline, network blip, server 500, transient DB error), the existing catch branch fires `this.errored = true` and the user sees the red "Couldn't load that window — showing the previous one." inline error. **The user didn't click anything.** They opened the dashboard, the SSR rendered the 30d card correctly, and now they see an error message about a window swap they never asked for. The "previous one" the message refers to is also misleading — it's the SSR default (30d), not their saved 7d preference. Fixed: extended `select()` to accept an optional `opts.silent` flag; init() now calls `this.select(saved, { silent: true })`. On error, the silent flag suppresses the `errored` state — the dashboard falls back to the SSR-rendered card with no message. **User-clicked toggles still show the error line on failure** (regression-guard test added). Two new test assertions in `tests/recent-revenue-window-storage.test.js` lock both behaviours in:
+   - `init-driven restoration is silent on fetch failure (no errored flag for background restore)`
+   - `user-clicked select() still surfaces errored on fetch failure (regression guard for the silent: true narrowing)`
+
+**Why this is the right call:**
+
+The `errored` flag is a feedback signal that ties to a user action. The user clicks 7d → fetch fails → "we tried, it didn't work" message. That's correct UX. But init() restoration is a background operation — the SSR already rendered a real, current card, and the restoration is a polish layer. Surfacing an error for a polish operation that quietly degraded is a classic "don't make the user feel like they did something wrong" anti-pattern. The fall-back behaviour (show 30d, no error) is a strict superset of what the user would have seen without the localStorage layer.
+
+**Regression checks performed (no new fixes needed, but verified clean):**
+
+- **Trial countdown nav pill (#106) + dashboard banner (#45) interaction** — both still render unchanged. ✓
+- **Free-plan invoice progress bar (#31)** — still renders for free users; no localStorage layer touches the free-plan path. ✓
+- **Onboarding card → trial banner → past-due banner stack** — render order unchanged. ✓
+- **Pricing page CTA copy + annual-savings pill (#101)** — both unchanged. ✓
+- **`x-cloak` CSS rule** — verified `[x-cloak] { display: none !important; }` still in `views/partials/head.ejs`; the new error fallback line (still gated by `x-show="errored"`) doesn't briefly flash on first paint. ✓
+- **Login → register cross-link** — unchanged. ✓
+- **Mobile breakpoint on the new toggle** — toggle row uses `flex-wrap` so on narrow mobile (< 384px wide), the toggle wraps below the section header rather than overflowing. ✓
+- **No localStorage / no Alpine baseline** — without JS, the SSR-rendered card still shows correct values. The localStorage layer is purely additive. ✓
+
+**Anti-fixes — flagged but deliberately left:**
+
+- **Brief flash of "30d" before snap to "7d" on first paint for users with non-default saved window.** ~50-100ms of SSR-default content before the post-hydration fetch resolves. Acceptable trade vs. the alternative (server-side cookie-based pre-render) which would require a Set-Cookie on every `select()` + a cookie-read in the dashboard route + server-side enforcement of the whitelist. The micro-flash is bounded by the existing `loading` opacity dim — visually muted, not jarring. Defer; revisit if mobile-conversion analytics ever surface a "user perceives the dashboard as flickering" signal.
+- **Tile re-render on init() restore looks like the same fetch as a user click.** Same opacity-60 dim, same disabled buttons. Considered: differentiate the visual treatment of init-driven vs user-driven loads. But the user's mental model on dashboard load is "things are loading" — surfacing that the restoration is a separate event would be over-explaining a routine UX moment. Defer.
+- **No "your saved preference was applied" toast.** Considered surfacing a small "📌 Restored your preferred window" pill on init-driven restore success. But (a) it's noise — users who set a preference don't need to be told it was honoured, and (b) the toggle's :aria-pressed updating on the restored button is the canonical accessibility-correct signal. Defer.
+
+**Test impact:** 2 new tests added to `tests/recent-revenue-window-storage.test.js` (now 19 total in that file), 1 existing regex updated to tolerate the new optional `opts` parameter on `select()`. Full suite still green: 48 files, 0 failures.
+
+**Income relevance:** SMALL but compounding. The fix turns a confusing "the app showed me an error I didn't ask for" moment into a silent graceful-degrade. Specifically rescues the offline-on-dashboard-load cohort + the restore-fetch-blip cohort — small cohorts in absolute terms but exactly the cohorts where a confusing UX moment is over-weighted (already-frustrated user gets handed an error they didn't trigger). The fix raises the perceived polish ceiling on the entire #117/#122 surface without changing any happy-path behaviour.
+
+---
+
+## 2026-04-28T22:30Z — Role 4 (Growth Strategist): 4 new GROWTH ideas (#127-#130) + 1 new MARKETING (#62)
+
+**Process:** scanned the queue for un-mined surfaces that compound with #122 (just-shipped) and #117 (last cycle). The dashboard's recent-revenue card now has 3 reactive layers (#107 raw stats, #117 toggle, #122 saved window) — that's a dense surface where small additions multiply impact. Cross-checked each candidate against the 121 existing GROWTH items + 61 existing MARKETING items.
+
+**Five-lever sweep:**
+
+- **Conversion (signup → paid):** existing queue is well-mined here (#82 plan comparison table, #46 exit-intent, #15 contextual upsells, #109 mobile FAB). Added #127 indirectly (recovery CTA on quiet-window state — converts a slow-week passive moment into an explicit recovery action).
+- **Retention (return visits + reduced churn):** added #128 keyboard shortcuts, #129 personal-record badge, #130 pull-to-refresh. All compound with #122/#117 + the daily-check-in cohort.
+- **Expansion (ARPU lift):** existing queue covers this (#9 Agency seats, #10 Business tier, #74 Pro logo, #54 deposits, #67 tip toggle, #100 Stripe Climate). No new XS items emerged this cycle.
+- **Automation (manual → productized):** existing queue covers this (#22 late-fee automation, #51 schedule send, #40 recurring auto-gen). No new items this cycle.
+- **Distribution (acquisition):** added #62 [MARKETING] high-touch creator outreach (distinct from #61 always-on affiliate program — same channel, different mechanic).
+
+**Added to INTERNAL_TODO.md:**
+
+- **#127 [GROWTH] [XS]** (E3 Activation) — "Quiet window" recovery CTA on the recent-revenue card. When `totalPaid === 0` AND `unpaidCount > 0` (open invoices but no recent paid revenue), render "📨 Send 3 follow-ups now →" inline link below the tile row, deep-linking to the invoice list filtered to status IN ('sent','overdue'). Distinct from #88 frequent-non-payer (categorical pattern) and #95 tab-flash (passive emotional reward).
+- **#128 [GROWTH] [XS]** (E3 Activation) — Keyboard shortcut on dashboard: `7` / `3` / `9` swap the revenue window. Single Alpine `@keydown.window` listener on the existing `select()` method. Same input-focus gate-key check as Discord/Slack/Notion. Distinct from #122 (saved window) and #117 (UI toggle) — same surface, complementary affordance.
+- **#129 [GROWTH] [S]** (E4 Retention) — "🏆 Best ever" personal-record badge on the recent-revenue card when current window's `totalPaid` equals the all-time max for any prior window of the same length. Single SQL CTE extension to `db.getRecentRevenueStats` (sliding-window MAX). Distinct from #121 (consecutive-weeks streak), #123 (vs-prior-period delta), #107 (raw stats — record is achievement-framed). Compounds with #92 share-intent buttons (post-record reflexive share).
+- **#130 [GROWTH] [S]** (E4 Retention) — Pull-to-refresh on mobile dashboard. Alpine touch-handler intercepts the gesture and fires the existing `/invoices/api/recent-revenue` + a new `/invoices/api/recent-list?limit=5` endpoint. ~80ms warm refresh vs ~600ms cold reload. Compounds with #95 (background tab-flash) and #122 (saved window survives the refresh). Distinct from #23 PWA install (different surface).
+
+**Added to TODO_MASTER.md:**
+
+- **#62 [MARKETING]** — Personalized 90-day Pro comp outreach to 10 hand-picked creators (YouTubers, newsletter authors, podcast hosts, social personalities). Distinct from #61 affiliate program (structured at scale, ongoing) and from #59 co-marketing (partner integrations) and from #43/#54/#55 paid media. The mechanic: $0 marginal cost (Pro is digital) + high signal (curator audience is qualified) + no-strings framing reverses the usual sponsorship-skepticism dynamic. ~6 hrs total. Income: 1.5-75 paid signups for ~$0 marginal cost; the high-touch quality push that complements the always-on affiliate layer.
+
+**Cross-checks for non-overlap:**
+
+- #127 vs #95 vs #88: #127 is a window-scoped active recovery CTA (slow-week → "send follow-ups"); #95 is a passive emotional reward (paid event → tab flash); #88 is a categorical client-pattern alert (frequent non-payer). Three orthogonal signal types.
+- #128 vs #117 vs #122: same surface, three layers — #117 is the UI toggle (mouse), #122 is the per-device memory (state), #128 is the keyboard shortcut (input). Power-user trio.
+- #129 vs #121 vs #123 vs #107: #121 is consecutive-weeks streak (cadence axis); #129 is dollar peak (magnitude axis); #123 is vs-prior-period delta (trajectory axis); #107 is raw current values (state axis). Four orthogonal data dimensions.
+- #130 vs #23: #23 is full PWA install (different surface — native install with home-screen icon); #130 is in-app pull-to-refresh gesture (no install required). Both can ship; they don't conflict.
+- #62 vs #61 vs #59: #61 is always-on structured affiliate (revenue share, scale); #62 is one-time hand-curated creator outreach (relationship, quality); #59 is partner integrations (co-marketing, technical depth). Three distinct distribution motions targeting overlapping audiences.
+
+**Active-epic alignment:** all 4 new GROWTH items map cleanly to currently-active epics — 2 to E3 (#127, #128), 2 to E4 (#129, #130). Zero items orphaned to [UNASSIGNED]. Zero items added to E5/E7 (PLANNED) or E9 (PAUSED — Resend gate).
+
+**TODO_MASTER review:** All 61 prior items checked against this cycle's CHANGELOG. **No items flip to [LIKELY DONE - verify]** — every Master action remains pending its respective external step (Stripe Dashboard config, Resend API key, Plausible domain, G2/Capterra profile creation, AppSumo submission, Rewardful signup, etc.). #18 (Resend), #38 (OG image), #39 (APP_URL), #60 (SPEC-REVIEW), #61 (affiliate program) all genuinely open. #62 is the new add this cycle.
+
+---
+
+## 2026-04-28T22:20Z — Role 3 (Test Examiner): 17 new assertions covering #122's localStorage layer (full suite 48 files, 0 failures)
+
+**Audit scope this cycle:** the new code in `views/dashboard.ejs` from Role 2 — the `readSavedWindow()` / `writeSavedWindow()` helpers, the new `init()` lifecycle hook on the Alpine factory, and the `writeSavedWindow(this.days)` call inside `select()`. None of this was reachable from the existing `recent-revenue-window-toggle.test.js` suite — the existing tests cover the API endpoint contract (route handler) and the static rendered HTML, but never *executed* the Alpine factory closure. The localStorage layer was completely uncovered.
+
+**Two-layer coverage strategy** (mirrors the existing window-toggle test file's structure):
+
+1. **Layer 1 — view-source regex assertions (6 tests).** Same pattern the existing tests use: render `dashboard.ejs` via EJS, regex-match the rendered HTML for the new structural pieces. Pins:
+   - `STORAGE_KEY = 'qi.recentRevenueDays'` literal (regression guard against silent rename — a key change is a silent UX migration that breaks every existing user's saved preference)
+   - `ALLOWED = [7, 30, 90]` literal whitelist inside the factory closure (drift guard against the API's `RECENT_REVENUE_WINDOWS` export and the toggle's `[7, 30, 90]` template literal — three places, one truth)
+   - `init()` lifecycle hook calls `readSavedWindow()` (regression guard — Alpine's `init()` magic is auto-discovery; renaming or removing the method silently disables persistence)
+   - `writeSavedWindow(this.days)` appears AFTER the success branch but NOT inside the catch block (the regex extracts the catch block separately and asserts `writeSavedWindow` is absent — this is the most important behavioural invariant: never persist a window the server didn't honour)
+   - Both helpers are wrapped in `try { ... } catch` (private-mode read failure / quota-exceeded write failure must not surface as a fetch error)
+   - `typeof localStorage === 'undefined'` guard exists in BOTH helpers (sandboxed iframes, embedded webviews — the global itself can be missing before any storage operation throws)
+
+2. **Layer 2 — in-process behaviour via `vm.createContext` sandbox (11 tests).** New testing pattern for this codebase — extracts the `recentRevenueCard()` factory source from the EJS template via brace-counting, evaluates it inside a `vm` sandbox with stubbed `localStorage` + stubbed `fetch` globals, then exercises the factory's behaviour directly. This is the canary that the JavaScript actually does what the regex says it does. Pins:
+   - `init()` with no saved value: zero fetches, zero state change (the steady-state path for new users)
+   - `init()` with valid saved value (`'7'`): `select()` is called, fetch URL contains `days=7`, state mutates to the new window
+   - `init()` when saved === initial.days: zero fetches (no redundant round-trip when localStorage and SSR agree — this is the steady-state path for returning users on their preferred window)
+   - `init()` ignores corrupt values: iterates `['60', '365', 'garbage', '', '0', '-1', '99999']` — every one must be a no-op (no fetch, no state mutation). This is the canary for the whitelist filter: if the parseInt-or-allowed-membership check ever weakens, this test catches it.
+   - `select()` persists to localStorage on success
+   - `select()` does NOT persist on fetch failure (network blip — the previous successful preference stays put)
+   - `select()` does NOT persist on non-2xx response (server-side rejection — same invariant)
+   - `writeSavedWindow` swallows `QuotaExceededError` (Safari ITP, private mode write failure) — state still updates, errored stays false
+   - `readSavedWindow` swallows `getItem()` throws (Firefox `dom.storage.access` blocked) — treated as no saved value
+   - The factory works when `localStorage` global is entirely absent — both `init()` and `select()` complete without throwing
+   - Empty-window response (`card: null`, days: 7) STILL persists `7` to localStorage — the user explicitly chose 7d, the server honoured it, the answer is $0/0/0; persistence is correct because the request was successful (this guards the "empty window is a successful response, not an error" invariant Role 5 fixed last cycle)
+
+**Why these are high-value tests:**
+
+- The localStorage layer is exactly the kind of code that gets silently broken by a future "small refactor" — the helpers are 6-line trivialities that look like they don't need tests until someone "tidies" them and accidentally moves the `writeSavedWindow` call into the `finally` block (which would persist failures), or removes the `parseInt(raw, 10)` (allowing a string `"7"` to never equal the integer `7` in the `===` whitelist check), or strips the `typeof localStorage === 'undefined'` guard (crashing in sandboxed iframes).
+- The behavioural assertion "no fetch when saved === SSR initial" is the load-performance contract of this feature. Without that assertion, a future "let's always re-fetch on init" change would silently double the network calls every dashboard load.
+- The "empty-window persists" assertion locks in the fix from Role 5's previous cycle pass — that fix is in user-facing JavaScript with no test today; this is the regression seatbelt.
+
+**Files touched:** new `tests/recent-revenue-window-storage.test.js` (260 lines, 17 assertions); `package.json` test script extended by one entry.
+
+**Risks reduced:**
+
+- **HIGH:** Silent regression of the "don't persist on failure" invariant (the strongest correctness guarantee of the feature) — now caught by 2 tests.
+- **HIGH:** Silent break of the whitelist filter on stored values — would let stale `60` or `365` values leak through and produce 4xx loops; now caught.
+- **MEDIUM:** `localStorage` access exception → uncaught Promise rejection in production — would crash the dashboard for Firefox-with-storage-access-blocked + Safari-private-mode users. Now caught with explicit "no throws even when both reads + writes throw" tests.
+- **LOW:** STORAGE_KEY rename without migration — would silently lose every existing user's preference. Now caught by literal-string regex.
+
+**Full test suite status:** 48 files, 0 failures. The existing 25 `recent-revenue-window-toggle` tests are unchanged and all pass; the existing API + view contract tests for #117 are unaffected.
+
+**Anti-tests — flagged but deliberately NOT written:**
+
+- A test that `Alpine.data('recentRevenueCard', recentRevenueCard)` is registered in the global scope. The current pattern (function declared in inline script, referenced via `x-data='recentRevenueCard(...)'`) doesn't go through Alpine's data registry — it relies on the function being globally hoisted within the page. A test for "Alpine.data registration" would assert behaviour the codebase doesn't have. Skip.
+- A test for `localStorage.setItem` being called specifically with `'qi.recentRevenueDays'` as the key. Already covered by the regex assertion on the literal STORAGE_KEY constant + the persistence behavioural test. Doubling up on it would be redundant.
+
+---
+
+## 2026-04-28T22:10Z — Role 2 (Feature Implementer): #122 shipped — recent-revenue window persisted to localStorage
+
+**Epic:** E3 Activation & Time-to-First-Value.
+
+**What was built:**
+
+A per-device memory of the user's preferred recent-revenue window (7d / 30d / 90d) using `localStorage` under key `qi.recentRevenueDays`. The change lives entirely inside the existing `recentRevenueCard()` Alpine factory at the bottom of `views/dashboard.ejs` — no DB migration, no new API surface, no schema change.
+
+**Implementation (4 small additions to the Alpine factory):**
+
+1. Two pure helpers at the top of the factory closure:
+   - `readSavedWindow()` — reads `localStorage.getItem('qi.recentRevenueDays')`, parses with `parseInt(raw, 10)`, returns the integer only if it's a member of the `[7, 30, 90]` whitelist; returns `null` otherwise (corrupt value, missing key, localStorage unavailable, private-mode read throw). Triple-guard against bad data: `typeof localStorage === 'undefined'` short-circuit + try/catch around the read + whitelist filter on the parsed integer.
+   - `writeSavedWindow(n)` — `localStorage.setItem(STORAGE_KEY, String(n))` inside try/catch (private-mode throws, quota-exceeded throws, Safari ITP edge cases all swallowed).
+2. New `init()` lifecycle hook on the Alpine component (Alpine 3 calls `init()` automatically on x-data attach). Reads the saved window; if `null` or equal to the SSR-rendered initial state, do nothing (zero network calls — most users on most loads). If the saved value differs and is whitelist-valid, calls `select(saved)` which fires the same JSON fetch the manual toggle uses.
+3. Inside the existing `select()` method, after the `try` block successfully populates the new state, calls `writeSavedWindow(this.days)` — persists ONLY on successful fetch. A network failure leaves localStorage unchanged so the next load doesn't rehydrate to a window the server can't actually serve.
+4. The `STORAGE_KEY = 'qi.recentRevenueDays'` constant + `ALLOWED = [7, 30, 90]` array sit next to the helpers as the single source of truth for the localStorage contract.
+
+**Key design decisions worth flagging:**
+
+- **No SSR-side preference cookie.** The right surface for a per-device preference is the device, not the server. The Alpine init runs after the SSR render, so users with a non-default saved window see "30d" for ~50ms before the post-hydration fetch resolves. The alternative (cookie-based SSR pre-render at the saved window) would require a Set-Cookie on every `select()` + a cookie-read in the dashboard route + a server-side enforcement of the whitelist — three new surfaces for what's already a clean two-line client-side feature. The micro-flash is the right trade.
+- **Persist on success, not on click.** If the fetch errors, the user sees the existing red error line + the previous window's data; localStorage is untouched. Reload → still on the previous (working) window. This is the "honest about transient failure" behaviour — never persist a window that didn't actually load.
+- **Whitelist match on read.** A future change that drops 7d (e.g., consolidates to 14d / 30d / 90d) won't honour stale `7` localStorage values — they'll deterministically fall through to the new default. No migration code needed.
+- **localStorage availability gate.** Old/embedded browsers + sandbox iframes + private modes can throw on the global `localStorage` access itself, hence the `typeof localStorage === 'undefined'` short-circuit before any read/write.
+
+**Why it matters for income / UX:**
+
+MED retention. The Pro user who checks "is this week working?" daily currently re-clicks 7d on every dashboard visit. Persisting the preference is the smallest possible "the app remembers me" affordance — compounds with #117 (toggle) and the cha-ching email loop (#30). Particularly leveraged for the daily-touchpoint cohort (E4) where dashboard re-visits are the trigger surface for every retention play.
+
+**Files changed:** `views/dashboard.ejs` (+33 lines / -7 lines inside the existing inline `<script>` block — the script grew from ~30 lines to ~60 lines but adds zero new modules, zero new dependencies, zero new server routes).
+
+**Test impact:** The 25 existing tests in `tests/recent-revenue-window-toggle.test.js` all pass unchanged (verified — `25 passed, 0 failed`). No existing assertion regressed; the new factory shape is a strict superset of the prior shape. New test coverage for the localStorage layer is the Test Examiner's pass below.
+
+**Master actions / deploy steps:** None. Pure client-side change, no env vars, no migration.
+
+---
+
+## 2026-04-28T22:05Z — Role 1 (Epic Manager): Session Briefing — focus on #122 (revenue-window localStorage persistence)
+
+**Active epics this cycle (3 — at budget):**
+
+- **E2 Trial → Paid Conversion [ACTIVE]** — direct conversion lever; queue still has #82 (plan comparison table), #46 (exit-intent), #47 (monthly→annual upgrade prompt), #15 (contextual upsells), #109 (mobile FAB), #119 (what's-new pulse-dot).
+- **E3 Activation & Time-to-First-Value [ACTIVE]** — #117 (window toggle) just shipped last cycle. Top item this cycle: **#122 [XS] persist last-selected revenue window in `localStorage`** — XS effort (~10 lines inside the just-shipped `recentRevenueCard()` Alpine factory), MED retention impact, immediately compounds with #117 by giving each device a memory of the user's preferred window. Other open: #123 (vs-prior-period delta), #124 (3-day stale-draft), #118 (Stripe receipt URL), #102 (timezone), #116 (demo accordion).
+- **E4 Retention & Daily Touchpoints [ACTIVE]** — #125 (top-5 clients widget), #126 (webhook retry queue), #80/#88/#89/#121 plus the Resend-blocked cohort under E9.
+
+**Epic status changes this cycle:** none. All 9 epic statuses unchanged from last cycle. E1 [COMPLETE], E2/E3/E4 [ACTIVE], E5/E6/E7/E8 [PLANNED], E9 [PAUSED — Resend gate]. The 3-active-epic budget remains honoured.
+
+**Most important thing to accomplish this session:** ship **#122** — the impact-per-effort leader and the natural compounding extension to #117 which just shipped. The Alpine factory `recentRevenueCard()` is already the canonical scope for this — add a per-device `localStorage` read on `init()` (with corruption-tolerant fallback to the SSR default of 30) + a `localStorage` write inside `select()` on successful fetch. Restoration shouldn't fight the SSR initial render: if localStorage and SSR agree, do nothing; if they differ, fire `select()` post-hydration so the user sees their preferred window without a network round-trip on every visit-to-dashboard. Estimated impl: ~15 lines + ~6 new test assertions.
+
+**Risks / blockers worth flagging before work begins:**
+
+- **Resend API key (TODO_MASTER #18)** still the highest-leverage Master action — unblocks ~10 ready-to-ship retention/conversion email tasks under E9.
+- **APP_URL env var (TODO_MASTER #39)** — sitemap.xml + canonical link tags fall back to request host, leaks alternate hosts into Google's index. Single env var fix.
+- **APP_SPEC review (TODO_MASTER #60)** — spec was auto-reconstructed last cycle; needs human eyes to confirm the QuickInvoice + InvoiceFlow split matches strategic intent.
+- **localStorage SSR-vs-client race condition** to watch for in #122: if Alpine init runs before the SSR DOM is fully painted, fixing the saved-window in `init()` could cause a brief flash of "30d" before snapping to "7d". Mitigation: rely on the existing `loading` flag during the post-init fetch, and only fire the post-init `select()` if the saved window genuinely differs from the SSR-rendered initial state.
+
+---
+
 ## 2026-04-28T21:00Z — Role 7 (Health Monitor): clean cycle audit + 1 defence-in-depth hardening applied inline
 
 **Audit scope this cycle:** the 4 production files touched in Roles 1, 2, 5 (`routes/invoices.js`, `views/dashboard.ejs`, `master/APP_SPEC.md`, `master/EPICS.md`); the 1 new test file (`tests/recent-revenue-window-toggle.test.js`); the modified `package.json` test runner; the 1 existing test file with the span-tolerant regex update (`tests/recent-revenue-stats.test.js`).

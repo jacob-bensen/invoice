@@ -282,7 +282,32 @@
         // before Alpine boots; subsequent toggles fetch JSON and re-render.
         // The fetch is a same-origin authenticated GET; on failure we keep
         // the previous values + flag the small error line.
+        //
+        // Per-device window preference (#122) is persisted to localStorage
+        // under 'qi.recentRevenueDays'. On init we restore the saved window
+        // if (a) it parses as a whitelist member [7,30,90] and (b) it
+        // differs from the SSR-rendered default — otherwise the SSR render
+        // already shows the right thing and we make zero network calls.
         function recentRevenueCard(initial) {
+          var STORAGE_KEY = 'qi.recentRevenueDays';
+          var ALLOWED = [7, 30, 90];
+          function readSavedWindow() {
+            try {
+              if (typeof localStorage === 'undefined') return null;
+              var raw = localStorage.getItem(STORAGE_KEY);
+              if (raw == null) return null;
+              var n = parseInt(raw, 10);
+              return ALLOWED.indexOf(n) !== -1 ? n : null;
+            } catch (e) {
+              return null;
+            }
+          }
+          function writeSavedWindow(n) {
+            try {
+              if (typeof localStorage === 'undefined') return;
+              localStorage.setItem(STORAGE_KEY, String(n));
+            } catch (e) { /* private mode / quota — ignore */ }
+          }
           return {
             days: initial.days,
             totalPaid: initial.totalPaid,
@@ -290,12 +315,24 @@
             clientCount: initial.clientCount,
             loading: false,
             errored: false,
+            init() {
+              var saved = readSavedWindow();
+              if (saved !== null && saved !== this.days) {
+                // Init-driven restoration is silent on failure — the user
+                // didn't click anything, surfacing a red error line for a
+                // background restoration would be confusing. Falling back
+                // to the SSR-rendered window with no message is the right
+                // graceful-degrade.
+                this.select(saved, { silent: true });
+              }
+            },
             formatMoney(n) {
               const v = Number(n) || 0;
               return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             },
-            async select(window) {
+            async select(window, opts) {
               if (window === this.days || this.loading) return;
+              var silent = opts && opts.silent === true;
               this.loading = true;
               this.errored = false;
               try {
@@ -318,8 +355,11 @@
                   this.invoiceCount = 0;
                   this.clientCount = 0;
                 }
+                // Only persist after a successful fetch — never persist
+                // a window the server couldn't honour.
+                writeSavedWindow(this.days);
               } catch (e) {
-                this.errored = true;
+                if (!silent) this.errored = true;
               } finally {
                 this.loading = false;
               }
