@@ -1535,3 +1535,39 @@ Distinct from #43 listicles (third-party editorial, not partner-direct) and from
 **Why now:** Pre-#32 API Key Auth landing, the technical depth of each integration is shallow (no OAuth, no webhook bidirectional). Some partners (Notion templates, Plaid/Mercury/Wise content links) don't require API depth and can land NOW; others (Calendly app marketplace) are gated on #32. Splitting the outreach across "API-not-required" (3 items) and "API-required" (1 item, Calendly) lets the no-API ones ship in 4-6 weeks; the Calendly one waits on engineering. Master should sequence: Mercury/Plaid/Wise emails this week → Notion template next week → Bonsai co-marketing in 4 weeks → Calendly when #32 lands.
 
 ---
+
+### 60. [SPEC-REVIEW] Verify auto-reconstructed master/APP_SPEC.md (added 2026-04-28 PM-3)
+
+The previous `master/APP_SPEC.md` described only the InvoiceFlow Java/Spring app (the `invoiceflow/` subdirectory) and had drifted out of sync with the actual codebase being shipped (QuickInvoice — Node.js/Express, at the repo root). It also pinned plan prices that no longer match production ($9 Solo / $19 Pro / $49 Agency) — the live tiers are Free / $12-mo or $99-yr Pro / $49 Agency.
+
+This cycle's bootstrap reconstructed APP_SPEC.md from the codebase directly: read `package.json`, `server.js`, `routes/*.js`, `views/*.ejs`, `db/schema.sql`, `Procfile`, plus the InvoiceFlow `pom.xml` and Java tree. Both apps are now documented under one spec (App 1 = QuickInvoice primary, App 2 = InvoiceFlow secondary).
+
+**Action (Master, ~10 min):**
+
+1. Read the new `master/APP_SPEC.md` end-to-end.
+2. Verify the documented plan prices ($12/mo, $99/yr, $49/mo Agency) match the Stripe Dashboard prices currently configured.
+3. Confirm the "core features built today" list matches your understanding of what QuickInvoice does — flag any discrepancies (e.g., a feature the doc claims is shipped but isn't, or a feature you consider shipped that the doc omits).
+4. Confirm the InvoiceFlow status — is it actively maintained, frozen, or scheduled for sunset? The current spec says "feature parity goals tracked under specific INTERNAL_TODO items" — refine if InvoiceFlow is no longer being developed.
+5. Edit any inaccuracies directly. The routine will pick up the corrected spec on the next run via the App Spec Sync step at boot.
+
+**Why this matters:** every subsequent role reads APP_SPEC.md to orient. A stale spec causes off-target growth ideas and irrelevant test priorities. ~10 min spent reviewing once compounds across every future routine cycle.
+
+### 61. [MARKETING] Set up affiliate program via Rewardful (or LaunchAffiliate / FirstPromoter) for influencer-driven Pro signups (added 2026-04-28 PM-3)
+
+Distinct from #18 (referral program for end-users — peer-to-peer "your friend gave me a coupon"). An affiliate program targets professional creators / YouTubers / newsletter authors / freelance influencers — the people whose audiences are exactly QuickInvoice's ICP. The mechanic is a stable 25%-recurring commission paid out monthly via Stripe Connect or PayPal, signed up through a self-serve portal. Distinct from co-marketing (#59) — partners promote QuickInvoice as a feature of their integration; affiliates promote QuickInvoice as a recommendation in their content.
+
+**Action (Master, ~6 hrs initial setup + ~1 hr/month ongoing):**
+
+1. **Pick the platform (~30 min).** Rewardful ($49/mo, Stripe-native, 30-second integration), LaunchAffiliate ($79/mo, more-features-than-needed), or FirstPromoter ($59/mo, similar to Rewardful). Default recommendation: Rewardful — it's the cheapest, the integration is single-script-tag, and the dashboard ships pre-built. Master can sign up, drop the script tag in `views/partials/head.ejs` (mid-upgrade-funnel only — gated on `?aff=` query string detection), and configure Stripe webhook routing within an hour.
+
+2. **Define the offer (~1 hr).** 25% recurring commission for 12 months on each Pro signup the affiliate drives. (Industry-standard for freelancer SaaS — FreshBooks runs 25%, Bonsai runs 25%, FreeAgent runs 30%.) Cookie window: 60 days. Minimum payout threshold: $50. Approval: manual for the first 25 affiliates (so we can vet ICP fit), auto-approve after that.
+
+3. **Build the affiliate landing page (~1 hr).** Single static page at `/affiliates` linking to the Rewardful signup portal. Hosted via existing `routes/landing.js#listNiches()` machinery — add as a static niche entry. Copy emphasises (a) "your audience already invoices clients — recommend the tool you'd actually use", (b) the 25%-recurring math: $36 per active referral over 12 months, scales linearly, and (c) the asset pack download (logos, screenshots, YouTube thumbnail templates).
+
+4. **Identify + outreach 50 candidate affiliates (~3 hrs).** YouTubers in the freelance / design / dev / consulting space with 5k-100k subs. Newsletter authors covering freelance/solopreneur topics. Cold email + 3-touch follow-up. Acceptance rate ~15-25% expected (industry typical for cold outreach with a strong recurring offer).
+
+5. **Track + optimise monthly (~1 hr/month ongoing).** Rewardful surfaces conversion stats per affiliate. Once an affiliate hits 5+ paid signups in a month, escalate to a 30%-recurring tier (signal: they're actually driving signups, double-down on the best ones).
+
+**Income relevance (concrete numbers):** Comparable freelancer-SaaS affiliate programs (FreshBooks, Bonsai, AND.CO, HoneyBook) generate 100-500 paid signups/month at maturity (12-18 months in). Conservative ramp for QuickInvoice's stage: 10-50 paid signups/month at month 6, 50-150/month at month 18. At $12/mo Pro: $120-$1800/month MRR-equivalent at month 6, scaling to $600-$5400/month at month 18. The 25% commission costs $30-$1350 of that — the remaining $90-$4050 net is high-leverage growth that compounds without ad spend.
+
+**Why now:** the trial-countdown nav pill (#106), recent-revenue card (#107), and window toggle (#117) recently shipped — the dashboard surface is more compelling-looking than 30 days ago. Affiliate creators making screenshot-driven content benefit when the screenshots show momentum (the recent-revenue card showing "$2,400 paid in last 7 days" is the kind of asset YouTubers feature in thumbnails). Sequence after Master sets RESEND_API_KEY (#18) so affiliates aren't recommending a tool whose password-reset is a stopgap email-support flow.

@@ -156,7 +156,10 @@ test('dashboard renders the recent-revenue card with all 3 stat tiles', () => {
     recentRevenue: { days: 30, totalPaid: 1234.56, invoiceCount: 4, clientCount: 2 }
   });
   assert.match(html, /data-testid="recent-revenue"/);
-  assert.match(html, /Last 30 days/);
+  // Span-tolerant: the days number is wrapped in <span x-text="days">30</span>
+  // so Alpine can re-render it on toggle (#117). User-visible text is still
+  // "Last 30 days".
+  assert.match(html, /Last\s*(?:<span[^>]*>\s*)?30(?:\s*<\/span>)?\s*days/);
   assert.match(html, /data-testid="recent-revenue-total"[^>]*>[\s\S]*?\$1,234\.56/);
   assert.match(html, /data-testid="recent-revenue-clients"[^>]*>[\s\S]*?2/);
   assert.match(html, /data-testid="recent-revenue-invoices"[^>]*>[\s\S]*?4/);

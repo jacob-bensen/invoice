@@ -213,42 +213,120 @@
     %>
     <% if (locals.recentRevenue && recentRevenue) { %>
       <div
+        x-data='recentRevenueCard(<%- JSON.stringify({ days: recentRevenue.days, totalPaid: recentRevenue.totalPaid, invoiceCount: recentRevenue.invoiceCount, clientCount: recentRevenue.clientCount }).replace(/</g, "\\u003c") %>)'
         data-testid="recent-revenue"
+        :data-days="days"
         data-days="<%= recentRevenue.days %>"
         class="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 print:hidden"
         role="region"
         aria-label="Recent paid revenue"
       >
-        <div class="flex items-center justify-between gap-3 mb-3">
+        <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
           <div>
             <h2 class="text-sm font-semibold text-emerald-900 flex items-center gap-2">
               <span aria-hidden="true">💸</span>
               You've been getting paid
             </h2>
-            <p class="text-xs text-emerald-700 mt-0.5">Last <%= recentRevenue.days %> days</p>
+            <p class="text-xs text-emerald-700 mt-0.5">Last <span x-text="days"><%= recentRevenue.days %></span> days</p>
+          </div>
+          <div
+            class="inline-flex items-center bg-white rounded-lg border border-emerald-200 p-0.5 text-xs font-medium"
+            role="group"
+            aria-label="Choose revenue window"
+            data-testid="recent-revenue-toggle"
+          >
+            <template x-for="opt in [7, 30, 90]" :key="opt">
+              <button
+                type="button"
+                @click="select(opt)"
+                :disabled="loading"
+                :class="days === opt ? 'bg-emerald-600 text-white' : 'text-emerald-700 hover:bg-emerald-50'"
+                class="px-3 py-1 rounded-md transition-colors disabled:opacity-60 disabled:cursor-wait"
+                :aria-pressed="days === opt ? 'true' : 'false'"
+                x-text="opt + 'd'"
+              ></button>
+            </template>
           </div>
         </div>
-        <div class="grid grid-cols-3 gap-3">
+        <div class="grid grid-cols-3 gap-3" :class="loading ? 'opacity-60 transition-opacity' : ''">
           <div class="bg-white rounded-xl border border-emerald-100 p-4">
             <p class="text-xs font-medium text-emerald-700 uppercase tracking-wide mb-1">Revenue</p>
-            <p class="text-xl font-bold text-emerald-700" data-testid="recent-revenue-total">
+            <p class="text-xl font-bold text-emerald-700" data-testid="recent-revenue-total" x-text="formatMoney(totalPaid)">
               $<%= recentRevenue.totalPaid.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) %>
             </p>
           </div>
           <div class="bg-white rounded-xl border border-emerald-100 p-4">
             <p class="text-xs font-medium text-emerald-700 uppercase tracking-wide mb-1">Clients paid you</p>
-            <p class="text-xl font-bold text-gray-900" data-testid="recent-revenue-clients">
+            <p class="text-xl font-bold text-gray-900" data-testid="recent-revenue-clients" x-text="clientCount">
               <%= recentRevenue.clientCount %>
             </p>
           </div>
           <div class="bg-white rounded-xl border border-emerald-100 p-4">
             <p class="text-xs font-medium text-emerald-700 uppercase tracking-wide mb-1">Invoices paid</p>
-            <p class="text-xl font-bold text-gray-900" data-testid="recent-revenue-invoices">
+            <p class="text-xl font-bold text-gray-900" data-testid="recent-revenue-invoices" x-text="invoiceCount">
               <%= recentRevenue.invoiceCount %>
             </p>
           </div>
         </div>
+        <p
+          x-show="errored"
+          x-cloak
+          class="text-xs text-red-700 mt-2"
+          role="status"
+          data-testid="recent-revenue-error"
+        >Couldn't load that window — showing the previous one.</p>
       </div>
+      <script>
+        // Backs the recent-revenue card window toggle (#117). Initial state
+        // comes from the server-rendered card so the page is meaningful
+        // before Alpine boots; subsequent toggles fetch JSON and re-render.
+        // The fetch is a same-origin authenticated GET; on failure we keep
+        // the previous values + flag the small error line.
+        function recentRevenueCard(initial) {
+          return {
+            days: initial.days,
+            totalPaid: initial.totalPaid,
+            invoiceCount: initial.invoiceCount,
+            clientCount: initial.clientCount,
+            loading: false,
+            errored: false,
+            formatMoney(n) {
+              const v = Number(n) || 0;
+              return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            },
+            async select(window) {
+              if (window === this.days || this.loading) return;
+              this.loading = true;
+              this.errored = false;
+              try {
+                const r = await fetch('/invoices/api/recent-revenue?days=' + encodeURIComponent(window), {
+                  headers: { 'Accept': 'application/json' },
+                  credentials: 'same-origin'
+                });
+                if (!r.ok) throw new Error('http_' + r.status);
+                const data = await r.json();
+                // card === null means "no paid invoices in this window" — that's
+                // valid data, not an error. Show zeros honestly so the user
+                // gets the truthful "no, you weren't paid this week" answer.
+                this.days = data.days || window;
+                if (data.card) {
+                  this.totalPaid = data.card.totalPaid;
+                  this.invoiceCount = data.card.invoiceCount;
+                  this.clientCount = data.card.clientCount;
+                } else {
+                  this.totalPaid = 0;
+                  this.invoiceCount = 0;
+                  this.clientCount = 0;
+                }
+              } catch (e) {
+                this.errored = true;
+              } finally {
+                this.loading = false;
+              }
+            }
+          };
+        }
+      </script>
     <% } %>
     <% if (locals.recentRevenue && recentRevenue) { %>
       <p class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">All-time totals</p>

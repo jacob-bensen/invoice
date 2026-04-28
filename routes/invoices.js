@@ -12,6 +12,10 @@ const { sendInvoiceEmail } = require('../lib/email');
 const router = express.Router();
 const FREE_LIMIT = 3;
 const ALLOWED_INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue'];
+// Whitelist of windows the recent-revenue JSON endpoint accepts (#117). Any
+// other value falls through to the default 30. Keeps the API surface small
+// and predictable — the toggle UI only offers these three.
+const RECENT_REVENUE_WINDOWS = [7, 30, 90];
 
 router.get('/', requireAuth, async (req, res) => {
   try {
@@ -126,6 +130,34 @@ function buildRecentRevenueCard(user, stats) {
     clientCount
   };
 }
+
+/*
+ * JSON endpoint that powers the dashboard's recent-revenue window toggle
+ * (INTERNAL_TODO #117). Reuses the same db.getRecentRevenueStats helper +
+ * buildRecentRevenueCard render shape used by the SSR dashboard. Days arg
+ * is whitelisted to [7, 30, 90] — any other value (including 0, negative,
+ * or out-of-range) falls back to 30. Free-plan users get a 200 with
+ * `card: null` so the client can hide the card without a 4xx error
+ * branch; this matches the SSR behaviour (free → null card) exactly.
+ *
+ * Mounted before /:id so 'api' isn't matched as an invoice id.
+ */
+router.get('/api/recent-revenue', requireAuth, async (req, res) => {
+  const requested = parseInt(req.query.days, 10);
+  const days = RECENT_REVENUE_WINDOWS.includes(requested) ? requested : 30;
+  try {
+    const [user, stats] = await Promise.all([
+      db.getUserById(req.session.user.id),
+      loadRecentRevenueStats(req.session.user.id, days)
+    ]);
+    const card = buildRecentRevenueCard(user, stats);
+    res.set('Cache-Control', 'no-store');
+    res.json({ days, card });
+  } catch (err) {
+    console.error('Recent revenue API error:', err && err.message);
+    res.status(500).json({ days, card: null, error: 'lookup_failed' });
+  }
+});
 
 router.get('/new', requireAuth, async (req, res) => {
   const user = await db.getUserById(req.session.user.id);
@@ -377,3 +409,4 @@ module.exports.buildRecentRevenueCard = buildRecentRevenueCard;
 module.exports.onboardingDismissHandler = onboardingDismissHandler;
 module.exports.ALLOWED_INVOICE_STATUSES = ALLOWED_INVOICE_STATUSES;
 module.exports.FREE_LIMIT = FREE_LIMIT;
+module.exports.RECENT_REVENUE_WINDOWS = RECENT_REVENUE_WINDOWS;

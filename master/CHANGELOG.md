@@ -2,6 +2,286 @@
 
 ---
 
+## 2026-04-28T21:00Z — Role 7 (Health Monitor): clean cycle audit + 1 defence-in-depth hardening applied inline
+
+**Audit scope this cycle:** the 4 production files touched in Roles 1, 2, 5 (`routes/invoices.js`, `views/dashboard.ejs`, `master/APP_SPEC.md`, `master/EPICS.md`); the 1 new test file (`tests/recent-revenue-window-toggle.test.js`); the modified `package.json` test runner; the 1 existing test file with the span-tolerant regex update (`tests/recent-revenue-stats.test.js`).
+
+- **Security review of the diff:**
+
+  - **`routes/invoices.js#GET /api/recent-revenue`** — single SELECT (via `db.getRecentRevenueStats`), fully parameterised. Days arg is whitelisted to `RECENT_REVENUE_WINDOWS = [7, 30, 90]` via strict `Array.includes` membership check before reaching SQL — any other value (negative, zero, NaN, missing, far-future, query-string array forms, garbage) deterministically falls back to 30. Single most important regression guard for this route — a tampered `?days=99999` cannot exfiltrate a wider window than the toggle UI advertises. `userId` is taken from `req.session.user.id` (server-controlled, set by login/register/webhook only — never from `req.body` or `req.query`). Mounted before `/:id` so `'api'` isn't matched as an invoice id (asserted by a dedicated test). `Cache-Control: no-store` prevents stale data on toggle clicks. No SQL-injection vector. No XSS surface (JSON output, not HTML).
+
+  - **`views/dashboard.ejs` — Alpine `recentRevenueCard()` scope.** The `x-data` init payload is `JSON.stringify({...})` of `recentRevenue.days/totalPaid/invoiceCount/clientCount` — all 4 fields are guaranteed numeric by `buildRecentRevenueCard()`'s `Number()` / `parseInt(...)` coercion. **Defence-in-depth hardening applied inline this cycle:** appended `.replace(/</g, "\\u003c")` to the JSON output to prevent any future regression where a stringy field with `</script>` or `</div>` content could escape the `x-data='...'` attribute or the surrounding HTML context. The current code is safe today (numbers can't contain `<`), but the escape is the canonical defence-in-depth pattern for JSON-in-HTML and costs nothing — the next time someone adds a string field to the init payload, the protection is already in place.
+
+  - **`views/dashboard.ejs` — Alpine `select()` fetch.** Uses `encodeURIComponent(window)` defence-in-depth even though `window` is server-controlled (one of [7, 30, 90] from the literal Alpine `x-for` array). `credentials: 'same-origin'` sends session cookies only for same-origin requests. GET requests don't require CSRF tokens. The fetch URL is a string-concat (no URL injection vector — `window` is a JS literal Number, not user input).
+
+  - **`views/dashboard.ejs` — tile re-render.** All Alpine `x-text` bindings (`x-text="formatMoney(totalPaid)"`, `x-text="invoiceCount"`, `x-text="clientCount"`, `x-text="days"`) auto-escape; `formatMoney` returns a string of `$N.NN` shape (Number → toLocaleString) with no user-controllable content. No `x-html`, no `innerHTML`, no `eval`, no `Function()` constructor. No XSS surface.
+
+  - **`tests/recent-revenue-window-toggle.test.js`** — pure-test file; uses the existing `STRIPE_SECRET_KEY = 'sk_test_dummy'` env-stubbing pattern; no live secrets. Mocks `getUserById` + `getRecentRevenueStats` in-memory.
+
+  - **Hardcoded-secret scan** of all touched files: zero matches for `API_KEY|SECRET|password.*=|sk_live|sk_test` on the cycle-diff lines (the `sk_test_dummy` test fixture was pre-existing). ✓ No new credentials.
+
+- **`npm audit --omit=dev`:** still 6 vulnerabilities (3 moderate, 3 high) — **all pre-existing**, all install-time only. `bcrypt → @mapbox/node-pre-gyp → tar` (3 high — H9 in INTERNAL_TODO); `resend → svix → uuid` (3 moderate — H16). Runtime exposure remains nil. **No new advisories surfaced this cycle** — zero new dependencies (no `npm i`, no `package-lock.json` shifts).
+
+- **Performance:**
+  - 1 new SQL query per **toggle click** (not per dashboard render — the dashboard render is unchanged). The toggle click runs `getUserById` + `getRecentRevenueStats` in `Promise.all` — both indexed, sub-millisecond at today's scale (tens to low hundreds of invoices per Pro user). Past ~5k invoices/user, a composite `(user_id, status)` index would help — already tracked as H8.
+  - The Alpine fetch is on user click (not on every dashboard load) — zero added latency for users who don't toggle.
+  - `Cache-Control: no-store` prevents the browser from caching JSON responses, ensuring data freshness. No CDN cost (the route is `/invoices/...`, behind auth — never cache-eligible at the edge anyway).
+  - The Alpine state object is per-component (~4 numbers + 2 booleans + 2 closures = ~200 bytes). No memory waste; GC'd on dashboard navigate-away.
+  - No N+1 introduced.
+
+- **Code quality:**
+  - The new Alpine factory `recentRevenueCard()` is small (~30 lines), single-purpose, no module state, easy to test in isolation.
+  - The new API route is small (~15 lines) and reuses `db.getRecentRevenueStats` + `buildRecentRevenueCard` — single source of truth for "should this card render". No drift risk between SSR and JSON.
+  - The whitelist `[7, 30, 90]` is exported as `RECENT_REVENUE_WINDOWS` and asserted by a test to match the toggle UI's literal array — drift guard.
+  - **One small DRY note (not new — already H20 in the queue):** `formatMoney` inside the Alpine factory duplicates `lib/html.js#formatMoney`. Same observation as the existing H20 currency-formatter DRY item; the new Alpine duplicate joins the existing `lib/outbound-webhook.js` formatter under the same umbrella. No new flag — bumps H20's surface area slightly.
+
+- **Dependencies:** zero changes — no `npm i`, no `package-lock.json` shifts. `package.json` was edited to add the new test file to the `test` script — dev-only entry, no runtime/production effect.
+
+- **Legal:** No new dependencies, no license changes. The new code surfaces only the user's own paid-invoice data over a user-controllable time window — no PII expansion, no GDPR/CCPA scope change, no PCI scope change (no card data touched), no third-party API usage. Window-toggle copy ("7d / 30d / 90d") makes no claim that requires legal review.
+
+**No CRITICAL / hardcoded-secret findings. No new flags for TODO_MASTER. No new [HEALTH] items added to INTERNAL_TODO.** The 9 existing open [HEALTH] items remain unchanged. **1 inline defence-in-depth hardening applied** (`.replace(/</g, "\\u003c")` on the Alpine init JSON) — small, low-risk, zero-test-impact, ships with this commit.
+
+**Net delta this cycle:** the new code is unusually security-clean. Whitelisted query parameter, parameterised SQL, server-only data sources, JSON-output API (no HTML render), auto-escaping Alpine bindings, defence-in-depth on the JSON-in-HTML boundary. The full test suite is **47 files, 0 failures** — the safety net is intact.
+
+---
+
+## 2026-04-28T20:55Z — Role 6 (Task Optimizer): 18th-pass audit — header refreshed, #117 archived, queue re-ordered + Session Close Summary
+
+**Audit deltas this pass:**
+
+1. **Header refreshed.** Updated INTERNAL_TODO.md audit header to capture this cycle's deltas: #117 closed (XS, ~30 min effort, MED retention shipped); 5 new GROWTH items (#122-#126); 1 new MARKETING (#61 affiliate program); APP_SPEC.md re-synced from codebase reality (was Java-only; now describes both QuickInvoice + InvoiceFlow); EPICS.md created (9 epics, 3 active). 17th-pass header retained as one-line summary; 16th-pass retained too.
+
+2. **#117 archived.** Folded the full description into a one-line `*(...)*` parenthetical at the head of the XS-GROWTH block (same pattern as #91, #92, #101, #106, #107 archives in prior passes). Full detail lives only in CHANGELOG now.
+
+3. **#122-#126 placement.** All 5 new items inserted at the top of the [XS]/[S] GROWTH buckets (Cx-tagged appropriately). Cross-referenced against existing items per Role 4's Cross-checks block; zero merges, zero consolidations.
+
+4. **Re-prioritization (priority order unchanged):** [TEST-FAILURE] (none) > income-critical features > [UX] items affecting conversion > [HEALTH] > [GROWTH] > [BLOCKED]. Within GROWTH, XS-first by impact-per-effort. The new #122-#124 are XS and immediately implementable; #125 + #126 are S complexity.
+
+5. **Cross-checks for non-overlap (re-validated this cycle):** #122 vs #117 vs #102 (UI memory vs UI toggle vs DB-persisted timezone — three separate user-state dimensions); #123 vs #107 vs #88 (delta vs raw vs categorical alert); #124 vs #83 (3-day vs 7-day cohorts of the same task type, both surfaces co-exist); #125 vs #64 vs #88 (top-5 by revenue vs aging by overdue-ness vs categorical non-payer alert); #126 vs #75 (reliability layer vs formatting layer at the same surface). All confirmed orthogonal.
+
+6. **TODO_MASTER reviewed:** All 61 items (1-9 legacy InvoiceFlow setup + 50-61 newer marketing/SPEC-REVIEW additions) checked against this cycle's CHANGELOG. **No items flip to [LIKELY DONE - verify]** — every Master action remains pending its respective external step (Stripe Dashboard config, Resend API key, Plausible domain, G2/Capterra profile creation, AppSumo submission, Rewardful signup, etc.). #60 (SPEC-REVIEW from this cycle's bootstrap) and #61 (affiliate program from Role 4) are the newest entries.
+
+7. **Compaction status.** INTERNAL_TODO.md now ~2.5k lines (overdue by 11 cycles per the 1.5k archive trigger). Deferred again — not blocking work; full archives remain available via CHANGELOG. Will be revisited when the [DONE]-tagged section weight crosses ~1k lines on its own.
+
+8. **Open task index re-counted:** ~120 GROWTH items total (was 116 + 5 new − 1 #117 closed = 120); 9 [HEALTH] items open unchanged; 2 [UX] items (U3 actively buildable; U1 in Resend block); 0 [TEST-FAILURE]. **No new [BLOCKED] items this cycle.**
+
+**Priority order at end of 18th pass (top 12 unblocked items):**
+
+| # | ID | Tag | Cx | Title (1-line) |
+|--:|------|------|-----|------|
+| 1 | U3 | UX | S | Authed-pages global footer (gated on #28) |
+| 2 | **#122** | GROWTH | XS | **Persist last-selected revenue window in localStorage (NEW)** |
+| 3 | **#123** | GROWTH | XS | **"vs prior period" delta badge on revenue card (NEW)** |
+| 4 | **#124** | GROWTH | XS | **3-day stale-draft yellow banner (NEW)** |
+| 5 | #118 | GROWTH | XS | Stripe receipt URL on paid invoice view |
+| 6 | #119 | GROWTH | XS | Inline "What's new" pulse-dot on nav |
+| 7 | #120 | GROWTH | XS | `<noscript>` SEO fallback hero |
+| 8 | #109 | GROWTH | XS | Sticky "+" mobile FAB |
+| 9 | #102 | GROWTH | XS | Per-user timezone |
+| 10 | #112 | GROWTH | XS | Live "Trusted by N freelancers" hero counter |
+| 11 | #113 | GROWTH | XS | Per-niche `<meta description>` blurb |
+| 12 | #116 | GROWTH | XS | Empty-state demo accordion on dashboard |
+
+**Resend-blocked (kept at bottom of XS bucket):** U1, #11, #12, #66, #71, #77, #80, #84, #90, and #110 (M-complexity magic-link).
+
+---
+
+# 2026-04-28T20:55Z — Session Close Summary
+
+**What was accomplished this session (across all 7 roles):**
+
+- **Bootstrap** — APP_SPEC.md re-synced from codebase reality (was a stale 30-day-old description of the Java/Spring InvoiceFlow app; now correctly describes both QuickInvoice + InvoiceFlow with accurate plan prices, tech stack, core feature list, and directory layout). EPICS.md created from scratch (first-time scaffolding of the strategic-roadmap layer the routine has been growing organically) — 9 epics, 3 active (E2 Trial→Paid Conversion, E3 Activation, E4 Retention). Master action #60 [SPEC-REVIEW] filed for human verification.
+- **Role 1 (Epic Manager)** — wrote a Session Briefing identifying #117 as the highest impact-per-effort unshipped item (XS effort, MED retention, sits on top of #107 which just landed). Marked E1 Stripe Payments [COMPLETE]. Confirmed 3-active-epic budget.
+- **Role 2 (Feature Implementer)** — shipped **#117 7d/30d/90d window toggle** on the recent-paid-revenue card. New `GET /invoices/api/recent-revenue?days=N` JSON endpoint (whitelisted `[7, 30, 90]`, falls back to 30); Alpine `recentRevenueCard()` scope wrapping the existing card with a 3-button segmented control, reactive `x-text` re-render, `loading` + `errored` UX flags. ~50 lines route + ~80 lines view + 1 existing test regex updated for span-tolerance.
+- **Role 3 (Test Examiner)** — added 25 new test assertions in `tests/recent-revenue-window-toggle.test.js` across 2 layers: 13 API endpoint contract tests (days-arg whitelist, free-plan defence-in-depth, mount-order regression guard, Cache-Control: no-store, agency-treated-as-Pro, missing-user, DB-throw graceful path) + 12 view-render tests (toggle wiring, ARIA, fetch URL drift guard, x-data init shape, SSR fallback, error fallback, print:hidden boundary). Full suite **47 files, 0 failures**.
+- **Role 4 (Growth Strategist)** — added 5 new GROWTH items (#122-#126: localStorage window memory, "vs prior period" delta badge, 3-day stale-draft banner, top-5 clients widget, webhook retry queue) + 1 new MARKETING item (#61 affiliate program via Rewardful). All cross-checked for non-overlap; all assigned to currently-active epics (3 to E3, 2 to E4); zero items orphaned to [UNASSIGNED].
+- **Role 5 (UX Auditor)** — direct fix on the new toggle's empty-window handling: was throwing `'no_card'` and showing an error message when a Pro user toggled to a window with zero paid invoices; now correctly shows $0/0/0 (the truthful "you weren't paid this week" answer). Re-walked landing → register → dashboard → trial banners → pricing → invoice form/view — no regressions in untouched flows.
+- **Role 6 (Task Optimizer)** — refreshed audit header, archived #117 to one-line parenthetical, re-ordered priority queue (new XS items at top, S items in correct bucket), TODO_MASTER reviewed (no items flip to [LIKELY DONE - verify]).
+- **Role 7 (Health Monitor)** — see next CHANGELOG entry below for full audit.
+
+**Code shipped this cycle:**
+- 1 new JSON API endpoint (`GET /invoices/api/recent-revenue`)
+- 1 new Alpine factory (`recentRevenueCard()` in `views/dashboard.ejs`)
+- 1 new test file (`tests/recent-revenue-window-toggle.test.js`)
+- 1 existing test regex updated for span-tolerance
+- 5 new INTERNAL_TODO items (#122-#126)
+- 2 new master docs (APP_SPEC re-sync; EPICS scaffolding)
+- 2 new TODO_MASTER items (#60 SPEC-REVIEW; #61 affiliate program)
+
+**Most important open item heading into the next session:**
+
+**#122 [XS] Persist last-selected revenue window in localStorage** — XS effort (~10 lines inside the just-shipped Alpine factory), MED retention impact, immediately compounds with #117 by giving the user a per-device memory of their preferred window. Highest impact-per-effort item available; sits on top of code that just landed and is actively in-mind. Estimated cycle to ship: < 30 min implementation + ~20 min new tests.
+
+**Risks / blockers needing Master attention before next run:**
+
+- **Resend API key (TODO_MASTER #18)** — single most leveraged Master action. Unblocks E9 entirely (~10 ready-to-ship retention/conversion email features: U1 password reset, #11 churn win-back, #12 monthly digest, #66 auto-CC accountant, #71 auto-BCC freelancer, #72 .ics calendar, #77 welcome-back on past_due restore, #80 weekly Monday digest, #84 plain-language email body, #90 60+ day inactive re-engagement, #110 magic-link login).
+- **APP_URL env var (TODO_MASTER #39)** — unset means sitemap.xml + canonical link tags fall back to request host, which leaks alternate hosts (Heroku free dyno URL + custom domain) into Google's index. Low-effort fix (one env var); low-priority but compounding SEO drift.
+- **APP_SPEC review (TODO_MASTER #60 — added this cycle)** — the auto-reconstructed spec needs human eyes to confirm it matches your understanding of what QuickInvoice does + verify Stripe price wiring matches the documented $12/mo + $99/yr prices + decide InvoiceFlow's status (active / frozen / sunset).
+
+---
+
+## 2026-04-28T20:50Z — Role 5 (UX Auditor): toggle empty-window graceful handling + flow regression sweep
+
+**Pathways audited this cycle:**
+1. Dashboard with the new `#117` toggle in normal-data-window state.
+2. Dashboard with the new toggle clicking from a populated window (30d) to a possibly-empty window (7d).
+3. Recent-revenue card → toggle → tile re-render path under network-failure conditions.
+4. Re-walked: landing → register → empty-state dashboard onboarding (regression) → trial banner stacking → invoice form → invoice view → 404. No regressions in untouched flows.
+
+**Direct fix applied this cycle (1 substantive UX bug + 0 cosmetic-only changes):**
+
+1. **`views/dashboard.ejs#recentRevenueCard.select()` — empty-window handling.** The Role 2 implementation threw `'no_card'` on any response where `data.card` was null — but the API returns `card: null` for two distinct cases: (a) genuine fetch failure (covered by the catch block already) and (b) a Pro user toggled to a window that has zero paid invoices. Treating (b) as an error showed the user "Couldn't load that window — showing the previous one." when the truthful answer was "you weren't paid in the last 7 days." The "is this week working?" use case (one of the explicit motivations for shipping #117 per the Role 2 changelog) **needs the honest $0 / 0 / 0 answer** — that's exactly the cohort where the toggle is most informative. Fixed: when `data.card` is null but the response was 200, set `totalPaid/invoiceCount/clientCount = 0` and update `days` to the requested window. The error fallback now fires only on genuine fetch / parse failure (network blip, server 500, JSON parse error). Existing tests still pass; one of them ("Pro user with zero paid invoices in window returns card=null") already exercises the API surface this branch handles, so the contract is locked in.
+
+**Regression checks performed (no new fixes needed, but verified clean):**
+
+- **Trial countdown nav pill (#106) + dashboard banner (#45) interaction** — both still render; pill on every authed page header, banner on day 1 still uses urgent red styling. ✓
+- **Free-plan invoice progress bar (#31)** — still renders for free users at the right thresholds (0/3 → calm, 2/3 → near, 3/3 → at-limit amber). ✓
+- **Onboarding card → trial banner → past-due banner stack** — still renders in the correct priority order (onboarding for un-dismissed users, then trial, then past-due). The new revenue card sits below all three at the right position. ✓
+- **Pricing page CTA copy** — still reads "Start 7-day free trial →" with "No credit card required" subtext. Annual savings pill (#101) still emerald-400 on `cycle === 'annual'` toggle. ✓
+- **`x-cloak` CSS rule** — verified `[x-cloak] { display: none !important; }` exists in `views/partials/head.ejs:59` so the new error fallback line `<p x-show="errored" x-cloak>` doesn't briefly flash on first paint pre-Alpine boot. ✓
+- **Register page subtitle "Free forever — no credit card needed"** — accurate; the free plan is forever AND the 7-day Pro trial path (which is reached via Pricing / upgrade-modal) is also no-credit-card. The register copy intentionally under-promises (avoids over-promising trial behaviour to the segment that just wants a free invoicing tool). ✓
+- **Login → register cross-link** — both directions still cross-link cleanly. ✓
+- **Mobile breakpoint on the new toggle** — toggle row uses `flex-wrap` so on narrow mobile (< 384px wide), the toggle wraps below the section header rather than overflowing. ✓
+
+**Anti-fixes — flagged but deliberately left:**
+
+- **Toggle button tap target.** The 7d/30d/90d buttons are `px-3 py-1` ≈ 24px tall — below the 44px iOS HIG tap-target standard. But (a) consistency with the existing Pro/Agency segmented controls in `views/pricing.ejs` and `views/settings.ejs` matters more than absolute compliance, and (b) the buttons are 3x adjacent so accuracy is forgiving. Defer; if mobile-conversion analytics ever surface a "toggle abandonment" pattern, revisit.
+- **Toggle copy "7d / 30d / 90d" abbreviated.** Considered "7 days" / "30 days" / "90 days" or "Week" / "Month" / "Quarter". Abbreviated wins on density; the surrounding "Last 30 days" caption + section header give enough natural-language context. Defer.
+- **Section header "You've been getting paid" stays static when the user toggles to an empty 7d window** ($0 / 0 / 0). The header is identity-framing, not data — the tiles + caption carry the actual numbers. The slight tonal mismatch ("You've been getting paid" + "$0.00" in the Revenue tile) is acceptable; the alternative ("You haven't been getting paid this week") is too negative for the dashboard's emerald-50 trust-frame. Defer.
+
+**Test impact:** zero existing tests asserted on the catch branch's 'no_card' error path (verified via `grep -rn "no_card" tests/`). The new behaviour (empty window → zeros, no error message) is the reasonable user expectation — no test regressed; no test deleted.
+
+**Income relevance:** SMALL but compounding. The empty-window fix turns a confusing dead-end ("Couldn't load that window") into a useful signal ("you weren't paid this week — time to send invoices"). Same data, different framing. Specifically rescues the cohort where #117 is most valuable: the freelancer checking "is this week working?" who toggles 7d on a slow week. The pre-fix behaviour would have left them with an error message + the previous-window's data still on screen — actively misleading. The post-fix behaviour answers the question honestly.
+
+---
+
+## 2026-04-28T20:45Z — Role 4 (Growth Strategist): 5 new GROWTH ideas (#122-#126) + 1 new MARKETING item (#61)
+
+**Process:** scanned the existing 121 GROWTH items + 60 MARKETING items for un-mined surfaces. Cross-checked each candidate against the existing queue for non-overlap. The just-shipped #107 (revenue card) + #117 (window toggle) opened up a small cluster of compounding extensions that are XS-effort and immediately implementable.
+
+**Added to INTERNAL_TODO.md:**
+
+- **#122 [GROWTH] [XS]** — Persist last-selected revenue window in `localStorage` (epic E3). Tiny extension to #117. ~10 lines, no DB. MED retention via "the app remembers me". Distinct from #117 (UI toggle) and from #102 (per-user timezone — DB-persisted user preference vs. per-device localStorage UX preference).
+- **#123 [GROWTH] [XS]** — "vs prior period" delta badge on the recent-revenue card (epic E3). Right of the dollar tile, render `↑ +42% vs prev 30d`. Single SQL CTE extension to `db.getRecentRevenueStats`. MED retention via comparison-framing. Compounds with #117 (toggle drives both the current window AND the prior-period delta). Distinct from #107 (raw stats) and from #88 (frequent-non-payer alert — different signal direction).
+- **#124 [GROWTH] [XS]** — 3-day stale-draft yellow banner above the dashboard table (epic E3). Distinct from #83 (7+ day stale-draft, broader cohort). The 3-day window is the high-recovery-yield cohort — by 7 days the draft is forgotten; by 3 days the freelancer still remembers what it was for. MED activation/revenue-recovery.
+- **#125 [GROWTH] [S]** — "Top 5 clients by revenue" dashboard widget (epic E4). Renders below the recent-revenue card; same window toggle drives it (so 7d/30d/90d swaps both at once). Single GROUP BY query. MED retention via 80/20 awareness — surfaces the client distribution freelancers don't track. Compounds with #88 (frequent non-payer — opposite end of the same axis) and with #98 (top clients are the right testimonial sources). Distinct from #64 aging receivables (time-bucketed by overdue-ness vs. ranked by volume).
+- **#126 [GROWTH] [S]** — Webhook retry queue with exponential backoff (epic E4). Today `firePaidWebhook` is fire-and-forget — if Slack/Discord 502s, the cha-ching message never lands. 3 attempts at 2s/8s/30s. HIGH trust impact for Pro users who came for the Slack/Discord integration. Distinct from #75 (formatting layer; #126 is the reliability layer beneath it).
+
+**Cross-checks for non-overlap:**
+- #122 vs #117 vs #102: #117 is the UI toggle that just shipped; #122 is the per-device localStorage memory of the user's preference; #102 is the DB-persisted timezone setting (different field, different surface — server-side localisation vs. client-side UI memory).
+- #123 vs #107 vs #88: #107 is the raw last-30d numbers; #123 is the delta vs. prior 30d (forward-vs-backward comparison framing); #88 is a categorical alert (frequent non-payer pattern). Three different signal types.
+- #124 vs #83: same task type but different cohort. The 3-day cohort (#124) catches drafts while the freelancer still has context; #83 catches the abandoned cohort. Both surfaces co-exist — a draft at 3 days fires the small banner; the same draft at 7 days escalates to the prominent #83 nudge.
+- #125 vs #64 vs #88: #64 is aging receivables (time-bucketed by overdue-ness, OVERDUE direction); #88 is non-payer alert (categorical, BAD-CLIENT direction); #125 is top-5 by revenue (ranked, GOOD-CLIENT direction). Three orthogonal client analytics.
+- #126 vs #75: #75 shipped the formatting (Slack vs. Discord vs. canonical payload); #126 is the retry/reliability layer underneath. Two different concerns at the same surface.
+
+**Added to TODO_MASTER.md:**
+
+- **#61 [MARKETING]** — Affiliate program setup via Rewardful (~$49/mo + 25% recurring 12-month commission). Distinct from #18 (referral — peer-to-peer end-user "your friend referred you"), distinct from #59 (co-marketing — partner integrations like Calendly/Bonsai/Notion), distinct from #43/#54/#55 listicles/podcasts (one-off media spends). Affiliates are professional creators with audiences in QuickInvoice's ICP — YouTubers, newsletter authors, freelance influencers. ~6 hrs initial setup + ~1 hr/month ongoing. Conservative ramp: 10-50 paid signups/month at month 6, 50-150/month at month 18. Net MRR-equivalent at month 6 (after commission): $90-$1350/month — scales linearly, no ad spend. Sequencing: ship after Master sets RESEND_API_KEY (#18) so affiliates aren't recommending a tool whose password-reset path is a stopgap email-support flow.
+
+**TODO_MASTER review:** All 60 prior items checked against this cycle's CHANGELOG. **No items flip to [LIKELY DONE - verify]** — every Master action remains pending its respective external step. #18 (Resend API key), #38 (OG image asset), #39 (APP_URL env var) all genuinely open. #60 (SPEC-REVIEW — added in this cycle's bootstrap) is the newest pre-existing entry; #61 (affiliate program) is the new add this cycle.
+
+**Active-epic alignment:** all 5 new GROWTH items map cleanly to currently-active epics — 3 to E3 Activation (#122, #123, #124), 2 to E4 Retention (#125, #126). No items orphaned to the [UNASSIGNED] bucket. Zero items added to E5/E7 (PLANNED epics) or E9 (PAUSED — Resend gate).
+
+---
+
+## 2026-04-28T20:40Z — Role 3 (Test Examiner): #117 API + toggle render coverage (25 new assertions)
+
+**Audit scope:** the 2 new pieces shipped by Role 2 — the `GET /invoices/api/recent-revenue` JSON endpoint and the dashboard's Alpine toggle scope. Both were uncovered. The existing pure-fn tests in `tests/recent-revenue-stats.test.js` cover `buildRecentRevenueCard()` and the SSR card render, but they don't exercise: the API's days-arg whitelist (a hot risk path — a tampered query string is the obvious attack surface), free-plan defence-in-depth on the JSON path, the route mount order (a single mistake would route `'api'` as an invoice id), or the toggle's wiring to the API URL.
+
+**New file: `tests/recent-revenue-window-toggle.test.js` — 25 tests across 2 layers.**
+
+**Layer 1 — API endpoint contract (13 assertions):**
+
+1. **Route registration + mount order.** Asserts `/api/recent-revenue` exists on the router stack AND its index is below `/:id` — guards against a future change that would route `'api'` as an invoice id (would manifest as a `getInvoiceById('api')` 500). The mount-order assertion is the sharpest tooth in this file: re-organising routes at the top of `routes/invoices.js` is exactly the kind of refactor that would silently break this if the human didn't know the constraint.
+2. **`days=7` / `days=90` accepted (whitelist members).** Both happy paths — the dashboard offers exactly these.
+3. **`days=30` default when query is missing.** The toggle's initial state.
+4. **Out-of-whitelist falls back to 30.** Iterates `['60', '1', '365', '99999', 'garbage', '-1', '0', '', null]` — every one must clamp to 30. This is the single most important regression guard for the API: without it, an attacker could pass `days=99999` and have it silently clamp to 365 inside `db.getRecentRevenueStats`, exposing a different time-window than the UI advertises. The whitelist forces strict equality with the offered set.
+5. **Free-plan user gets `card: null`** — defence-in-depth. The `buildRecentRevenueCard` already returns null for free, but a future refactor that swapped the helper out would break that contract silently. The test is the canary.
+6. **Pro user with zero paid invoices in window → `card: null`.** Matches SSR behaviour.
+7. **`Cache-Control: no-store` header.** Guards the freshness invariant — without `no-store`, browsers cache the JSON response and the toggle stops updating after the first server-rendered window's data is cached.
+8. **Stats DB throw is internally caught** — `loadRecentRevenueStats` swallows pg errors and returns null, so the API still returns 200 with `card: null`. Documents the actual graceful-degradation path. (The earlier draft of this test wrongly asserted 500 on stats throw — corrected mid-test-run; the 500 path is reserved for `getUserById` failure or other top-level errors.)
+9. **Top-level DB error (`getUserById` throws) → 500 with `card: null` + `error: 'lookup_failed'`.** The 500 surface that exists for unrecoverable DB failures.
+10. **Agency plan is treated like Pro.** Regression guard against a future change that would special-case Pro at the API but forget Agency (which paid more — $49 vs $12).
+11. **Missing user (deleted-account / dangling-session) → `card: null`.** Same shape as `buildRecentRevenueCard(null, ...)`.
+12. **`RECENT_REVENUE_WINDOWS` export matches `[7, 30, 90]`** — drift guard between the API constant and the toggle's UI literal.
+
+**Layer 2 — Dashboard toggle render (12 assertions):**
+
+13. **3 buttons rendered (7d / 30d / 90d)** via the `x-for="opt in [7, 30, 90]"` template loop. Asserts both the array literal `[7, 30, 90]` in the script source AND the toggle's `data-testid="recent-revenue-toggle"`.
+14. **`role="group"` + `aria-label`** for screen-reader access — the segmented control isn't a native form element, so the ARIA hooks matter.
+15. **`@click="select(opt)"` Alpine binding** — the wiring that fires the fetch.
+16. **Reactive `:aria-pressed`** — screen readers announce which window is active.
+17. **`:disabled="loading"`** — no double-click race during in-flight fetch (a real concern with a 30+ms-perceived button click on a slow network).
+18. **`x-data` init seeds days/totalPaid/invoiceCount/clientCount from server** — the JSON.stringify shape is asserted directly, so a future refactor that omits any field surfaces here.
+19. **Tile values rendered via `x-text="formatMoney(totalPaid)"` / `x-text="invoiceCount"` / `x-text="clientCount"`** — required for Alpine to swap them on toggle.
+20. **SSR fallback values still render** — graceful pre-Alpine-boot. `$1,234.56` + `4` + `2` all appear in the rendered HTML even though Alpine will overwrite them when it boots. Pre-hydration UX matters: the user shouldn't see "$" with no number for the 100ms before Alpine attaches.
+21. **Fetch URL matches the registered API route path** — drift guard. If the route mount path ever changed (say `/invoices/api/recent-revenue` → `/api/v1/recent-revenue`), this test breaks alongside the route, forcing the view to update too.
+22. **Error fallback line `x-show="errored"`** with `role="status"` — graceful failure surface.
+23. **Loading dim class** on the tiles — UX feedback during fetch.
+24. **Print:hidden boundary intact** — regression guard. The toggle MUST sit inside the `print:hidden` parent so it doesn't bleed into invoice prints.
+25. **Toggle absent on free-plan dashboard** (where `recentRevenue` is null) — the toggle has no card to control, so it must render nothing.
+
+**Test approach:** the API tests fire the route handler directly with a mock `req`/`res` — no supertest, no real HTTP. The handler's last layer in `apiLayer.route.stack` is the async function we want; awaiting `finalLayer.handle(req, res, () => {})` lets `res.json` complete before assertions read `res.body`. The view tests use the same `ejs.render(dashboardTpl, ...)` pattern as the existing recent-revenue-stats tests — pure regex assertions on the rendered HTML, no browser, no Alpine boot.
+
+**Coverage gaps remaining (tracked in INTERNAL_TODO, not in scope here):**
+- A real browser-end test of the Alpine toggle (clicking 7d, observing the tile values change) would require a Playwright/Puppeteer harness — the test suite is currently `node tests/foo.js` plain, no browser dependency. Defer.
+- The `formatMoney` JS helper inside the EJS `<script>` block is duplicated from `lib/html.js#formatMoney` (regression risk if `lib/html.js` ever drifts to `formatMoneyTerse` or similar). Tracked as a low-priority [HEALTH] candidate — pairs with the existing H20 currency-formatter DRY item.
+
+**Full suite this cycle: 47 test files, 0 failures** (was 46 — added `tests/recent-revenue-window-toggle.test.js`). One existing assertion in `tests/recent-revenue-stats.test.js` updated to be span-tolerant (the days number is now wrapped in `<span x-text="days">30</span>` so Alpine can re-render it). User-visible behavioural guarantee — the dashboard says "Last 30 days" — is unchanged. No tests deleted.
+
+---
+
+## 2026-04-28T20:35Z — Role 2 (Feature Implementer): #117 — 7d / 30d / 90d window toggle on the recent-paid-revenue card [DONE]
+
+**Epic:** E3 Activation (sits on top of #107 which shipped last cycle).
+
+**Task chosen:** INTERNAL_TODO #117 [GROWTH] [XS] — give the user a 7d/30d/90d toggle on the recent-revenue dashboard card so they can answer "is this week working?" / "is this quarter working?" without leaving the dashboard. Highest impact-per-effort unshipped item — XS complexity, MED retention impact, sits directly on top of the helper that just landed.
+
+**What shipped:**
+
+1. **`routes/invoices.js`** — new `GET /invoices/api/recent-revenue?days=N` JSON endpoint. The days arg is hardened: parsed as int, then `RECENT_REVENUE_WINDOWS.includes(requested) ? requested : 30` — only `[7, 30, 90]` are accepted, anything else (negative, zero, too-large, garbage, missing) silently falls back to 30. Reuses the same `db.getRecentRevenueStats` + `buildRecentRevenueCard` shape used by SSR — so render decisions (free → null, no paid invoices → null) stay identical across SSR and JSON paths. `Cache-Control: no-store` to prevent stale data on toggle. Mounted **before** `/:id` (deliberately) so Express doesn't route `'api'` as an invoice id. New module export `RECENT_REVENUE_WINDOWS` for tests / future surfaces.
+
+2. **`views/dashboard.ejs`** — recent-revenue card wrapped in `x-data="recentRevenueCard(initial)"` Alpine scope. Initial state is server-rendered (so the card is meaningful pre-Alpine boot — SEO-/no-JS-friendly, and SSR-test-friendly). New segmented-control toggle row (3 buttons: 7d / 30d / 90d) sits in the card header, role="group" + aria-label="Choose revenue window", per-button `:aria-pressed="days === opt"` for screen readers + active-state Tailwind classes. Toggle click → `select(window)` → fetch `/invoices/api/recent-revenue?days=N` (same-origin, credentials included) → swap `days` / `totalPaid` / `invoiceCount` / `clientCount` reactive state → Alpine re-renders the 3 tiles via `x-text`. `loading` flag dims the tiles via `:class="loading ? 'opacity-60 transition-opacity' : ''"` + disables all 3 toggle buttons during in-flight fetch (no double-clicks racing). On fetch failure (network, 500, missing card) the previous values are kept and an `x-show="errored"` `<p role="status">` line surfaces "Couldn't load that window — showing the previous one." — graceful degradation never strands the user with stale-but-unmarked state.
+
+3. **`tests/recent-revenue-stats.test.js`** — one existing assertion's regex updated from `/Last 30 days/` to `/Last\s*(?:<span[^>]*>\s*)?30(?:\s*<\/span>)?\s*days/` to remain span-tolerant under the new `<span x-text="days">30</span>` wrapping (Alpine needs the span so it can re-render the days number on toggle). Behavioral guarantee unchanged — user-visible text is still "Last 30 days". No tests deleted; full suite still **46 files, 0 failures**.
+
+**Income relevance:** MED retention. The single fixed 30-day window forced one perspective on every dashboard load; the toggle gives the user agency. 7d answers "is this week's invoicing rhythm working?" — the high-frequency engagement moment for an active freelancer. 90d answers "did Q1 deliver?" — the strategic quarterly check-in. Same data, three different pump-prime contexts. Compounds with #107 (which surfaced the metric in the first place) by giving Pro users a reason to come back to the dashboard daily / weekly / quarterly instead of only when they need to send an invoice.
+
+**[Master action]** none — schema-additive (no migration); API and view changes only. Auto-available to every paying Pro/Agency user with at least 1 paid invoice in the trailing 30 days (same gate as #107). The 7d/90d windows surface zero rows for new Pro users until they have a paid invoice in those windows — graceful by design (the buttons still toggle, the card just shows $0 / 0 / 0 — and `buildRecentRevenueCard` returns null when invoiceCount is 0, so the card simply hides if the chosen window has no paid activity. Users seeing the 90d window populated but the 7d window empty is an honest signal — "you've been paid but not THIS week" is itself a useful nudge to get back to invoicing).
+
+**Sequencing:** Closes #117 cleanly. Future enhancement candidates from this code: localStorage-persist the user's last-selected window (so a user who prefers 7d sees 7d on next dashboard load), or analytics on which window users most often toggle to (signals product-market-fit per persona — solo freelancers may prefer 7d, agencies may prefer 90d). Both are deferred; the current ship lands the core lever.
+
+---
+
+## 2026-04-28T20:30Z — Session Briefing (Role 1, Epic Manager) — App spec re-synced + Epics scaffolding ratified
+
+**Bootstrap deltas this cycle (executed before Role 1):**
+
+- **`master/APP_SPEC.md` rewritten from the codebase.** The prior spec described only the Java/Spring `invoiceflow/` subdirectory and pinned obsolete plan prices ($9 Solo / $19 Pro). Reality: the active codebase is QuickInvoice (Node.js/Express at repo root), with prices Free / $12/mo Pro / $99/yr Pro / $49/mo Agency. New spec documents both apps as one file (App 1 = QuickInvoice primary, App 2 = InvoiceFlow secondary parallel implementation) with accurate tech stack, monetization, core features, and directory layout. Master action filed: TODO_MASTER #60 [SPEC-REVIEW] for human verification.
+- **`master/EPICS.md` created.** First-time scaffolding of the strategic-roadmap layer the routine has been growing organically. 9 epics extracted from existing INTERNAL_TODO clusters: E1 Stripe Payments [COMPLETE]; E2 Trial→Paid Conversion [ACTIVE]; E3 Activation/Time-to-First-Value [ACTIVE]; E4 Retention/Stickiness [ACTIVE]; E5 Expansion [PLANNED]; E6 Distribution/SEO [PLANNED]; E7 Accounting/Pro power-user features [PLANNED]; E8 Health/Security/Compliance [PLANNED — Role 7 audits each cycle]; E9 Email/Resend gate [PAUSED — single Master action unblocks 10+ tasks]. Each epic carries a goal paragraph, status, child task IDs, and income impact rating.
+
+**Active epics this cycle (3 of 3 budget):**
+
+1. **E2 Trial→Paid Conversion** — single most direct revenue lever. Trial-cohort conversion at industry-typical 4-8% is the difference between $0 and $700+ MRR per 100 trial signups. Open queue: #82 plan-comparison table for free users (XS), #95 paid-invoice tab-flash retention, #119 nav pulse-dot, #46 pricing-page exit-intent modal, #109 mobile FAB.
+2. **E3 Activation** — gates everything else. Open queue: #117 7d/30d/90d window toggle (XS, sits on top of just-shipped #107), #118 Stripe receipt URL on paid view (XS, AP-friendly artefact), #102 per-user timezone, #111 client-preview pre-send modal, #116 empty-state demo accordion.
+3. **E4 Retention/Stickiness** — multiplier on LTV. Open queue: #88 frequent-non-payer alert, #87 Stripe payout reconciliation widget, #57 NPS micro-survey, #121 dashboard streak gamification.
+
+**Most important thing to accomplish this session:** the highest impact-per-effort unshipped item right now is **#117** (7d/30d/90d window toggle on the recent-paid-revenue card) — XS complexity, MED retention impact, sits directly on top of #107 (which just shipped last cycle), and the underlying `getRecentRevenueStats(userId, days)` helper already accepts a clamped days arg [1, 365]. This is the cleanest "ship a vertical slice that compounds with what just landed" move available. **Role 2 will implement #117.**
+
+**Blockers / risks worth flagging before work begins:**
+- **Resend API key** (TODO_MASTER #18) remains unset in production — this single Master action unblocks 10+ ready-to-ship tasks under Epic E9. Highest-leverage external action.
+- **Stripe Business price** (TODO_MASTER for #10) — gates the $29/mo Business tier ARPU expansion lever.
+- **APP_URL env var** (TODO_MASTER #39) — without it, sitemap.xml + canonical link tags fall back to the request host, which leaks alternate hosts (Heroku free dyno URL + custom domain) into Google's index.
+- **OG image asset** (TODO_MASTER #38) — the placeholder `public/og-image.png` is in the repo but the spec calls for a branded asset. Low-priority; not blocking.
+- **No [TEST-FAILURE] items in queue.** Test suite is green (46 files, 0 failures) at session start. Safety net intact.
+
+**Epic-level adjustments made this cycle:**
+- E1 marked [COMPLETE] — every child task DONE (Stripe Payments + Subscription Lifecycle: #1, #2, #3, #30, #31, #41, #45, #91, #92, #95). The subscription loop is built and earning. Future increments live under E5 (expansion/upsell).
+- No epics paused or restarted this cycle.
+- E9 (Email Channel) flagged as [PAUSED] — entirely Resend-blocked; un-pauses on Master setting RESEND_API_KEY in prod.
+
+---
+
 ## 2026-04-28T19:55Z — Role 6 (Health Monitor): clean cycle audit — zero new findings on the new code
 
 **Audit scope this cycle:** the 4 production files touched in Role 1 + 4 (`db.js`, `routes/invoices.js`, `views/dashboard.ejs`, `package.json`) and the 1 new test file (`tests/recent-revenue-stats.test.js`).
