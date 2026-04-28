@@ -15,9 +15,10 @@ const ALLOWED_INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue'];
 
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const [invoices, user] = await Promise.all([
+    const [invoices, user, recentRevenue] = await Promise.all([
       db.getInvoicesByUser(req.session.user.id),
-      db.getUserById(req.session.user.id)
+      db.getUserById(req.session.user.id),
+      loadRecentRevenueStats(req.session.user.id)
     ]);
     const flash = req.session.flash;
     delete req.session.flash;
@@ -42,13 +43,14 @@ router.get('/', requireAuth, async (req, res) => {
     }
     const onboarding = buildOnboardingState(user, invoices);
     const invoiceLimitProgress = buildInvoiceLimitProgress(user);
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, noindex: true });
+    const recentRevenueCard = buildRecentRevenueCard(user, recentRevenue);
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
       title: 'My Invoices', invoices: [], user: req.session.user || null,
       flash: null, days_left_in_trial: 0, onboarding: null,
-      invoiceLimitProgress: null, noindex: true
+      invoiceLimitProgress: null, recentRevenue: null, noindex: true
     });
   }
 });
@@ -91,6 +93,38 @@ async function loadRecentClients(userId) {
     console.error('Recent clients lookup failed:', err && err.message);
     return [];
   }
+}
+
+async function loadRecentRevenueStats(userId, days = 30) {
+  try {
+    return await db.getRecentRevenueStats(userId, days);
+  } catch (err) {
+    console.error('Recent revenue stats lookup failed:', err && err.message);
+    return null;
+  }
+}
+
+/*
+ * Decides whether to show the last-N-days "what you collected" card on the
+ * dashboard (INTERNAL_TODO #107). Hidden for free users and for anyone who
+ * has zero paid invoices in the window — the card is a positive-momentum
+ * surface, not an empty-state nag. `stats` is whatever loadRecentRevenueStats
+ * returned (object on success, null on DB failure or missing user).
+ */
+function buildRecentRevenueCard(user, stats) {
+  if (!user) return null;
+  if (user.plan === 'free') return null;
+  if (!stats || typeof stats !== 'object') return null;
+  const totalPaid = Number(stats.totalPaid) || 0;
+  const invoiceCount = parseInt(stats.invoiceCount, 10) || 0;
+  const clientCount = parseInt(stats.clientCount, 10) || 0;
+  if (invoiceCount === 0) return null;
+  return {
+    days: parseInt(stats.days, 10) || 30,
+    totalPaid,
+    invoiceCount,
+    clientCount
+  };
 }
 
 router.get('/new', requireAuth, async (req, res) => {
@@ -339,6 +373,7 @@ async function onboardingDismissHandler(req, res) {
 module.exports = router;
 module.exports.buildOnboardingState = buildOnboardingState;
 module.exports.buildInvoiceLimitProgress = buildInvoiceLimitProgress;
+module.exports.buildRecentRevenueCard = buildRecentRevenueCard;
 module.exports.onboardingDismissHandler = onboardingDismissHandler;
 module.exports.ALLOWED_INVOICE_STATUSES = ALLOWED_INVOICE_STATUSES;
 module.exports.FREE_LIMIT = FREE_LIMIT;

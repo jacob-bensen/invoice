@@ -211,6 +211,48 @@
       const paid = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + parseFloat(i.total), 0);
       const outstanding = invoices.filter(i => i.status !== 'paid').reduce((s, i) => s + parseFloat(i.total), 0);
     %>
+    <% if (locals.recentRevenue && recentRevenue) { %>
+      <div
+        data-testid="recent-revenue"
+        data-days="<%= recentRevenue.days %>"
+        class="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 print:hidden"
+        role="region"
+        aria-label="Recent paid revenue"
+      >
+        <div class="flex items-center justify-between gap-3 mb-3">
+          <div>
+            <h2 class="text-sm font-semibold text-emerald-900 flex items-center gap-2">
+              <span aria-hidden="true">💸</span>
+              You've been getting paid
+            </h2>
+            <p class="text-xs text-emerald-700 mt-0.5">Last <%= recentRevenue.days %> days</p>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+          <div class="bg-white rounded-xl border border-emerald-100 p-4">
+            <p class="text-xs font-medium text-emerald-700 uppercase tracking-wide mb-1">Revenue</p>
+            <p class="text-xl font-bold text-emerald-700" data-testid="recent-revenue-total">
+              $<%= recentRevenue.totalPaid.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) %>
+            </p>
+          </div>
+          <div class="bg-white rounded-xl border border-emerald-100 p-4">
+            <p class="text-xs font-medium text-emerald-700 uppercase tracking-wide mb-1">Clients paid you</p>
+            <p class="text-xl font-bold text-gray-900" data-testid="recent-revenue-clients">
+              <%= recentRevenue.clientCount %>
+            </p>
+          </div>
+          <div class="bg-white rounded-xl border border-emerald-100 p-4">
+            <p class="text-xs font-medium text-emerald-700 uppercase tracking-wide mb-1">Invoices paid</p>
+            <p class="text-xl font-bold text-gray-900" data-testid="recent-revenue-invoices">
+              <%= recentRevenue.invoiceCount %>
+            </p>
+          </div>
+        </div>
+      </div>
+    <% } %>
+    <% if (locals.recentRevenue && recentRevenue) { %>
+      <p class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">All-time totals</p>
+    <% } %>
     <div class="grid grid-cols-3 gap-4 mb-8">
       <div class="bg-white rounded-xl border border-gray-200 p-5">
         <p class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Total Invoiced</p>

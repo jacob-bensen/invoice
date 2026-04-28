@@ -2,6 +2,168 @@
 
 ---
 
+## 2026-04-28T19:55Z — Role 6 (Health Monitor): clean cycle audit — zero new findings on the new code
+
+**Audit scope this cycle:** the 4 production files touched in Role 1 + 4 (`db.js`, `routes/invoices.js`, `views/dashboard.ejs`, `package.json`) and the 1 new test file (`tests/recent-revenue-stats.test.js`).
+
+- **Security review of the diff:**
+  - **`db.js#getRecentRevenueStats`** — single SELECT, fully parameterised (`$1` userId + `$2` days, never interpolated). Days arg sanitised twice: `parseInt(days, 10) || 30` → `Math.max(1, Math.min(365, ...))`. `userId` is taken from `req.session.user.id` (server-controlled, set by login/register/webhook only — never from `req.body`). No SQL-injection vector. No N+1 (single round-trip; previously the dashboard had two parallel queries — now three, all `Promise.all`). The `LOWER(COALESCE(NULLIF(...)))` dedupe expression is a pure SQL function, not user-eval'd JS.
+  - **`routes/invoices.js`** — three new helpers (`buildRecentRevenueCard`, `loadRecentRevenueStats`, the dashboard route's parallel-fetch shape). `loadRecentRevenueStats` wraps the DB call in try/catch returning `null` — graceful degradation: a Postgres outage on this query never 500s the dashboard. `buildRecentRevenueCard` is a pure function over server-controlled fields (`user.plan`, query-result columns) — no user-supplied strings reach any conditional branch.
+  - **`views/dashboard.ejs`** — new card renders `recentRevenue.totalPaid` via `toLocaleString()` (no XSS surface — Number-typed input + browser-built-in formatter), `recentRevenue.clientCount` and `recentRevenue.invoiceCount` via `<%= %>` (EJS auto-escaped, but they're integers so no escape need fires). `recentRevenue.days` is rendered into `data-days="<%= recentRevenue.days %>"` and into the section copy "Last N days" — also integer-typed, also EJS-escaped. Static Tailwind classes; no class injection. The `aria-label="Recent paid revenue"` and `role="region"` markup is accessibility-clean.
+  - **Hardcoded-secret scan** of the 4 touched files: zero matches for `API_KEY|SECRET|password.*=|sk_live|sk_test` on the cycle-diff lines. ✓ No new credentials.
+
+- **`npm audit --omit=dev`:** still 6 vulnerabilities (3 moderate, 3 high) — **all pre-existing**, all install-time only. `bcrypt → @mapbox/node-pre-gyp → tar` (3 high — H9 in INTERNAL_TODO); `resend → svix → uuid` (3 moderate — H16). Runtime exposure remains nil. **No new advisories surfaced this cycle** — zero new dependencies (no `npm i`, no `package-lock.json` shifts).
+
+- **Performance:**
+  - 1 new SQL query per dashboard render (`getRecentRevenueStats`). Runs in parallel with the existing 2 queries via `Promise.all` — adds 0ms wall-clock (the dashboard latency is dominated by the slowest of the 3, not the sum). The query is a single SELECT against `invoices` filtered by `user_id=$1 AND status='paid' AND updated_at >= NOW() - 30d`. The existing `idx_invoices_user_id` index covers the user_id predicate; the additional filter on `status` and `updated_at` is a small in-row scan once the user's invoices are located. At today's per-user invoice count (tens to low hundreds), wall-clock cost is sub-millisecond. Past ~5k invoices/user, a composite `(user_id, status)` index would help — already tracked as H8 (no new flag needed).
+  - No N+1 introduced. No new memory waste — the query returns 1 row, parsed to a small object (~50 bytes) per request. Card markup adds ~600 bytes of HTML for users where it renders, 0 bytes for everyone else. R14 (Heroku memory) budget unaffected.
+  - The `loadRecentRevenueStats` wrapper adds a `try/catch` boundary — well within hot-path overhead.
+
+- **Code quality:**
+  - `buildRecentRevenueCard` is small (15 lines), pure, fully covered (10 unit tests + 5 SQL-contract tests). Exports follow the existing `module.exports` pattern (`buildOnboardingState`, `buildInvoiceLimitProgress`).
+  - Zero dead code introduced. No new repeated logic — the existing `tests/recent-clients.test.js` uses the same `loadRealDb()` swap-and-restore pattern that this cycle's new SQL-contract tests adopted.
+  - The new `getRecentRevenueStats` helper is the single source of truth for "recent paid stats" — anything in the future that wants 30-day-paid metrics (#117 window toggle, #80 weekly digest) reuses this.
+
+- **Dependencies:** zero changes — no `npm i`, no `package-lock.json` shifts. `package.json` was edited to add the new test file to the `test` script — dev-only entry, no runtime/production effect.
+
+- **Legal:** No new dependencies, no license changes. The new card surfaces only the user's own paid-invoice data (their own data they entered) — no PII expansion, no GDPR/CCPA scope change, no PCI scope change (no card data touched), no third-party API. Card copy ("You've been getting paid · Last 30 days") makes no claim that requires legal review.
+
+**No CRITICAL / hardcoded-secret findings. No new flags for TODO_MASTER. No new [HEALTH] items.** The 9 existing open [HEALTH] items remain unchanged: H8 composite (user_id, status) index (which would help this new query when scale rises — flagged in the perf note above; still tracked under the same item), H9 bcrypt bump, H10 parseInt radix, H11 pagination, H15 Promise.all GET handlers, H16 resend bump, H17 trial-nudge partial index, H18 expression index for recent-clients, H20 currency-formatter DRY.
+
+**Net delta this cycle:** the new code is unusually clean — pure function + parameterised SELECT + auto-escaped render + graceful-degradation wrapper. Zero net new attack surface introduced. The full test suite is **46 files, 0 failures** — the safety net is intact.
+
+---
+
+## 2026-04-28T19:50Z — Role 5 (Task Optimizer): 17th-pass audit — header refreshed, #107 archived, queue re-ordered
+
+**Audit deltas this pass:**
+
+1. **Header refresh.** Updated the audit header to capture this cycle's deltas: #107 closed, 5 new GROWTH items (#117-#121), 1 new MARKETING (#59 partner co-marketing), 2 UX direct fixes. The 16th-pass header was retained as a one-line summary; the 15th-pass header retained too. Cycles 8-12 remain compacted (full detail in CHANGELOG).
+
+2. **#107 archived from active queue.** The full description was condensed to a one-line `*( #107 closed... )*` parenthetical inside the XS section (same pattern as #91, #92, #101, #106 archives in prior passes). Full detail moved to CHANGELOG only.
+
+3. **#117-#120 placed in [XS] bucket** (top of the XS GROWTH list, immediately after the closed-task parentheticals). #121 placed in [S] bucket. Initially the placement was duplicated — the Growth Strategist pass inserted them at the bottom of the [S] block, then the Optimizer pass added abbreviated entries at the top. Cleaned up the duplication so each item appears once: #117/#118/#119/#120 in XS, #121 in S.
+
+4. **Re-prioritisation:** unchanged — priority order remains **[TEST-FAILURE] (none) > income-critical features > [UX] items that affect conversion > [HEALTH] > [GROWTH] > [BLOCKED]**. Within GROWTH, XS-first by impact-per-effort. The new #117-#120 are XS and immediately implementable; #121 is S.
+
+5. **Cross-checks for non-overlap (re-validated this cycle):** #117 vs #107 (just shipped — XS unlock); #118 vs #70 vs #97 (3 distinct receipt artefacts); #119 vs #44 (dot vs widget); #120 vs #56 vs #36 (3 distinct SEO surfaces); #121 vs #107 vs #44 (cadence vs dollars vs product-news). No items merged; no items consolidated.
+
+6. **TODO_MASTER review:** Re-walked the 59 items (1-49 + 50-59 from cycles 14-17) against this cycle's CHANGELOG. **No items flip to [LIKELY DONE - verify]** — every Master action remains pending its respective external step (Stripe Dashboard config, Resend API key, Plausible domain, G2/Capterra profile creation, AppSumo submission, etc.). #59 (partner co-marketing) is the newest entry; #58 (SaaS comparison directories), #57 (AppSumo) and earlier remain genuinely open.
+
+7. **Compaction status.** INTERNAL_TODO.md now ~2.5k lines (overdue by 10 cycles per the 1.5k archive trigger). Deferred again — not blocking work; full archives remain available via CHANGELOG. Will be revisited when the [DONE]-tagged section weight crosses ~1k lines on its own.
+
+**Net delta:** active queue head is now (in priority): U1+U3 [UX] (blocked on Resend / #28); then **#117-#120 [XS]** (income-critical, impact-per-effort highest); then the existing Resend-gated XS pile (#66/#71/#73/#77/#80/#82/#84/#88/#90); then S items including the new #121. Free queue capacity remains high — every cycle is compounding both new code and new strategic surface area.
+
+---
+
+## 2026-04-28T19:45Z — Role 4 (UX Auditor): copy clarity on the new dashboard revenue card + temporal context for the existing all-time stats row
+
+**Flows audited this cycle:** dashboard (this cycle's primary touch), landing → register → dashboard onboarding (re-walked for regression), invoice-view (paid invoice surfaces), pricing → upgrade. No regressions found in untouched flows.
+
+**Direct fixes applied:**
+
+1. **`views/dashboard.ejs` — "Paid" tile label → "Revenue".** The new last-30-day card had three tiles labelled "Paid", "Clients paid you", "Invoices paid". All three start with "Paid"-flavoured words, which makes the first tile ambiguous (the user has to read the dollar value to know it's the amount, not the count). Renamed the first tile to "Revenue" — clearer category (it's the dollar figure, not a count), and pairs naturally with the section header "You've been getting paid" without the word-collision. Tests still pass (the test asserts `data-testid="recent-revenue-total"`, not the label string — exactly the right boundary for a copy fix to slip through cleanly).
+
+2. **`views/dashboard.ejs` — added "ALL-TIME TOTALS" subtitle above the existing Total Invoiced / Collected / Outstanding row, only when the new recent-revenue card is rendered.** Without this label, the user sees the new card ("Last 30 days") immediately followed by 3 cards that don't say what timeframe — visual ambiguity. Adding the small uppercase subtitle creates a clean temporal contrast: 30-day card on top → all-time row below. The subtitle is conditionally rendered (`<% if (locals.recentRevenue && recentRevenue) { %>`) so dashboards without the new card stay visually unchanged for free users.
+
+**Regression checks (no new fixes needed, but verified clean):**
+- Onboarding card → trial banner → past-due banner stack: still renders in correct priority order (onboarding for un-dismissed users, then trial for trialing users, then past-due for failed cards). No copy drift.
+- Pricing page CTA: still reads "Start 7-day free trial →" with "No credit card required" subtext. ✓
+- Empty-state copy: "Send your first invoice today" + the conditional Pro callout. ✓
+- Login → register cross-link: "New to QuickInvoice? Create a free account →" / "Already have an account? Log in" — both still present and clear.
+- Mobile breakpoint: the new revenue card uses `grid-cols-3` which on small mobile (<384px wide) compresses awkwardly. The existing all-time row has the same pattern, so it's consistent (not a regression). Flagged as low-priority below.
+
+**[UX] flagged for INTERNAL_TODO (low priority — not adding to queue this cycle since the all-time row has the same constraint and is acceptable today):**
+- Recent-revenue card mobile compression (<384px). Could swap to `grid-cols-1 sm:grid-cols-3` for a vertical stack on the smallest mobile, but this would also need to be applied to the existing all-time row for consistency. Light cosmetic; defer.
+
+**Net delta this cycle:** 2 direct copy/layout fixes shipped without opening new [UX] tasks. The new card now reads cleanly on its own AND in context with the existing stats row.
+
+---
+
+## 2026-04-28T19:40Z — Role 3 (Growth Strategist): 5 new GROWTH ideas + 1 new MARKETING item (cycle 17)
+
+**Process:** scanned the existing 116 GROWTH items + 58 MARKETING items for un-mined surfaces; cross-checked each new candidate against the existing queue for non-overlap.
+
+**Added to INTERNAL_TODO.md:**
+
+- **#117 [GROWTH] [XS]** — 7d/30d/90d window toggle on the new recent-paid-revenue card (#107 just shipped this cycle). Tiny Alpine `x-data` + 1 JSON route reusing the new `getRecentRevenueStats(userId, days)` helper. MED retention. Distinct from #107 (different surface — UI control vs. card itself) and from #87 payout reconciliation (forward vs backward).
+- **#118 [GROWTH] [XS]** — Stripe receipt URL on paid invoice view. Today after a Stripe Payment Link is paid we mark the invoice paid via webhook but never surface the Stripe-hosted receipt URL. Adds an `stripe_receipt_url` column + 1-line view change. AP-friendly artefact compounding. Distinct from #70 receipt PDF (own-rendered) and from #97 Stripe receipt-emails toggle (pre-pay configuration).
+- **#119 [GROWTH] [XS]** — Inline "What's new" pulse-dot on nav bar (24-hr post-deploy attention-getter). Pairs with #44 in-app changelog widget but smaller — just the dot. localStorage-gated. MED retention via "the product is alive" signal, particularly for trial users on day 5-7.
+- **#120 [GROWTH] [XS]** — `<noscript>` SEO fallback hero on landing + niche pages. Hardens Lighthouse SEO score (Cumulative Layout Shift penalty on JS-rendered hero) and gives Google's first-pass indexer cleaner content. MED-HIGH SEO via Lighthouse-score lift. Pairs with #56 robots/canonical (DONE) + #36 OG metadata (DONE).
+- **#121 [GROWTH] [S]** — Dashboard "Streak" gamification badge ("X weeks in a row sending invoices" / "Y weeks paid"). Duolingo/Strava cadence-reinforcement pattern. Distinct from #107 (dollar/count metrics) and #44 changelog (product-news vs user-progress). MED retention.
+
+**Cross-checks for non-overlap:**
+- #117 vs #107: #117 is the user-controllable timeframe surface for the card #107 just shipped (different surface, same query helper). 
+- #118 vs #70 vs #97: 3 distinct receipt artefacts (Stripe-hosted URL post-pay vs. own-rendered PDF vs. pre-pay receipt-email toggle).
+- #119 vs #44: #119 is the attention-getter-dot; #44 is the widget itself. #119 ships first, #44 is what it points at.
+- #120 vs #56 vs #36: 3 distinct SEO surfaces (noscript fallback hero vs. robots/canonical headers vs. OG metadata).
+- #121 vs #107 vs #44: streak (behavioural cadence) is orthogonal to dollar metrics (#107) and product-news (#44).
+
+**Added to TODO_MASTER.md:**
+
+- **#59 [MARKETING]** — Co-marketing partnership outreach (Calendly, Bonsai, Notion, Plaid/Mercury/Wise). Distinct from #43 listicles (third-party editorial), #58 SaaS comparison directories (passive submission), and #44 LinkedIn outreach (direct-to-end-user). Partner-channel distribution is the remaining un-mined acquisition lever. ~10 hrs initial outreach + 2 hrs/month ongoing. Estimated 24-480 paid signups/year across 4 active partnerships at 3-8% paid conversion (= $3.5k-$70k/year MRR-equivalent). Slower ramp (4-12 weeks) but highest-leverage compounding once a partner relationship is real. Sequenced: Mercury/Plaid/Wise emails this week → Notion template next week → Bonsai co-marketing in 4 weeks → Calendly when INTERNAL_TODO #32 (API Key Auth) lands.
+
+**TODO_MASTER review:** No items flip to [LIKELY DONE - verify] this cycle. #18 (Resend API key), #38 (OG image asset), #39 (APP_URL) remain genuinely open per the latest state.
+
+---
+
+## 2026-04-28T19:35Z — Role 2 (Test Examiner): SQL-contract assertions for `db.getRecentRevenueStats`
+
+**Audit scope:** the SQL query introduced in this cycle's Role 1 (`db.getRecentRevenueStats`). The pure-fn render tests in `tests/recent-revenue-stats.test.js` (19 of them) cover the JS contract, but the literal SQL string was untested — a query mistake (wrong table, wrong status filter, missing user_id predicate, missing parameter binding) would slip past pure-fn tests and only surface as a runtime DB error in production.
+
+**5 new SQL-contract assertions added** to `tests/recent-revenue-stats.test.js` (now 24 tests, was 19):
+
+1. **Parameterised SQL + DECIMAL parsing.** Captures the exact SQL text + parameter shape via a fake-pool injection, asserts:
+   - Query targets `FROM invoices` with `status = 'paid'` filter (no cross-status leak).
+   - Time-window predicate is `updated_at >= NOW() - ($2 * INTERVAL '1 day')` (parameterised, not interpolated — no SQL-injection vector even if the days arg were attacker-controlled).
+   - `COUNT(DISTINCT ...)` exists for client dedupe (the SQL pattern, not just the JS counter).
+   - Parameters are bound as `[userId, days]`, never concatenated into the SQL string.
+   - pg's DECIMAL-as-string return is parsed to `Number` (not left as `'2400.00'` string).
+
+2. **Days-arg clamping.** Exercises `9999` → `365`, `0` → default `30` (falsy fallback), `-10` → `1`, `'garbage'` → default `30`. Guards the input-sanitisation contract.
+
+3. **Empty result row.** When pg returns `rows: []` (a 0-row corner case that shouldn't happen with COUNT/SUM but is theoretically possible if the query is intercepted), the helper returns `{days, totalPaid: 0, invoiceCount: 0, clientCount: 0}` with all-zero defaults — never throws, never returns `undefined`.
+
+4. **NULL SUM coalesce.** Verifies that the SUM(total) column is `COALESCE`'d to 0 in SQL (so a no-paid-invoice user gets `'0'` not `null`) and parsed to a `number` typeof — guards a downstream `toLocaleString()` crash in the EJS template.
+
+5. **user_id filter (cross-tenant leak prevention).** Asserts the SQL contains `WHERE user_id = $1` and the captured `params[0]` matches the input — the single most important regression guard for a multi-tenant SaaS query. Any rewrite that drops the user_id predicate (eg. someone "optimising" the query) would surface here as a test failure, not as a production data-leak.
+
+**Test approach:** monkey-patches `pool.query` on the real `db.js` module after a `require.cache` clear — exercises the actual SQL string of the implementation. Restores the original `pool.query` in a `finally` block so subsequent tests aren't affected. This is the same swap-and-restore pattern `tests/recent-clients.test.js` would benefit from (flagged for future cleanup, not in scope here).
+
+**Coverage gaps remaining:**
+- The dashboard route's `loadRecentRevenueStats` graceful-degradation path (DB throw → returns null → card hidden) is exercised indirectly via the existing route-level tests (the "Recent revenue stats lookup failed:" log lines from stub-DB tests prove the catch fires). A direct integration test would belong in a future `tests/dashboard-revenue-card.test.js` if the route gets more conditional branches.
+- No flaky or redundant tests detected this cycle. No tests deleted.
+
+**Full suite: 46 test files, 0 failures.**
+
+---
+
+## 2026-04-28T19:30Z — Role 1 (Feature Implementer): #107 — last-30-day paid-revenue stats card on dashboard [DONE]
+
+**Task:** INTERNAL_TODO #107 [GROWTH] [S] — surface a "what you collected lately" card above the existing 3-stat row so paying Pro/Agency users see their own positive momentum every dashboard load.
+
+**What shipped:**
+
+1. **`db.js`** — new `getRecentRevenueStats(userId, days = 30)`. Single SELECT against `invoices` filtering `user_id=$1 AND status='paid' AND updated_at >= NOW() - ($2 * INTERVAL '1 day')`. Returns `{days, totalPaid, invoiceCount, clientCount}` with all numeric fields coerced from pg's DECIMAL-as-string. The window arg is clamped to `[1, 365]`. We use `updated_at` as the paid-time proxy (no `paid_at` column today): `status` only flips to `'paid'` once and the same UPDATE bumps `updated_at`; column drifts only if a paid invoice is later edited (rare — typical workflow ends at paid). `clientCount` is a `COUNT(DISTINCT LOWER(COALESCE(NULLIF(client_email, ''), client_name)))` — same dedupe shape as `getRecentClientsForUser`, so two paid invoices to the same client (different casing) count as one paying client.
+
+2. **`routes/invoices.js`** — `GET /` now fetches the stats in parallel with the existing `getInvoicesByUser` + `getUserById` (so no added per-page latency). New pure helper `buildRecentRevenueCard(user, stats)` decides whether the card renders: returns `null` for missing user / free plan / null stats / non-object stats / zero paid invoices in the window. Returns a sanitised `{days, totalPaid, invoiceCount, clientCount}` (NaN-coerced to 0; stringy fields parsed) for paying users with paid revenue. Card is exported (`module.exports.buildRecentRevenueCard`) for unit testing — same export pattern as `buildOnboardingState` and `buildInvoiceLimitProgress`. New `loadRecentRevenueStats` wrapper catches DB errors and returns `null` (graceful degradation — a Postgres outage on this query never 500s the dashboard).
+
+3. **`views/dashboard.ejs`** — new emerald-50 / emerald-200 card rendered inside the populated-invoices branch, sitting above the existing Total Invoiced / Collected / Outstanding 3-card grid. Header reads "💸 You've been getting paid" with a "Last N days" sub-line. Three white tiles: "Paid" (dollar amount, emerald-700 bold), "Clients paid you" (count), "Invoices paid" (count). Card is `print:hidden` so it doesn't leak into invoice-print output. `data-testid="recent-revenue"` + `data-days="<N>"` for analytics + tests. Hidden from free users, from users with no paid invoices in the window, and from the empty-state branch.
+
+4. **`tests/recent-revenue-stats.test.js`** — new test file, **19 assertions, all passing**:
+   - **Pure logic (10):** missing user → null; free plan → null; null stats → null; non-object stats → null; zero invoiceCount → null; populated case returns full card; agency + business plans render; stringy stats coerced to numbers; `days` arg parsed; NaN totalPaid → 0 (no `$NaN` in render).
+   - **EJS render (9):** card renders all 3 tiles; thousand-separator formatting on $12,345.60; omitted when `recentRevenue=null`; omitted when `recentRevenue=undefined`; carries `print:hidden`; sits above the existing "Total Invoiced" stats row (DOM-order check); omitted on empty-state branch (no invoices); `data-days` attribute exposed for analytics; `clientCount=0` edge case renders "0" cleanly.
+
+5. **`package.json`** — appended `tests/recent-revenue-stats.test.js` to the test runner. Full suite green: **45 test files, 0 failures.**
+
+**Income relevance:** MED retention. The Stripe-Atlas effect — showing the user their own MRR-style metric makes the product feel like a partner in their own growth, not just an invoicing tool. Distinct from the existing Total/Collected/Outstanding row (lifetime totals; doesn't surface recent momentum) and from #87 payout reconciliation (forward-looking — what Stripe will send next; this is backward-looking — what's already landed). Compounds with #88 frequent-non-payer alert (negative signal) by adding a positive signal to the same dashboard row. Stickiness lever: a Pro user who sees "$2,400 paid in last 30 days" every dashboard load attaches more value to keeping the subscription.
+
+**[Master action]** none — schema-additive (no migration); pure additive query + view changes. Card auto-appears for every paying Pro/Agency user with at least 1 paid invoice in the trailing 30 days. The window default (30 days) is hard-coded for now; future enhancement could expose a 7d/30d/90d toggle on the card itself (left as #107.1 if the demand surfaces).
+
+**Sequencing:** Closes #107 cleanly. The remaining S-complexity income-critical queue is now headed by #108 (competitor pricing mini-table on /pricing) and #98 (public review/testimonial collection page).
+
+---
+
 ## 2026-04-28T18:35Z — Role 6 (Health Monitor): clean cycle audit — zero new findings
 
 **Audit scope this cycle:** the 5 files touched in Role 1 (`lib/html.js`, `server.js`, `routes/auth.js`, `routes/invoices.js`, `views/partials/nav.ejs`); the 2 files touched in Role 4 (`views/auth/login.ejs`, `views/dashboard.ejs`); the 1 new test file (`tests/trial-countdown-nav.test.js`); the modified `package.json` test runner.
