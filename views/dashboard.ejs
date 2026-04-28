@@ -75,6 +75,14 @@
             Add a payment method to keep Pro features when your trial ends. No charge today.
           <% } %>
         </p>
+        <% if (trialLastDay) { %>
+          <p class="mt-2" data-testid="trial-urgent-annual-pill">
+            <span class="inline-flex items-center gap-1.5 bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full">
+              <span aria-hidden="true">&#128176;</span>
+              Lock in $99/year &mdash; 3 months free
+            </span>
+          </p>
+        <% } %>
         <form action="/billing/portal" method="POST" class="mt-3">
           <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
           <button type="submit" class="inline-flex items-center gap-1.5 <%= trialLastDay ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700' %> text-white font-semibold text-xs px-3 py-2 rounded-lg transition">

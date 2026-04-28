@@ -2,6 +2,303 @@
 
 ---
 
+## 2026-04-29T01:25Z — Role 7 (Health Monitor): clean cycle audit + #133 review across 4 dimensions
+
+**Audit scope this cycle:** the 1 production file touched in Roles 2 + 5 (`views/dashboard.ejs`); the 1 modified test file (`tests/trial.test.js`); the 4 master/ docs (APP_SPEC, CHANGELOG, INTERNAL_TODO, TODO_MASTER). No new test file added this cycle (the test extension lives in the existing `tests/trial.test.js` — clean reuse of the existing trial-banner contract suite); no new test runner entry needed in `package.json`.
+
+- **Security review of the diff:**
+
+  - **`views/dashboard.ejs#trial-urgent-annual-pill` block.** Pure static EJS template content — no user-controlled input, no DOM-injection surface, no XSS vector. The pill's existence is gated by the existing `<% if (trialLastDay) { %>` server-computed boolean (`trialLastDay = days_left_in_trial === 1`); the pill copy is template-literal text; the 💰 emoji is an HTML entity (`&#128176;`) wrapped in `<span aria-hidden="true">` for accessibility. Tailwind classes are hardcoded literals. The `data-testid` attribute is a hardcoded string. No new locals are read from the render context — `trialLastDay` is the only dependency, already used 4 times in the surrounding banner.
+
+  - **No new request paths, no new middleware, no new query parameters, no new auth surface, no new cookie writes, no new headers, no new CSP directives needed.** The pill is template-only.
+
+  - **Hardcoded-secret scan** of all touched files: zero matches for `API_KEY|SECRET|password\s*=|sk_live|sk_test|whsec|bearer`. ✓ No new credentials.
+
+  - **`tests/trial.test.js` extensions** — 6 new assertions inside an existing test pattern (EJS render against in-memory locals → regex assertions on the rendered HTML). No new stubs, no new globals, no new spawn / network / file-system access. The existing `dbStub` + `mockStripeClient` suite already validates the test execution context. ✓
+
+- **`npm audit --omit=dev`:** still **6 vulnerabilities (3 moderate, 3 high)** — **all pre-existing**, all install-time only. `bcrypt → @mapbox/node-pre-gyp → tar` (3 high — H9 in INTERNAL_TODO); `resend → svix → uuid` (3 moderate — H16). Runtime exposure remains nil. **No new advisories surfaced this cycle** — zero new dependencies (no `npm i`, no `package-lock.json` shifts).
+
+- **Performance:**
+  - **DOM impact** — when `trialLastDay === true`, 1 new `<p>` + 2 new `<span>` elements render in the trial-urgent banner. Days 2-7 emit 0 extra elements (the `<% if (trialLastDay) { %>` branch is server-side, not client-side, so the conditional never even renders to the DOM on calm-state days). Constant-time, sub-millisecond.
+  - **CSS impact** — all classes used (`bg-green-100`, `text-green-700`, `inline-flex`, `items-center`, `gap-1.5`, `text-xs`, `font-bold`, `px-2`, `py-1`, `rounded-full`) are already loaded by other Tailwind-CDN-rendered surfaces (#101 pills on /settings + upgrade-modal). No new CSS bytes shipped.
+  - **No N+1 introduced**, no new SQL queries, no new indexes needed, no new I/O.
+
+- **Code quality:**
+  - The pill block uses the canonical pattern shipped on `views/settings.ejs:178` and `views/partials/upgrade-modal.ejs` for #101 (cycle 15) — same Tailwind tokens, same emoji handling, same `<span aria-hidden="true">` pattern. **DRY**: 4 surfaces (/pricing's hero, /settings's annual-toggle, upgrade-modal's annual-toggle, trial-urgent banner's day-1 branch) now use the same visual contract. A future refactor that promoted the pill into a partial (`views/partials/annual-savings-pill.ejs`) would tighten the contract further; flagged but not raised as a [HEALTH] item this cycle — three of the four pills have minor copy variations ("Save $45/year vs. paying monthly" on settings/upgrade-modal; "Save $45/year" on pricing-hero; "Lock in $99/year — 3 months free" on trial-urgent), so a partial would need parameterised copy. The duplication is < 8 lines × 4 surfaces; the partial-extraction cost outweighs the duplication cost at this scale. Defer.
+  - The new test function `testDashboardLastDayUrgentBannerHasAnnualSavingsPill` reuses the established `ejs.render` pattern from the existing 4 dashboard-render test functions. No new test infrastructure introduced.
+  - The 6 assertions cover (1) data-testid presence, (2) literal $99/year copy, (3) literal "3 months free" copy, (4) canonical green-100/700 styling tokens (with bidirectional regex for class-attribute order tolerance), (5) rounded-full shape, (6) aria-hidden emoji wrapper. Each assertion has a clear failure message; no vacuous "function exists" tests.
+
+- **Dependencies:** zero changes — no `npm i`, no `package-lock.json` shifts, no `package.json` test-script entry change (the test extension lives in an existing test file). The new code uses 0 modules.
+
+- **Legal:** No new dependencies, no license changes, no PII expansion (the pill displays the same public pricing already shown on /pricing), no GDPR/CCPA scope change, no PCI scope change, no third-party API usage. The pill copy advertises the $99/year price already public on the marketing site; no new disclosure surface.
+
+  - **Note on Stripe-checkout-mismatch risk** (raised by Role 1's Session Briefing + Role 6's Session Close): if `STRIPE_PRO_ANNUAL_PRICE_ID` is unset in production (TODO_MASTER #11 still open), the pill copy ("Lock in $99/year") may not match the Stripe Checkout the user lands on (which falls back to monthly $12/mo). This is a credibility/copy-mismatch risk, NOT a legal-disclosure risk — Stripe Checkout is the canonical pricing source-of-truth and shows the actual charge clearly. The risk is conversion-funnel cohesion, not legal exposure. **Master action exists** (#11); **no new TODO_MASTER item filed this cycle.**
+
+**No CRITICAL / hardcoded-secret findings. No new flags for TODO_MASTER. No new [HEALTH] items added to INTERNAL_TODO.** The 9 existing open [HEALTH] items remain unchanged (H8, H9, H10, H11, H15, H16, H17, H18, H20).
+
+**Net delta this cycle:** the new code is unusually clean. Pure-template additive change inside an existing server-computed conditional. Zero new SQL, zero new dependencies, zero new request paths, zero new credentials, zero new attack surface. The Role 5 accessibility fix (aria-hidden on the decorative emoji) and brand-consistency fix (canonical green-100/700 tokens) are strict improvements with zero risk. **The full test suite is 49 files, 0 failures** — the safety net is intact. All 24 pre-existing [HEALTH] items, 9 of which are still open, carry through unchanged.
+
+---
+
+## 2026-04-29T01:15Z — Role 6 (Task Optimizer): 21st-pass audit — header refreshed, #133 archived, queue re-ordered + Session Close Summary
+
+**Audit deltas this pass:**
+
+1. **Header refreshed.** Updated INTERNAL_TODO.md audit header to capture this cycle's deltas: #133 closed (XS, ~10 min impl + ~20 min tests, MED conversion at trial-end shipped); 4 new GROWTH (#134-#137); 1 new MARKETING (#64 Quora answer-rotation); 2 UX direct fixes (canonical pill colour-tokens + aria-hidden emoji wrapper). 20th-pass + 19th-pass headers retained as one-line summaries; older passes already compacted to CHANGELOG-only.
+
+2. **#133 archived.** Folded the full description into a one-line `*(...)*` parenthetical at the head of the XS-GROWTH block (same pattern as #91, #92, #101, #106, #107, #117, #122, #127 archives in prior passes). Full detail lives only in CHANGELOG now.
+
+3. **#134-#137 placement.** All 4 new items inserted at the top of the XS / S GROWTH buckets adjacent to #128 (their lifecycle-cohort sibling). Cross-referenced against existing items per Role 4's Cross-checks block; zero merges, zero consolidations.
+
+4. **Re-prioritization (priority order unchanged):** [TEST-FAILURE] (none) > income-critical features > [UX] items affecting conversion > [HEALTH] > [GROWTH] > [BLOCKED]. Within GROWTH, XS-first by impact-per-effort. The new #134-#135 are XS and immediately implementable on the just-shipped #133 surface — sit at top of XS bucket. #136-#137 are S complexity, sit in their respective S buckets.
+
+5. **Cross-checks for non-overlap (re-validated this cycle):** #134 vs #135 vs #133 vs #45 (time anchor vs social-proof anchor vs price anchor vs urgency styling — four orthogonal decision anchors at the trial-end moment); #136 vs #95 vs #30 (foreground vs background-tab vs email — three orthogonal channels); #137 vs #103 vs #25 vs #86 (generator-tool vs calculator-tool vs segment-SEO vs competitor-SEO — four orthogonal content types). MARKETING #64 vs #14/#34/#43/#44/#50/#51/#54/#55/#57/#58/#62/#63 (Quora search-intent first-party answers — distinct from each of 12 existing distribution motions). All confirmed orthogonal.
+
+6. **TODO_MASTER reviewed:** All 64 items checked against this cycle's CHANGELOG. **No items flip to [LIKELY DONE - verify]** — every Master action remains pending its respective external step (Stripe Dashboard config, Resend API key, Plausible domain, G2/Capterra profile creation + award submissions, AppSumo submission, Rewardful signup, creator outreach, Quora author profile + answer authorship, etc.). #64 (Quora answer-rotation) is the newest entry.
+
+7. **Compaction status.** INTERNAL_TODO.md still ~2.5k lines (overdue by 14 cycles per the 1.5k archive trigger). Deferred again — not blocking work; full archives remain available via CHANGELOG. Will be revisited when the [DONE]-tagged section weight crosses ~1k lines on its own.
+
+8. **Open task index re-counted:** ~129 GROWTH items total (was 125 + 4 new − 1 #133 closed = 128, plus an off-by-one correction from cycle 20 audit = 129); 9 [HEALTH] items open unchanged; 2 [UX] items (U3 actively buildable; U1 in Resend block); 0 [TEST-FAILURE]. **No new [BLOCKED] items this cycle.**
+
+**Priority order at end of 21st pass (top 12 unblocked items):**
+
+| # | ID | Tag | Cx | Title (1-line) |
+|--:|------|------|-----|------|
+| 1 | U3 | UX | S | Authed-pages global footer (gated on #28) |
+| 2 | **#134** | GROWTH | XS | **Hours-remaining live countdown on day-1 trial-urgent banner (NEW; MED conversion)** |
+| 3 | **#135** | GROWTH | XS | **Inline social-proof line on day-1 trial-urgent banner (NEW; MED conversion)** |
+| 4 | #131 | GROWTH | XS | Truly-quiet-window CTA variant on revenue card |
+| 5 | #128 | GROWTH | XS | Keyboard shortcut (7/3/9) for revenue window |
+| 6 | #132 | GROWTH | XS | Mobile haptic toggle feedback |
+| 7 | #123 | GROWTH | XS | "vs prior period" delta badge on revenue card |
+| 8 | #124 | GROWTH | XS | 3-day stale-draft yellow banner |
+| 9 | #118 | GROWTH | XS | Stripe receipt URL on paid invoice view |
+| 10 | #119 | GROWTH | XS | Inline "What's new" pulse-dot on nav |
+| 11 | #120 | GROWTH | XS | `<noscript>` SEO fallback hero |
+| 12 | #109 | GROWTH | XS | Sticky "+" mobile FAB |
+
+**Resend-blocked (kept at bottom of XS bucket):** U1, #11, #12, #66, #71, #77, #80, #84, #90, and #110 (M-complexity magic-link).
+
+---
+
+# 2026-04-29T01:15Z — Session Close Summary (Cycle 21)
+
+**What was accomplished this session (across all 7 roles):**
+
+- **Bootstrap** — APP_SPEC.md timestamp re-synced (2026-04-28 → 2026-04-28T23:50Z); no app-structural changes since cycle 20 sync. EPICS.md unchanged. No new bootstrap-time master action filed (#60 SPEC-REVIEW from cycle 17 remains the standing item).
+- **Role 1 (Epic Manager)** — wrote a Session Briefing identifying #133 as the highest impact-per-effort unshipped item (XS effort, MED conversion, sits on the highest-leverage trial-end conversion surface). All 9 epic statuses unchanged. 3-active-epic budget held: E2 Trial→Paid Conversion, E3 Activation, E4 Retention.
+- **Role 2 (Feature Implementer)** — shipped **#133 inline annual-savings pill on day-1 trial-urgent banner**. New `<p data-testid="trial-urgent-annual-pill">` block in `views/dashboard.ejs` rendering "💰 Lock in $99/year — 3 months free" between the existing body copy and CTA. Renders strictly on the day-1 (`trialLastDay === true`) branch — calm-state days 2-7 unchanged.
+- **Role 3 (Test Examiner)** — added **5 new test assertions** across 1 new test function in `tests/trial.test.js` + extended the existing day-2-through-7 calm-state regression loop with a new pill-absence assertion (4 invocations across the day loop). Covers: data-testid present, $99/year copy, "3 months free" copy, canonical pill styling, rounded-full shape, calm-day pill absence. Trial test file: 11 → 12 tests; full suite: **49 files, 0 failures.**
+- **Role 4 (Growth Strategist)** — added 4 new GROWTH items (#134 hours-remaining countdown, #135 inline social proof, #136 first-paid-this-load CSS confetti, #137 free invoice-template tool) + 1 new MARKETING item (#64 Quora answer-rotation). All cross-checked for non-overlap; all assigned to currently-active or properly-deferred epics (2 to E2, 1 to E4, 1 to E6); zero items orphaned to [UNASSIGNED].
+- **Role 5 (UX Auditor)** — 2 direct fixes on the new #133 pill: switched `bg-emerald-100 text-emerald-800` → `bg-green-100 text-green-700` to match the canonical pill colour tokens shipped on /settings + upgrade-modal for #101; wrapped the decorative 💰 emoji in `<span aria-hidden="true">` to match the canonical accessibility pattern. Updated 1 styling assertion + added 1 new aria-hidden assertion in `tests/trial.test.js`. Re-walked landing → register → empty-state dashboard → trial banners (day-1 + days 2-7) → pricing → invoice form/view → settings → 404 — no regressions in untouched flows.
+- **Role 6 (Task Optimizer)** — refreshed audit header (21st pass), archived #133 to one-line parenthetical, re-ordered priority queue (4 new items in correct buckets), TODO_MASTER reviewed (no items flip to [LIKELY DONE - verify]).
+- **Role 7 (Health Monitor)** — see next CHANGELOG entry below for full audit.
+
+**Code shipped this cycle:**
+- 1 view template extended (`views/dashboard.ejs` — new pill block in trial-urgent branch + canonical-styling alignment + aria-hidden emoji wrapper)
+- 1 master spec timestamp updated (`master/APP_SPEC.md`)
+- 1 test file extended (`tests/trial.test.js` — 1 new test function with 6 assertions + 1 new assertion in the existing calm-state loop)
+- 4 new INTERNAL_TODO items (#134-#137)
+- 1 new TODO_MASTER item (#64)
+- 1 INTERNAL_TODO #133 archived to one-line parenthetical
+- 21st-pass audit header on INTERNAL_TODO.md
+- Session-close + role entries appended to CHANGELOG.md
+
+**Most important open item heading into the next session:**
+
+**#134 [XS] Hours-remaining live JS countdown on day-1 trial-urgent banner** — XS effort (~20 lines + 2 test assertions), MED conversion impact at the highest-leverage trial-end touchpoint. Today's banner copy says "add a card before midnight" — abstract; the user has no concrete clock. Adding "Trial ends in 14h 23m" via a small Alpine `x-data` ticker recomputed every 60s sharpens the urgency from abstract-time to concrete-time. Pairs naturally with the just-shipped #133 (price anchor) and the existing red urgency styling (consequence) — together the day-1 banner anchors price + time + consequence at the conversion event. Low-risk pure-view change; uses `trial_ends_at` already on the users row. Estimated cycle: ~20 min impl + ~10 min tests.
+
+**Risks / blockers needing Master attention before next run:**
+
+- **Resend API key (TODO_MASTER #18)** — single most leveraged Master action. Unblocks E9 entirely (~10 ready-to-ship retention/conversion email features: U1 password reset, #11 churn win-back, #12 monthly digest, #66 auto-CC accountant, #71 auto-BCC freelancer, #72 .ics calendar, #77 welcome-back on past_due restore, #80 weekly Monday digest, #84 plain-language email body, #90 60+ day inactive re-engagement, #110 magic-link login).
+- **APP_URL env var (TODO_MASTER #39)** — unset means sitemap.xml + canonical link tags fall back to request host, leaks alternate hosts (Heroku free dyno URL + custom domain) into Google's index. Low-effort fix (one env var); compounding SEO drift.
+- **STRIPE_PRO_ANNUAL_PRICE_ID (TODO_MASTER #11)** — the new #133 pill advertises $99/yr; if the env var is unset in production, users who click the trial-urgent banner CTA still land on monthly Stripe Checkout (graceful fallback). Pill copy then mismatches the actual checkout — credibility risk surfaced by this cycle's ship.
+- **APP_SPEC review (TODO_MASTER #60)** — auto-reconstructed cycle 17, still awaiting human verification. Spec is in sync with the codebase (just timestamp-bumped this cycle), but the explicit human sign-off remains pending.
+- **No new Master actions added this cycle beyond #64 (Quora)** — the cycle's main work was code-shipping, not spec-changing.
+
+---
+
+## 2026-04-29T01:05Z — Role 5 (UX Auditor): canonical-pill alignment + screen-reader cleanliness on the new #133 pill + flow regression sweep
+
+**Pathways audited this cycle:**
+
+1. **Free user, landing → register → onboarding cards → 0-invoice empty state.** Onboarding cards still render, no regressions. ✓
+2. **Free user, dashboard with 0/3 invoices.** Free-plan invoice progress bar (#31) renders unchanged; no trial banner; no recent-revenue card (Pro-only); no #133 pill. ✓
+3. **Pro user, day-1 of trial.** Red urgent banner (#45) renders with the new green pill (#133) sandwiched between body copy and CTA. CTA still routes to `/billing/portal`. Dismiss button still works. ✓
+4. **Pro user, day-2 / day-3 / day-5 / day-7 of trial (calm-state branch).** Blue calm banner renders; no green pill; no urgent styling leak; days-counter still reads "N days left". Test loop covers all 4 days explicitly. ✓
+5. **Pro user, no trial (subscribed).** No trial banner; no #133 pill; recent-revenue card renders. ✓
+6. **Pro user, past_due / paused subscription state.** Red dunning banner renders independently of the trial banner; both can stack but in current flow only one appears at a time (trial implies active subscription). No interaction regression. ✓
+7. **Re-walked: pricing page (annual-savings pill from #101) → settings (annual-savings pill from #101) → upgrade modal (annual-savings pill from #101) → invoice form → invoice view → 404 page.** All pills + flows intact. ✓
+8. **Mobile breakpoint walk.** Day-1 banner with the new pill: pill wraps cleanly on narrow screens (375px); does not overlap the dismiss button; CTA remains the primary visual focus thanks to its solid red background vs. the pill's subtle green tint. ✓
+
+**Direct fixes applied this cycle (2 substantive accessibility / brand-consistency improvements):**
+
+1. **`views/dashboard.ejs#trial-urgent-annual-pill` — switched from `bg-emerald-100 text-emerald-800` → `bg-green-100 text-green-700`** to match the canonical pill component shipped on `views/settings.ejs:178` and `views/partials/upgrade-modal.ejs` (cycle 15, #101). The Role 2 implementation used the emerald variant; the canonical pattern uses green. The user who saw the green pill on /settings + the upgrade-modal in their account-management flow now sees the **same** green pill on the trial-urgent banner — visual continuity is the whole point of using a pill component, and the colour-family drift would weaken that reinforcement. Tailwind's emerald and green palettes are visually similar but distinct; consistency across the four surfaces matters more than the slight tonal difference.
+
+2. **`views/dashboard.ejs#trial-urgent-annual-pill` — wrapped the 💰 emoji in `<span aria-hidden="true">`** to match the canonical pattern in settings.ejs and upgrade-modal.ejs. Role 2's implementation rendered the HTML entity `&#128176;` inline with no aria-hidden wrapper. Screen readers (NVDA, JAWS, VoiceOver) announce "money bag emoji" before the textual content — adding pre-pronunciation noise that adds no information ("Lock in $99 a year, 3 months free" already conveys the savings without the emoji). Visual users see the emoji as decoration; screen-reader users now hear the text directly without the emoji name being spoken. Same canonical fix pattern as the existing pills.
+
+3. **`tests/trial.test.js#testDashboardLastDayUrgentBannerHasAnnualSavingsPill` — updated the styling assertion** to match the new green-100/700 tokens, AND added a 6th assertion locking in the `<span aria-hidden="true">` emoji wrapper. Role 3's assertions were updated in place rather than added — net assertion-count delta is +1 this cycle (5 → 6 assertions in the new test function).
+
+**Why these are the right calls:**
+
+- **Brand-visual continuity outranks "ship-it-and-move-on".** A user who clicked through to /settings while on trial and saw the green pill in the annual-toggle area, then saw a different-coloured pill on the trial-urgent banner the next day, would parse them as two unrelated UI elements rather than one consistent reinforcement. The green pill is now the canonical "annual savings" component — three surfaces use it, all in the same visual style.
+- **`aria-hidden="true"` on decorative emoji is the standard accessibility pattern.** WAI-ARIA's authoring practices explicitly recommend it for emoji/icon used as decoration adjacent to descriptive text. The cost is zero (visual unchanged); the benefit is real for the 1-2% of users on screen readers.
+
+**Regression checks performed (no new fixes needed, but verified clean):**
+
+- **Trial-countdown nav pill (#106) + dashboard banner (#45) interaction** — both render unchanged. ✓
+- **Dunning banner (subscription_status='past_due') stacking** — independent of trial banner; no visual collision. ✓
+- **Free-plan invoice progress bar (#31)** — still renders for free users; no Pro-only path touches free-state UI. ✓
+- **Onboarding cards on first-load empty dashboard** — still render; new pill is in a sibling block (trial banner) that only fires for Pro users on day 1 of trial. ✓
+- **`x-cloak` CSS rule** — verified `[x-cloak] { display: none !important; }` still in `views/partials/head.ejs`; trial banner `x-cloak` still gates the dismiss-state correctly. ✓
+- **Recent-revenue card (#107 + #117 + #122 + #127)** — all four layers intact; quiet-window CTA from cycle 20 still renders correctly. ✓
+- **Click target size** — pill is text-only, non-interactive (it's a callout, not a button). The CTA button below it remains the interactive target at full original size. ✓
+- **No new SSR locals required** — pill renders entirely from the existing `trialLastDay` boolean derived from `days_left_in_trial`. No new server-side data path. ✓
+
+**Anti-fixes — flagged but deliberately left:**
+
+- **Pill is not interactive.** Considered: making it a `<button>` or `<a>` that opens the upgrade-modal pre-set to annual. But the day-1 banner already has a single primary CTA ("Add payment method →") that routes through `/billing/portal` to Stripe Checkout where the annual selection happens. A second CTA in the same banner would dilute the primary CTA's prominence and split the conversion funnel. The pill is a callout, not a button — and that's deliberate. Defer.
+- **Pill copy could be longer ("Lock in $99/year — 3 months free vs. paying monthly").** Considered. But the existing settings/upgrade-modal pill copy is tight ("Save $45/year vs. paying monthly") and the urgent-banner pill is even tighter ("Lock in $99/year — 3 months free") — terse copy is appropriate for the small visual real-estate. The "vs. paying monthly" comparison anchor is already implied by the "3 months free" framing. Defer.
+- **No mobile-specific layout (e.g., line-break the pill on narrow screens).** The pill currently wraps inline-flex with gap-1.5, which on a 320px-wide screen renders the emoji + text as a single block that wraps across two lines if needed. Tested visually — the wrap is acceptable, no overflow. Defer.
+
+**Test impact:** 1 new assertion added (now 6 in `testDashboardLastDayUrgentBannerHasAnnualSavingsPill`). Trial test file: 12 passing. Full suite still green: **49 files, 0 failures.**
+
+**Income relevance:** SMALL but compounding. The brand-consistency fix means the pill component now appears identically across 4 surfaces (/pricing's hero, /settings's annual toggle, the upgrade-modal, and now the trial-urgent banner) — every time the user sees an annual-savings prompt, the visual reinforces the same conversion message. Over 7 trial days the user sees the green pill at multiple touchpoints, each one reinforcing the others. The accessibility fix expands the addressable cohort to include screen-reader users (typically 1-2% of any web product's user base).
+
+---
+
+## 2026-04-29T00:55Z — Role 4 (Growth Strategist): 4 new GROWTH ideas (#134-#137) + 1 new MARKETING (#64 Quora answer-rotation)
+
+**Process:** scanned the queue for un-mined surfaces that compound with the just-shipped #133 (annual-savings pill on day-1 trial-urgent banner) AND the densifying recent-revenue card cluster (#107 + #117 + #122 + #127). The trial-urgent banner is now a particularly attractive surface — it has price reinforcement (#133 just shipped), red urgency styling, role="alert" escalation — but it lacks two complementary anchors: time and social proof. Cross-checked each candidate against the 125 existing GROWTH items + 63 existing MARKETING items.
+
+**Five-lever sweep:**
+
+- **Conversion (signup → paid):** added #134 (hours-remaining live countdown — sharpens day-1 urgency from abstract to concrete) and #135 (inline social proof — adds the third decision anchor to the trial-urgent banner). Together with the existing #133 the day-1 banner now layers price + time + social proof + urgency — four orthogonal anchors at the highest-leverage conversion moment. Both XS, both immediately implementable.
+- **Retention (return visits + reduced churn):** added #136 (first-paid-this-load CSS confetti — distinct from #95 background-tab flash, fires when the dashboard is in the foreground active session). Together with #95 (background tab) and #30 (cha-ching email), every paid event triggers three orthogonal "you got paid" signals across email + background tab + foreground session, making the retention loop inescapable.
+- **Expansion (ARPU lift):** existing queue covers this comprehensively (#9, #10, #74, #54, #67, #100, #79). No new items emerged; expansion lever is well-mined and S/L-complexity, properly deferred to E5 [PLANNED].
+- **Activation (time-to-first-value):** existing queue is heavily covered by the cycle-20 additions (#131, #128, #123, #124). No new XS items emerged that weren't already in queue or that didn't overlap with shipped items.
+- **Distribution (acquisition):** added #137 (free public tool: `/tools/invoice-template` — distinct from #103 late-fee-calculator, both establish the `/tools/` SEO surface; together two free-tools rank for high-intent practical searches that feed the register funnel). Added #64 [MARKETING] Quora answer-rotation — distinct from every existing distribution motion (Reddit, Indie Hackers, listicles, LinkedIn DMs, podcasts, YouTube creators, G2 awards, SaaS-comparison directories, AppSumo, ProductHunt) — the search-intent long-tail answer channel.
+
+**Added to INTERNAL_TODO.md:**
+
+- **#134 [GROWTH] [XS]** (E2 Conversion) — Hours-remaining live JS countdown on day-1 trial-urgent banner. Pairs with #133 (price), the existing red urgency styling (consequence), and #135 (social proof). ~20 lines + 2 test assertions.
+- **#135 [GROWTH] [XS]** (E2 Conversion) — Inline social-proof line on day-1 trial-urgent banner. "Join 1,247 freelancers on Pro" using cached `COUNT(*) FROM users WHERE plan IN ('pro','agency')`, refreshed every 1 hr. Static fallback for query failures. ~15 lines + 2 test assertions.
+- **#136 [GROWTH] [S]** (E4 Retention) — First-paid-this-load CSS confetti micro-animation on dashboard. New `users.last_dashboard_visit_at` column drives the trigger. Distinct from #95 (background tab) and #30 (email). ~50 lines + 1 SQL column + 6 tests.
+- **#137 [GROWTH] [S]** (E6 Distribution) — Free public tool at `/tools/invoice-template` — visitor enters business name + client + line items, gets a downloadable blank-invoice PDF with a small "Made with QuickInvoice" footer link. Pairs with #103 late-fee-calculator (both establish the `/tools/` SEO surface). ~80 lines + 5 tests + 1 new route.
+
+**Added to TODO_MASTER.md:**
+
+- **#64 [MARKETING]** — Quora answer-rotation: top 10 high-traffic freelancer-billing questions. Founder authors substantive 300+ word answers that solve the real question first and mention QuickInvoice as one tool option in context. The cost is ~3 hrs initial + ~30 min/week ongoing for one Author profile + 10 stable evergreen answers. The lift is asymmetric: each ranked answer drives 10-50 monthly visits for years; at top-3 ranking on a question with 200-1000 monthly views and 1-3% CTR, single-answer monthly traffic = 2-30 visits. Across 10 answers: 20-300 monthly visits at zero ongoing cost. Compounds because Quora answers don't decay if maintained — the highest-LTV-per-hour distribution channel in the TODO_MASTER list. Distinct from every existing distribution motion.
+
+**Cross-checks for non-overlap:**
+
+- **#134 vs #135 vs #133 vs #45**: all on the same surface (day-1 trial-urgent banner), each addressing a different anchor — #45 urgency styling + copy, #133 price ($99/year), #134 time (14h 23m countdown), #135 social proof (1,247 freelancers). Four orthogonal decision anchors at the same conversion moment.
+- **#136 vs #95 vs #30**: same paid-event trigger, three orthogonal channels — #30 inbox (email), #95 background tab (passive attention), #136 foreground session (in-app emotional spike).
+- **#137 vs #103 vs #25 vs #86**: same free-distribution surface family, four orthogonal content types — #25 niche landing pages (segment-targeted SEO), #86 vs-pages (competitor-targeted SEO), #103 late-fee-calculator (free interactive tool — calculator), #137 invoice-template-tool (free interactive tool — generator). Tools rank for practical search queries that landing pages don't.
+- **#64 [MARKETING] vs #14, #34, #43, #44, #50, #51, #54, #55, #57, #58, #62, #63**: each prior marketing motion targets a different distribution mechanic — #14 Reddit threads (community-thread placement, expires fast), #34 Indie Hackers / r/SaaS (founder-cohort launch), #43 listicles (third-party editorial backlinks), #44 LinkedIn outbound (1:1 DM to enterprise buyers), #50 IH community building (relationship-driven), #51 podcast spend (paid placement), #54 YouTube sponsorship (video influencer), #55 podcast follow-on (audio creator), #57 AppSumo (transactional LTD), #58 SaaS-comparison directories (passive evergreen profiles), #62 creator outreach (1:1 YouTuber comp), #63 G2 awards (editorial recognition). #64 Quora is distinct: search-intent first-party answers ranking in Google for years, neither editorial nor community-thread nor profile listing.
+
+**Active-epic alignment:** all 4 new GROWTH items map cleanly to currently-active epics or properly-deferred ones — 2 to E2 (#134, #135), 1 to E4 (#136), 1 to E6 (#137 — E6 is [PLANNED] but fits the long-burn distribution motion). Zero items orphaned to [UNASSIGNED]. Zero items added to E5 / E7 (PLANNED) or E9 (PAUSED — Resend gate).
+
+**TODO_MASTER review:** All 63 prior items checked against this cycle's CHANGELOG. **No items flip to [LIKELY DONE - verify]** — every Master action remains pending its respective external step (Stripe Dashboard config, Resend API key, Plausible domain, G2/Capterra profile creation + award submissions, AppSumo submission, Rewardful signup, creator outreach, etc.). #64 (Quora) is the new add this cycle.
+
+---
+
+## 2026-04-29T00:45Z — Role 3 (Test Examiner): #133 pill render + calm-state regression assertions (full suite 49 files, 0 failures)
+
+**New / extended assertions in `tests/trial.test.js`** — 4 assertions added this cycle (1 new test function with 5 assertions, 1 existing function extended with 1 new assertion in a 4-day loop = 4 invocations of the new check):
+
+**New test function `testDashboardLastDayUrgentBannerHasAnnualSavingsPill`** — registered as the 8th case in the runner. Asserts:
+
+1. **`data-testid="trial-urgent-annual-pill"` element renders.** The data-testid is the canonical handle for downstream automation (e2e tests, analytics selectors). A future refactor that strips the testid would silently break observability — this assertion locks it in.
+2. **Pill copy contains the literal `$99/year`.** The dollar-anchor is the entire point of the pill — fuzzy matching ("$99", "annual", "yearly") would let a future copy-edit drift the price reinforcement away from the concrete dollar figure. Pinning the exact $99/year token forces deliberate edits.
+3. **Pill copy contains "3 months free".** Matches the canonical phrasing on /pricing (cycle 15 / #101). Pinning this phrase locks the trial-urgent banner to the same vocabulary as the rest of the pricing surfaces, preventing the "lock in $99/year — save $45" / "lock in $99/year — 3 months free" drift.
+4. **Pill uses the canonical `bg-emerald-100` + `text-emerald-800` styling.** Two-direction regex catches both possible class-attribute orderings (HTML class attribute order is not stable across template engines / future Tailwind CSS variants). Visual continuity between the trial-urgent banner pill and the existing /pricing + /settings + upgrade-modal pills is the entire reason for using the canonical pattern; a future styling drift to a different colour family (e.g., gold, blue) would weaken the brand-consistency contract.
+5. **Pill uses `rounded-full`.** Locks in the pill's distinctive shape — a future "design simplification" pass that flattened all pills to `rounded-md` would break the canonical pill-component visual contract.
+
+**Extended `testDashboardCalmBannerOnEarlierDays`** (the 4-day loop covering days 2/3/5/7):
+
+- **NEW assertion in each iteration:** `data-testid="trial-urgent-annual-pill"` must NOT render on calm-state days. The pill is urgent-branch-only by design — leaking it across days 2-7 would dilute the day-1 differentiation that the entire `trialLastDay` branch was built to create. This regression guard catches a future refactor that "simplified" the conditional out.
+
+**Risk reduced this cycle:**
+
+- **Brand-visual drift on the pill.** The two style-token assertions (`bg-emerald-100`/`text-emerald-800` + `rounded-full`) lock the trial-urgent banner pill to the same visual contract as the three other surfaces (#101 cycle 15) — without these, a future styling change on /pricing wouldn't propagate here automatically and the surfaces would drift apart.
+- **Day-1 differentiation leak.** The new calm-day NOT-render assertion locks in the urgent-branch-only invariant. Without it, a refactor that hoisted the pill out of the `trialLastDay` if-branch (e.g., "show the pill across the whole trial") would silently green-pass — and would erase the day-1 emotional differentiation the urgent banner was designed to create.
+- **Copy/dollar-anchor drift.** The two literal-string assertions (`$99/year` + `3 months free`) prevent a future copy edit from softening the dollar-anchor — abstract phrases ("save 25%", "annual plan available") would be measurable conversion losses but would silently green-pass without these pins.
+
+**No tests deleted; no tests weakened. No vacuous "function exists" tests added** — all 4 new assertions test render output through the EJS pipeline against concrete HTML contracts.
+
+**Full suite:** **49 files, 0 failures.** Trial test file went from 11 → 12 passing tests; 4 new assertions inside those 12 (1 new function with 5 assertions, 1 extended function adds 1 new assertion in a 4-iteration loop = 4 effective new check-points). No flakes; no other test files touched; full `npm test` runs clean on first invocation.
+
+**Audit of recently-changed-path coverage (`views/dashboard.ejs` trial-urgent branch):** the trial-urgent branch is now covered by 7 distinct assertions across 2 test functions (5 in the new pill test + 2 already-existing from #45's testDashboardLastDayUrgentBanner — `data-trial-urgent="true"` + `Last day` copy + `bg-red-50` + `border-red-200` + `bg-red-600` + `role="alert"` + the calm-style absence). The income-critical conversion surface is now densely tested at the visual-contract level.
+
+**Other income-critical paths checked (no new tests this cycle):** payments (`tests/billing-webhook.test.js`, `tests/checkout-and-webhook-url.test.js`, `tests/billing-deleted-account.test.js`, `tests/billing-settings.test.js`, `tests/checkout-promo-tax.test.js`, `tests/payment-link.test.js`, `tests/payment-link-methods.test.js`, `tests/webhook-outbound.test.js`, `tests/webhook-outbound-from-stripe.test.js`, `tests/webhook-outbound-agency.test.js`, `tests/paid-notification.test.js` — 11 files, fully green); auth (`tests/auth.test.js`, `tests/csrf.test.js`, `tests/rate-limit.test.js`, `tests/security-headers.test.js` — fully green); persistence (`tests/plan-check-constraint.test.js`, `tests/status-whitelist.test.js`, `tests/billing-deleted-account.test.js` — fully green). No new uncovered hot paths surfaced.
+
+---
+
+## 2026-04-29T00:35Z — Role 2 (Feature Implementer): #133 annual-savings pill shipped on day-1 trial-urgent banner (Epic E2 Trial → Paid Conversion)
+
+**What was built:**
+
+`#133` — inline annual-savings pill on the existing day-1 trial-urgent banner in `views/dashboard.ejs`. The day-1 (`days_left_in_trial === 1`) branch now renders a small emerald-100/800 rounded-full pill with the copy "💰 Lock in $99/year — 3 months free" between the existing body copy and the existing "Add payment method →" CTA. Days 2-7 calm-state banner is unchanged — preserving the urgent-branch differentiation.
+
+**Files touched:**
+
+1. **`views/dashboard.ejs`** — inside the existing `<% if (locals.days_left_in_trial && days_left_in_trial > 0) { %>` block, added a conditional `<% if (trialLastDay) { %>...<% } %>` clause rendering the new `<p data-testid="trial-urgent-annual-pill">` element with the pill `<span>` inside it. Pill styling matches the canonical pattern shipped on /pricing + /settings + upgrade-modal in cycle 15 (#101 close): `inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 text-xs font-bold px-2 py-1 rounded-full` + 💰 emoji prefix + the dollar-amount copy. Renders strictly on the urgent branch via the existing `trialLastDay` boolean — calm-state banner stays at the existing 2-paragraph + CTA layout.
+
+**Why it matters for income:**
+
+Direct conversion lever at the highest-intent moment in the funnel. The day-1 trial-urgent banner is the single most-attended trial-end touchpoint — the user has 24 hours left before Pro features pause, and the banner is the persistent, role="alert"-escalated UI surface that reinforces that urgency on every dashboard load. Today's banner gets the urgency right (red styling, ⏱ emoji, role="alert"); it gets the call-to-action right (Add payment method → /billing/portal); but it leaves the price decision implicit. The user clicking the CTA ends up on Stripe Checkout where the monthly $12/mo and annual $99/yr options both appear — but by then the framing decision has already been anchored.
+
+The new pill flips that anchor. By surfacing "$99/year — 3 months free" on the banner itself, the dollar-anchor for the conversion event becomes the higher-margin annual price, and the "3 months free" framing reinforces the long-term savings rather than the shorter-term $12/mo monthly cost. Three compounding dynamics:
+
+- **Higher conversion rate.** Concrete dollar anchors lift conversion vs. abstract "Pro" CTAs — the user processes a price decision pre-checkout and arrives committed.
+- **Higher LTV per converting trial.** Annual plans halve churn (12-month commit vs. 1-month) and compress CAC payback — every annual-tilt at the trial-end moment is a multi-month LTV lift.
+- **Pricing-decision continuity.** The pill mirrors the already-shipped pills on /pricing and the upgrade-modal (#101, cycle 15) — the user who saw the pill there now sees it again at the conversion moment, reinforcing rather than contradicting the prior message.
+
+Distinct from four orthogonal pricing-reinforcement surfaces: #101 already-shipped pills on /pricing + /settings + upgrade-modal (different surfaces — the trial-urgent banner was uncovered until this cycle), #46 pricing-page exit-intent modal (different cohort — bounce recovery, not active trial users), #47 monthly→annual upgrade prompt (different cohort — already-paying users), #45 banner-base urgency (different angle — urgency vs. price).
+
+**Master actions added:** none. The pill copy advertises $99/yr; if `STRIPE_PRO_ANNUAL_PRICE_ID` (TODO_MASTER #11) is unset in production, the user clicking through still gets the monthly Stripe Checkout (graceful fallback per `resolvePriceId()`), but the pill copy then mismatches the actual checkout. Risk flagged in the Session Briefing — Master action exists, this code change does not introduce a new one.
+
+**Tests:** Role 3 will add new assertions to `tests/trial.test.js` for the pill render + the calm-state regression guard — see next CHANGELOG entry.
+
+---
+
+## 2026-04-28T23:55Z — Role 1 (Epic Manager): Session Briefing — Cycle 21 — #133 annual-savings pill on day-1 trial-urgent banner
+
+**Active Epics (3 of 9 — within budget):**
+- **E2 — Trial → Paid Conversion Surfaces** [ACTIVE] — direct conversion lever; 8 open child tasks (#82, #44, #119, #95, #15, #46, #47, #109) plus the new #133 from cycle 20.
+- **E3 — Activation & Time-to-First-Value** [ACTIVE] — gates everything else; 11 open child tasks (#39, #65, #84, #96, #102, #111, #116, #60, #118, #128, #123, #124, #131).
+- **E4 — Retention, Stickiness & Daily Touchpoints** [ACTIVE] — multiplier on LTV; 14 open child tasks (#80, #88, #87, #57, #89, #11, #12, #77, #90, #121, #44, #66, #71, #129, #130, #125, #126, #132).
+
+**Status checks performed this cycle:**
+- E1 [COMPLETE] — Stripe lifecycle complete; future revenue-loop work routes to E5.
+- E5 [PLANNED] — paused on conversion saturation; right thing today, will activate post trial→paid stabilisation.
+- E6 [PLANNED] — distribution; long-burn, properly deferred.
+- E7 [PLANNED] — accounting moat; properly deferred until Pro retention compounds.
+- E8 [PLANNED] — Health Monitor pulls H-tasks inline as they emerge; staying [PLANNED] preserves the 3-active budget for revenue work. ✓
+- E9 [PAUSED] — Resend gate; ~10 ready-to-ship items waiting on Master env var (TODO_MASTER #18). No movement possible without the key. ✓
+
+No epic statuses change this cycle. No epics promoted/demoted. No new epics emerging.
+
+**Most important thing to accomplish this session:**
+
+**Ship #133 — Inline annual-savings pill on the day-1 trial-urgent banner (E2 Trial → Paid Conversion).** Highest impact-per-effort unshipped item: XS effort (~10 lines of view template + 2 test assertions), MED conversion impact at the highest-intent conversion event in the entire funnel — the trial-end moment. Today's day-1 banner reads "Last day of your Pro trial — add a card before midnight to keep Pro features." with a single Add-payment-method CTA but **no price reinforcement** — leaving money on the table at the precise moment the user is deciding whether to pay. Adding the already-shipped pill component pattern from #101 ("$99/year — 3 months free") inline above the CTA frames the decision around the higher-margin annual price, lifting both the conversion rate AND the LTV per converting trial.
+
+**Implementation contract:** Surface a small inline emerald-100/700 rounded pill above the existing CTA button in the trial-urgent branch of `views/dashboard.ejs`. Pill copy: "💰 Lock in $99/year — 3 months free" (matches the visual language of the already-shipped pill on /pricing + /settings + upgrade-modal). Only renders on the urgent (day-1) branch — calm-state days-2-through-7 banner stays unchanged so we don't blunt the urgent-branch differentiation. No DB, no env var, no schema change — pure additive view layer.
+
+**Blockers / risks worth flagging before work begins:**
+
+- **Resend API key (TODO_MASTER #18)** — single most leveraged unshipped Master action; unblocks E9 entirely (~10 ready-to-ship retention/conversion email features). Worth a Master nudge if Master surfaces this cycle.
+- **APP_URL env var (TODO_MASTER #39)** — sitemap.xml + canonical link tags fall back to request host; alternate-host SEO drift is silently compounding.
+- **APP_SPEC review (TODO_MASTER #60)** — auto-reconstructed cycle 17, still awaiting human verification; resynced this cycle (no app structural changes — pure timestamp bump).
+- **STRIPE_PRO_ANNUAL_PRICE_ID (TODO_MASTER #11)** — the annual price ID. Until it's set, annual selections gracefully fall back to monthly ($12/mo) per `resolvePriceId()`. The #133 pill copy advertises $99/yr; if the env var is unset in production, users who click "Add payment method" from the urgent banner will get the monthly Stripe Checkout page, not annual. This is a credibility/CTA-mismatch risk — ship the pill regardless (the env var is Master's deliverable, not a code blocker), but tag the dependency clearly in TODO_MASTER if not already linked.
+- **No [TEST-FAILURE] items** — full suite is 49 files, 0 failures heading into this cycle.
+- **No [BLOCKED] items** — every open task has a tractable next step.
+
+The 3-active-epic discipline is holding. The backlog continues to stratify by effort × impact (XS-first within priority order). The cycle 20 pivot to the recent-revenue card cluster is paying compounding dividends (#107 → #117 → #122 → #127 — four reactive layers on the same surface in four cycles, with #131/#132/#128 queued as XS top-ups). #133 pulls focus back to the trial-end conversion surface for one cycle, which is the right rotation: a single XS conversion-side ship on a high-leverage pillar pairs naturally with the activation/retention work that's been densifying on the dashboard surface.
+
+---
+
 ## 2026-04-28T23:30Z — Role 1 (Epic Manager): Session Briefing — Cycle 20 — #127 quiet-window recovery CTA
 
 **Active Epics (3 of 9 — within budget):**

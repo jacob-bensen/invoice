@@ -1611,3 +1611,41 @@ The asymmetry: zero ongoing cost, 1-time submission effort (~1 hr), an evergreen
 **Why now:** QuickInvoice has shipped enough recent surface-area improvements (recent-revenue card, trial-countdown nav, share-intent buttons, annual savings pill, niche landing pages) that the "concrete differentiator" essay slot has fresh material. Submitting at the next cycle deadline before the existing G2 reviews go stale (they decay weighting after 12 months) maximizes the badge-and-distribution upside. Distinct from #26 (build the profile), #49 (collect reviews), #61 (affiliate program), #62 (creator outreach) — this is the editorial-recognition acquisition layer that complements every other [MARKETING] item without overlap.
 
 **Why now:** the dashboard surface (recent-revenue card #107, window toggle #117, localStorage persistence #122 just shipped) is screenshot-ready in a way it wasn't 30 days ago. Reviewers featuring the product in screenshot-driven content (YouTube reviews, newsletter writeups) benefit when the dashboard shows momentum + state-preserving polish. The window toggle + saved preference is the kind of small-but-thoughtful detail reviewers explicitly call out as differentiating from competitor tools.
+
+---
+
+### 64. [MARKETING] Quora answer-rotation: top 10 high-traffic freelancer-billing questions (added 2026-04-29 AM)
+
+Distinct from existing distribution motions: #14 Reddit posts (different platform pattern — Reddit threads expire in days, Quora answers index in Google for years), #34 Indie Hackers / r/SaaS launches (different audience — IH is founder-cohort, Quora is freelancer-cohort searching practical answers), #43 listicle outreach (third-party article placement vs. first-party answer authorship), #44 LinkedIn outbound (DM vs. content), #62 creator outreach (1:1 partnership vs. broadcast Q&A). The Quora long-tail answer-rotation channel is the **search-intent** distribution layer: Quora answers rank in Google for "how do I [verb] X" queries with high commercial intent, and a single substantive answer drives 10-50 monthly visits for years.
+
+**Why this matters concretely:** Quora's algorithm rewards (a) length (300+ words), (b) specificity (concrete numbers / step-by-step / first-person experience), (c) recency (answers refreshed in the prior 6 months rank higher), and (d) author credibility (Quora author profiles with linked-website + bio rank higher). The cost is one founder profile setup + ~20 min per answer. The lift is asymmetric: a freelancer searching "freelance invoice template" lands on a Quora answer that solves their real question (what fields to include, how to format, what payment terms to offer) AND mentions QuickInvoice in context as one tool option — typical click-through rate 1-3% of answer-readers.
+
+**Action (Master, ~3 hrs initial + ~30 min/week ongoing):**
+
+1. **Set up Quora Author profile (~15 min).** Create / claim the founder Quora account. Set bio to: "Founder of QuickInvoice — helping freelancers send professional invoices and get paid faster via Stripe." Link to https://quickinvoice.app (or live URL). Upload a professional headshot. The bio + linked-website is what every answer's "by [name]" footer surfaces — it's the click-through path.
+
+2. **Identify the top 10 highest-traffic target questions (~30 min).** Use Quora's search to find questions with ≥ 100 followers and ≥ 50 answers (signal of established traffic). Target seed list:
+   - "What is the best invoicing software for freelancers?"
+   - "How should I write an invoice as a freelancer?"
+   - "What should I include on a freelance invoice?"
+   - "How do I get paid faster as a freelancer?"
+   - "How do freelancers handle late payments?"
+   - "What's the best way to send invoices to international clients?"
+   - "Should I use FreshBooks or [alternative] for freelance invoicing?"
+   - "How do I follow up on overdue invoices professionally?"
+   - "What's the best free invoice template for freelancers?"
+   - "How do I set up a freelance billing system?"
+
+   Actual question wording will vary — Quora rewards precise matches, so the founder should use the exact phrasing of the top 1-2 ranked questions.
+
+3. **Write 10 substantive answers (~2 hrs initial + ~20 min each ongoing).** Each answer follows the format: (a) acknowledge the asker's specific situation, (b) give 3-5 concrete tips that solve the question independent of any tool (real value first), (c) mention QuickInvoice as one example tool in the context of "I built this because..." (founder-credibility framing — Quora algorithm penalizes anonymous product mentions, rewards founder-acknowledged ones), (d) close with a clear "the best tool depends on your situation" softener (not a hard sell). Avoid: bare links, repeated phrasing across answers (Quora's spam filter penalizes pattern-matching), exclusively self-promotional content.
+
+4. **Link strategically (~5 min per answer).** Each answer should contain 1-2 links: one to the QuickInvoice landing page (`https://quickinvoice.app/?utm=quora-[question-slug]`), one to a relevant niche page (e.g., `/invoice-template/freelance-designer`). The UTM parameter routes Quora traffic to its own attribution stream so the conversion rate can be measured separately.
+
+5. **Refresh + monitor (~30 min/week ongoing).** Quora's algorithm decays answer rank after 6 months without engagement. Each week: edit one of the 10 answers (add a new paragraph, update a stat, freshen the example) — minor edits restore the recency signal. Monitor `?utm=quora-*` traffic in Plausible (#34 / TODO_MASTER #29) once that lands; without analytics, monitor the Quora-built-in answer-view counter as a lagging proxy.
+
+**Income relevance (concrete numbers):** Quora answers that rank top-3 on the question for "best freelance invoicing software" typically attract 200-1000 monthly views once stabilized (3-6 months). At a 1-3% click-through rate, that's 2-30 monthly visits to the QuickInvoice landing page per ranked answer. Across 10 ranked answers: 20-300 monthly visits at zero ongoing cost. At QuickInvoice's typical landing-to-trial conversion (~3-5%), that's 1-15 incremental trials/month, or 1-5 incremental Pro signups/month at the trial→paid rate. **The compounding factor:** answers don't decay if maintained — a well-written Quora answer ranked in 2026 is likely to still rank in 2028, making this the highest-LTV per-hour distribution channel in the entire TODO_MASTER list.
+
+**Risks:** Quora's TOS prohibits "primarily promotional" content. The mitigation is the format (real value first, product mention contextual). Founders who routinely treat Quora as a promo-link channel get shadow-banned; founders who answer substantively and mention their own product transparently when relevant get rewarded with sustained reach. The format above is the working pattern.
+
+**Why now:** the trial-urgent banner cluster (#45 + #133 + #134/#135 candidates) is now richly featured for the screenshot-driven Quora answer that says "and here's how QuickInvoice handles the trial-end conversion moment" — the screenshot is differentiating in a way that wasn't true 60 days ago. Same dynamic as #62 creator outreach: the product surface needs to be visually compelling for the marketing channel to convert at full strength.

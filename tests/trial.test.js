@@ -356,6 +356,44 @@ async function testDashboardLastDayUrgentBanner() {
     'urgent banner CTA must POST to the same /billing/portal handler');
 }
 
+async function testDashboardLastDayUrgentBannerHasAnnualSavingsPill() {
+  // #133 — the day-1 urgent banner must additionally surface the annual
+  // savings pill so the trial-end conversion moment frames the higher-margin
+  // annual price rather than the implicit monthly default.
+  const tpl = fs.readFileSync(path.join(__dirname, '..', 'views', 'dashboard.ejs'), 'utf8');
+  const html = ejs.render(tpl, {
+    user: { plan: 'pro', invoice_count: 0, subscription_status: null },
+    invoices: [],
+    flash: null,
+    days_left_in_trial: 1,
+    title: 'Dashboard'
+  }, { views: [path.join(__dirname, '..', 'views')], filename: path.join(__dirname, '..', 'views', 'dashboard.ejs') });
+
+  assert.ok(/data-testid=["']trial-urgent-annual-pill["']/.test(html),
+    'day-1 urgent banner must render the annual-savings pill (data-testid=trial-urgent-annual-pill) for #133');
+  assert.ok(/\$99\/year/.test(html),
+    'pill copy must include the concrete $99/year price anchor');
+  assert.ok(/3 months free/.test(html),
+    'pill copy must include the "3 months free" framing (matches the canonical #101 pattern)');
+  // Pill uses the canonical green-100 bg + green-700 text styling shipped on
+  // /settings + the upgrade-modal in cycle 15 (#101). Visual continuity
+  // between the trial-end touchpoint and the existing pricing surfaces is
+  // the entire point — assert the styling tokens so a future refactor that
+  // accidentally swaps to a different colour family fails loudly.
+  assert.ok(/bg-green-100[^"]*text-green-700|text-green-700[^"]*bg-green-100/.test(html),
+    'pill must use the canonical green-100 bg + green-700 text styling (matches #101 settings/upgrade-modal pattern)');
+  assert.ok(/rounded-full/.test(html),
+    'pill must use rounded-full to match the canonical pill component');
+  // Accessibility: the emoji prefix is decorative — the textual content
+  // ("Lock in $99/year — 3 months free") carries the meaning. Without
+  // aria-hidden, screen readers announce "money bag emoji Lock in..."
+  // which adds noise without information. The canonical pattern in
+  // settings.ejs + upgrade-modal.ejs wraps the emoji in
+  // <span aria-hidden="true">; pin that contract here too.
+  assert.ok(/<span aria-hidden=["']true["']>[^<]*&#128176/.test(html),
+    'decorative 💰 emoji must be wrapped in <span aria-hidden="true"> for screen-reader cleanliness (matches canonical settings/upgrade-modal pattern)');
+}
+
 async function testDashboardCalmBannerOnEarlierDays() {
   // Regression guard — the urgent branch must NOT fire on day 2+, the
   // calm-state styling and copy must persist for the rest of the trial.
@@ -377,6 +415,12 @@ async function testDashboardCalmBannerOnEarlierDays() {
       `day ${days} banner must not show "Last day" copy`);
     assert.ok(new RegExp(`${days} days left`).test(html),
       `day ${days} banner must read "${days} days left"`);
+    // #133 — pill is urgent-branch-only; calm days must NOT render it.
+    // Differentiation between the calm and urgent banners is the whole
+    // reason we kept the calm copy minimal — leaking the pill across all
+    // 7 trial days would dilute the day-1 urgency signal.
+    assert.ok(!/data-testid=["']trial-urgent-annual-pill["']/.test(html),
+      `day ${days} banner must NOT render the urgent-branch annual-savings pill (#133)`);
   }
 }
 
@@ -431,7 +475,8 @@ async function run() {
     ['Webhook: subscription fetch error → still upgrades, no trial_ends_at write', testWebhookSubscriptionRetrieveErrorStillUpgrades],
     ['Dashboard: renders trial banner when days_left_in_trial > 0', testDashboardRendersTrialBannerWhenDaysLeftPositive],
     ['Dashboard: last-day urgent banner copy + red styling on day 1 (#45)', testDashboardLastDayUrgentBanner],
-    ['Dashboard: calm banner persists for days 2-7 (regression guard for #45)', testDashboardCalmBannerOnEarlierDays],
+    ['Dashboard: last-day urgent banner surfaces annual-savings pill (#133)', testDashboardLastDayUrgentBannerHasAnnualSavingsPill],
+    ['Dashboard: calm banner persists for days 2-7 (regression guard for #45 + #133)', testDashboardCalmBannerOnEarlierDays],
     ['Dashboard: omits trial banner when no trial / 0 days left', testDashboardOmitsBannerWhenNoTrial],
     ['Pricing: CTA reads "Start 7-day free trial"', testPricingCtaCopyMentionsTrial],
     ['Modal: CTA reads "Start 7-day free trial"', testUpgradeModalCtaCopyMentionsTrial]
