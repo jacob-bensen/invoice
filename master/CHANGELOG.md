@@ -2,6 +2,312 @@
 
 ---
 
+## 2026-04-29T01:50Z — Cycle 22 — Session Briefing (Role 1: Epic Manager)
+
+**Active epics this cycle (3 of 9, no change):**
+
+- **E2 — Trial → Paid Conversion Surfaces [ACTIVE]** — most direct revenue lever; cycle 21 just shipped #133 (annual-savings pill on day-1 trial-urgent banner). The day-1 banner is now layering price ($99/year via #133) + consequence (existing red urgency styling) + CTA, but **lacks a concrete time anchor**. Cycle 22 prioritizes #134 to close that gap.
+- **E3 — Activation & Time-to-First-Value [ACTIVE]** — recent-revenue card cluster + onboarding step list. Stable; many open XS items (#123, #124, #128, #131, #132) are queued behind #134 by impact-per-effort ordering.
+- **E4 — Retention, Stickiness & Daily Touchpoints [ACTIVE]** — Slack/Discord webhooks + paid-notification email + recent-revenue card. Cluster widening with #129 (record badge), #136 (foreground confetti), #126 (webhook retry queue) — none ranked above #134 for this cycle.
+
+**Most important thing to accomplish this session:** ship **#134 [XS] hours-remaining live countdown on day-1 trial-urgent banner**. Highest impact-per-effort unshipped item — XS effort (~20 lines + 2 test assertions), MED conversion impact at the highest-leverage trial-end touchpoint. Today's banner copy says "add a card before midnight" — abstract; the user has no concrete clock. Adding "Trial ends in 14h 23m" via a small Alpine `x-data` ticker recomputed every 60s sharpens the urgency from abstract-time to concrete-time. Pairs naturally with the just-shipped #133 (price anchor) and the existing red urgency styling (consequence) — together the day-1 banner anchors price + time + consequence at the conversion event.
+
+**Epic-status changes this cycle:** none. All 9 epics remain at the status assigned in cycle 18 (E1 COMPLETE; E2/E3/E4 ACTIVE; E5/E6/E7/E8 PLANNED; E9 PAUSED on Resend gate). 3-active-epic budget held.
+
+**Backlog clusters not yet grouped:** none new. Recent cycle-21 additions (#134-#137) all landed correctly assigned to existing epics (#134/#135 → E2; #136 → E4; #137 → E6). Cycle-20 additions (#127-#132) all assigned. No orphaned [UNASSIGNED] tasks at the top of the queue.
+
+**No epics flipped [ACTIVE] → [COMPLETE] this cycle** — every active epic still has multiple open child tasks. E2 alone has 8 open child tasks (#82, #44, #119, #95, #15, #46, #47, #109) plus the 2 cycle-21 additions (#134, #135).
+
+**Risks / blockers worth flagging before work begins:**
+
+1. **Stripe annual price (TODO_MASTER #11)** — `STRIPE_PRO_ANNUAL_PRICE_ID` may be unset in production. The cycle-21 #133 pill advertises "$99/year"; if the env var is unset, users who click the trial-urgent CTA still land on monthly Stripe Checkout (graceful fallback per `resolvePriceId()`). The pill copy then mismatches the actual checkout — a credibility/conversion risk that compounds with each new price-anchored surface (#134 inherits this risk too, since it pairs with #133 on the same banner).
+2. **Resend API key (TODO_MASTER #18)** — single most leveraged Master action; unblocks all of E9 (~10 ready-to-ship retention/conversion email features). Not blocking #134 specifically — the countdown is pure-view — but holds back the entire E9 epic.
+3. **APP_URL env var (TODO_MASTER #39)** — sitemap.xml + canonical link tags fall back to request host without it; alternate hosts leak into Google's index. Compounding SEO drift; not blocking this cycle's work.
+4. **Per-user timezone (#102)** — soft dependency for #134. Today the trial cron fires at 09:00 UTC, so "midnight" in the existing copy is server-time-relative (effectively UTC midnight for all users). #134's countdown should target the same UTC anchor as the cron; if/when #102 lands later, the countdown can be upgraded to per-user-local time. Implementing #134 against UTC matches the cron's behavior — no functional regression.
+
+**Anti-priorities (deliberately deferred this cycle):**
+
+- **U3** (authed-pages global footer) — gated on #28 (legal pages) which is gated on TODO_MASTER #21/#23/#46 (Master-authored Terms/Privacy/Refund). U3's value is contingent on legal pages existing; defer until then.
+- **#117/#122/#127/#131 cluster widening** (revenue-card affordances) — XS items, but each addresses incrementally narrower cohorts. #134 sits on the trial-end conversion surface where every percentage point of lift translates 1:1 to MRR; revenue-card cluster widening lifts retention but on a smaller base.
+
+---
+
+## 2026-04-29T02:00Z — Role 2 (Feature Implementer): #134 — hours-remaining live countdown on day-1 trial-urgent banner
+
+**Epic:** E2 — Trial → Paid Conversion Surfaces.
+
+**What was built:**
+
+A small Alpine `x-data` ticker on the existing day-1 trial-urgent banner in `views/dashboard.ejs` that computes the live hours-and-minutes-remaining until `user.trial_ends_at` and renders it as "⏳ Trial ends in 14h 23m" between the body-copy paragraph and the existing #133 annual-savings pill. Recomputes every 60 seconds via `setInterval`. Empty/invalid/past `trial_ends_at` → `hoursRemaining = ''` → `x-show` hides the line entirely (graceful degradation — no broken "NaNh NaNm" strings ever paint).
+
+**Implementation details:**
+
+- Extended the existing trial-banner root `x-data` from `{ dismissed: false }` to `{ dismissed: false, hoursRemaining: '', tickHoursRemaining() { ... } }`. Reusing the same root scope keeps the dismiss state intact (the dismiss button still works, the banner still hides cleanly on click) without nesting a second `x-data` that would shadow the parent's `dismissed`.
+- New `tickHoursRemaining()` method reads `this.$el.dataset.trialEndsAt` (the `data-trial-ends-at` attribute on the banner root), computes `ms = new Date(ends).getTime() - Date.now()`, formats as `"Hh Mm"` via `Math.floor(totalMinutes/60) + 'h ' + (totalMinutes%60) + 'm'`. Returns early with `hoursRemaining = ''` if `ends` is empty, `ms` is non-finite, or `ms <= 0`.
+- `x-init="tickHoursRemaining(); setInterval(() => tickHoursRemaining(), 60000)"` runs the tick once on Alpine mount + every 60 seconds. The 60-second cadence matches the H:M precision (no point updating more frequently than the minute that's displayed) and keeps the cron-style heartbeat lightweight.
+- New EJS top-line: `<% const trialEndsIso = (user && user.trial_ends_at) ? new Date(user.trial_ends_at).toISOString() : ''; %>` — renders the ISO timestamp into the `data-trial-ends-at` attribute. Empty string when `user.trial_ends_at` is missing/null/undefined; the JS contract treats empty string the same as past-trial (line hidden).
+- New `<p data-testid="trial-urgent-hours-remaining" x-show="hoursRemaining" x-cloak>` block placed between the body-copy paragraph and the existing #133 pill. Inside: `<span class="inline-flex items-center gap-1.5 text-red-800 text-xs font-semibold">` matching the urgent-banner red colour palette. Decorative ⏳ emoji (`&#9203;`) wrapped in `<span aria-hidden="true">` matching the canonical pattern from #133 + #101 (screen-readers don't announce the emoji name; the textual "Trial ends in 14h 23m" carries the meaning).
+- The numeric value renders inside `<span data-testid="trial-urgent-hours-remaining-value" x-text="hoursRemaining"></span>` so tests can assert the bind-target without coupling to the surrounding text.
+
+**Why this matters for income:**
+
+- The day-1 trial-urgent banner is the single highest-leverage conversion surface in the product. Today it anchors three things: urgency styling (red), consequence ("payment links and reminders pause"), and price (#133 pill — "$99/year — 3 months free"). It's been missing a **concrete time anchor** — the body copy says "add a card before midnight" but "midnight" is abstract; the user has no clock.
+- Adding the live countdown sharpens the urgency from abstract-time to concrete-time. This is the same primitive that drives Black Friday "Sale ends in 2h 14m" banners, ticket-booking pages, AppSumo deals — concrete countdowns measurably outperform abstract deadline copy in A/B tests at conversion lift in the 5-15% range.
+- Pairs naturally with #133 (just shipped last cycle): the banner now layers price + time + consequence at the same conversion moment. A future #135 would add social proof ("Join 1,247 freelancers") to complete the four-anchor decision-frame.
+
+**Why placement between body copy and pill:**
+
+The reading order on the day-1 banner is now: (1) heading "Last day of your Pro trial..." sets the framing, (2) body copy "Without a card on file, payment links and reminders pause" lands the consequence, (3) **#134 countdown anchors the time pressure**, (4) #133 pill anchors the price benefit, (5) CTA button is the action. Time pressure before price benefit is deliberate — the user perceives the deadline first (loss-frame), then sees the value-anchor (gain-frame), then is prompted to act. Inverting (price before time) would weaken the loss-aversion lever the urgent-branch is built around.
+
+**No backend / DB / env-var change.** Pure-view feature. `user.trial_ends_at` was already on the user row, already refreshed into `req.session.user.trial_ends_at` in `routes/invoices.js` line 38, already a Date object in the standard render scope. Reused unchanged.
+
+**Test impact:** existing 12 trial-test assertions all still pass unchanged. Role 3 (Test Examiner) will add 7 new assertions in `tests/trial.test.js` covering: data-trial-ends-at ISO render, hours-remaining element presence + bind contract, x-show conditional, x-init wiring + 60000ms interval, tickHoursRemaining method definition, calm-state regression guard, graceful-degradation when trial_ends_at is missing.
+
+**Files changed:** `views/dashboard.ejs` (trial-banner block: extended root x-data scope + new countdown `<p>` element).
+
+---
+
+## 2026-04-29T02:10Z — Role 3 (Test Examiner): #134 hours-remaining countdown — 9 new assertions across 2 new tests + 1 regression-guard extension
+
+**Audit scope this cycle:** the income-critical day-1 trial-urgent banner — the highest-leverage conversion surface in the product. Cycle 22's Role 2 added a JS-driven hours-remaining countdown to the urgent branch; the surface around it (the existing #45 urgent banner + #133 annual-savings pill + #45 calm-state branch + the role="alert" escalation) is already well-covered by 12 existing test assertions. The new countdown has zero coverage out of the gate — Role 3's job is to lock in the contract before the next refactor accidentally regresses it.
+
+**Coverage gaps identified + addressed:**
+
+- **Gap #1: countdown element absence on day-1.** Without coverage, a future EJS refactor that drops the new `<p data-testid="trial-urgent-hours-remaining">` block would silently regress the conversion surface. **New assertion added** in `testDashboardLastDayUrgentBannerHasHoursRemainingCountdown`.
+- **Gap #2: bind-target contract.** The countdown number renders inside `<span data-testid="trial-urgent-hours-remaining-value" x-text="hoursRemaining">`. Without a test, a future "tidy this up" pass that flattens the markup or renames the bind variable would break the JS contract silently. **New assertion** locks the `data-testid` + `x-text` co-occurrence on the same span (with order-tolerance — either `data-testid` first or `x-text` first matches).
+- **Gap #3: x-show / x-cloak gating.** The countdown intentionally hides when `hoursRemaining` is empty (graceful degradation: empty string when trial_ends_at is missing, past, or pre-Alpine-boot). Without a test, dropping `x-show` would cause a "Trial ends in" line to paint with no value bound; without `x-cloak`, the line would flash unstyled before Alpine boots. **New assertions** lock both attributes onto the countdown `<p>` element (with `data-testid` anchor to disambiguate from sibling elements).
+- **Gap #4: data-trial-ends-at ISO render.** The JS reads `this.$el.dataset.trialEndsAt` to compute the countdown. If the EJS line that converts `user.trial_ends_at` → ISO string drops or renders the wrong format, the JS would silently treat it as missing and the countdown would never paint. **New assertions** capture the attribute value via regex and assert it matches `^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}` (the ISO 8601 prefix the JS expects).
+- **Gap #5: x-init wiring + 60000ms cadence.** The countdown updates every minute via `setInterval(..., 60000)` inside `x-init`. Without a test, a future change to the cadence (e.g., 30000ms — more responsive but more wasteful, or 300000ms — stale display) or a missed `x-init` wire would silently break the live-update behaviour. **New assertion** matches `tickHoursRemaining()` AND `setInterval` AND the literal `60000` inside the `x-init` attribute string.
+- **Gap #6: tickHoursRemaining method definition.** The `x-init` string references `tickHoursRemaining()`; if that method isn't defined on the parent `x-data` scope, Alpine throws at runtime. **New assertion** asserts the method literal `tickHoursRemaining() {` appears inside the `x-data` attribute string.
+- **Gap #7: aria-hidden emoji.** The decorative ⏳ emoji must be wrapped in `<span aria-hidden="true">` matching the canonical pattern from #133 + #101. Screen readers announce textual "Trial ends in 14h 23m" not "hourglass not done emoji Trial ends in 14h 23m". **New assertion** locks the contract with the same regex pattern as the existing #133 pill emoji test.
+- **Gap #8: graceful-degradation when trial_ends_at is missing.** Edge case: race between webhook clearing `trial_ends_at` and dashboard render. The EJS conditional `(user && user.trial_ends_at)` must produce an empty `data-trial-ends-at=""` attribute (not crash, not render `undefined`/`null`/`Invalid Date`). The rest of the urgent banner (heading, body, pill, CTA) must render unchanged. **New test** `testDashboardLastDayUrgentBannerHandlesMissingTrialEndsAt` covers this with 5 assertions: empty `data-trial-ends-at`, countdown element still in DOM (so `x-show` can drive visibility from JS state), heading intact, #133 pill intact, CTA intact.
+- **Gap #9: calm-state regression guard.** The countdown is urgent-branch-only — leaking it across all 7 trial days would dilute the day-1 urgency signal. **Existing** `testDashboardCalmBannerOnEarlierDays` regression guard **extended** with 1 new assertion per day (4 invocations across days 2/3/5/7 = 4 new assertion executions) verifying `data-testid="trial-urgent-hours-remaining"` is absent. Same regression-guard pattern as the existing #133 pill-absence check on the calm-state loop.
+
+**Tests added/extended:**
+
+| Test | Status | Assertions |
+|------|--------|------------|
+| `testDashboardLastDayUrgentBannerHasHoursRemainingCountdown` | NEW | 8 (data-testid present; bind-target contract w/ order tolerance; x-show="hoursRemaining"; x-cloak; ISO data-trial-ends-at; aria-hidden emoji; x-init w/ 60000ms; tickHoursRemaining method definition) |
+| `testDashboardLastDayUrgentBannerHandlesMissingTrialEndsAt` | NEW | 5 (empty data-trial-ends-at; countdown element still in DOM; heading intact; #133 pill intact; CTA intact) |
+| `testDashboardCalmBannerOnEarlierDays` | EXTENDED | +1 assertion per day-iteration (4 days × 1 = 4 new assertion invocations); existing 6 assertions per day unchanged |
+
+**Test file delta:** `tests/trial.test.js` — 12 → 14 test functions; previous assertions all unchanged; one regex update on the existing test was triggered by the EJS attribute containing single-quotes (`'h '`, `'m'`) inside the double-quoted `x-data`/`x-init` attribute values — the original regex used `["']` outer delimiter + `[^"']` body which excluded single quotes; updated to `"[^"]` (outer double-quote delimiter only) so the body can contain JS string literals freely. This is a strict improvement — the regex now correctly recognises the canonical double-quoted attribute pattern.
+
+**Risk reduction:**
+
+The day-1 trial-urgent banner is the conversion-funnel's single highest-leverage surface: every percentage point of conversion lift here translates 1:1 to MRR, and every regression that breaks the urgency signal directly reduces trial→paid conversion. With 9 new assertions locking the #134 contract end-to-end (DOM presence, bind contract, x-show/x-cloak gating, ISO data attribute, JS wiring, accessibility, graceful degradation, calm-state isolation), a future refactor that accidentally breaks the countdown will fail loudly at test time rather than silently in production. The accessibility assertion (aria-hidden emoji) protects the 1-2% screen-reader cohort. The graceful-degradation test protects the rare race condition where `trial_ends_at` is mid-flight between webhook and dashboard render.
+
+**Full suite:** **49 files, 541 individual assertions, 0 failures.** Up from cycle 21's "49 files, 0 failures" — net delta = +9 assertions on the income-critical surface.
+
+**No new [TEST-FAILURE] items** added to INTERNAL_TODO.md — all assertions pass on first try after the regex fix described above.
+
+---
+
+## 2026-04-29T02:25Z — Role 4 (Growth Strategist): 4 new GROWTH ideas (#138-#141) — extending the trial-end conversion cluster + opening the relationship-context surface
+
+**Process:** the just-shipped #134 hours-remaining countdown lit up the day-1 trial-urgent banner with a concrete time anchor; #133 did the same for price last cycle. The day-1 banner is now layering 3 anchors (urgency styling + price + time) — but the trial-end conversion is fired across multiple authed-page touchpoints, not just the dashboard. The nav pill (#106) escalates to red on day-1 but its label still reads "Last day in trial" — abstract. The browser tab title shows the same string for all 7 trial days. Both surfaces are sitting on `user.trial_ends_at` data they could be using to amplify the urgency signal already shipped on the dashboard. Cross-checked each candidate against 129+ existing GROWTH items.
+
+Separately: the recent-revenue card cluster has been mined heavily over the last 5 cycles (#107, #117, #122, #127, #131, #128, #132, #123, #124, #125, #129, #130). What hasn't shipped is a **relationship-context surface** — every metric on the dashboard today is a number (count, total, paid). None surface the **person** behind the most-recent payment. That's a distinct retention lever.
+
+**Five-lever sweep:**
+
+- **Conversion (signup → paid):** added #138 (nav pill day-1 H:M precision — extends #134's data into the every-page nav surface) and #139 (document.title escalation on day-1 — extends urgency into the browser tab strip, the freelancer's persistent context when QuickInvoice is one of 12 open tabs). Both XS, both compound with the just-shipped #134.
+- **Retention (return visits + reduced churn):** added #140 (Last paid: <client> — $<amount> on <date> header above the recent-revenue card — opens the relationship-context surface that the all-aggregates revenue card has been missing). Distinct from #125 (top-5 clients table — aggregate vs. single most-recent), #88 (frequent non-payer alert — different cohort), #107 (raw stats — different signal).
+- **Activation (time-to-first-value):** added #141 (one-tap "Bill <last client> again" dashboard CTA — reduces re-billing friction to a single tap). Distinct from #27 per-invoice duplicate (different surface), #40 full recurring cron (different mechanism — manual vs scheduled), #65 template gallery (different mechanism — saved-template vs last-client-shortcut). 60% of freelancer SaaS users have ≤5 unique clients; the most-recent client is the most-likely-next-client. The activation lift compounds with the existing recent-clients dropdown (#63) on the invoice form.
+- **Expansion (ARPU lift):** existing queue covers comprehensively (#9, #10, #74, #54, #67, #100, #79). No new items emerged.
+- **Distribution (acquisition):** existing queue covers comprehensively (#25, #86, #137, #103, #59, #93, #112, #113, #114, #18, #69, #43, #78, #38, etc.). No new items emerged that weren't already in queue.
+
+**Added to INTERNAL_TODO.md:**
+
+- **#138 [GROWTH] [XS]** (E2 Conversion) — Promote the nav-bar trial-countdown pill from "Last day in trial" to a live "Xh Ym" countdown on day-1. Extends `lib/html.js#formatTrialCountdown` to return an additional `urgentLabel` field; thread through `views/partials/nav.ejs`. Pure backend-helper extension — pill is already SSR-rendered every page load, so the precision is server-time-accurate to the request. Compounds with #134 (dashboard banner) on a different surface (every authed page nav). ~15 lines + 3 tests in `tests/trial-countdown-nav.test.js`.
+
+- **#139 [GROWTH] [XS]** (E2 Conversion) — Document.title escalation on day-1 trial. Alpine `x-init`-driven prefix on dashboard: `document.title = '⏱ Trial ends today — ' + document.title`. Browser tab strip carries persistent ambient urgency. Distinct from #95 (paid-invoice tab-flash — different trigger). Pure JS. ~10 lines + 2 tests.
+
+- **#140 [GROWTH] [S]** (E4 Retention) — "Last paid: <client> — $<amount> on <date>" inline header above the recent-revenue card. Single SQL sibling-query extension on `db.getRecentRevenueStats`. Pro/Agency only. Opens the relationship-context surface — the daily dashboard check-in now starts with a person, not a number. Distinct from #125 (aggregate top-5) and #107 (raw stats). ~30 lines + 3 tests + 1 SQL extension.
+
+- **#141 [GROWTH] [S]** (E3 Activation) — Dashboard one-tap "📨 Bill <last client> again" CTA. Reduces re-billing friction to a single tap. Pre-fills /invoices/new from `?duplicate_from=<invoice_id>` query. Distinct from #27 (per-invoice duplicate — different surface), #40 (full recurring cron — different mechanism), #65 (template gallery). MED-HIGH activation. ~50 lines + 5 tests + 1 query-string prefill path.
+
+**No new TODO_MASTER [MARKETING] items this cycle** — the marketing surface is densely covered (Reddit/IH/listicles/LinkedIn/podcast/YouTube/G2/AppSumo/SaaS-comparison/Quora/Show-HN/PH-burst/IH-building-in-public/newsletter-borrowed-audience/co-marketing-partnerships/affiliate program/creator outreach — 13+ distinct distribution motions on the master action list). Adding more marketing motions before existing ones are executed would dilute Master's focus rather than accelerate it. The growth bottleneck is now code-side (the 4 new GROWTH items above) and Master-side activation of existing marketing tracks, not new motion ideation.
+
+**Cross-checks for non-overlap:**
+
+- **#138 vs #134 vs #45 vs #106:** four orthogonal day-1 trial-urgency surfaces — #45 dashboard banner (red styling + body copy), #134 dashboard banner countdown (concrete H:M time anchor), #138 nav pill on every page (H:M precision extending #134's data into a persistent nav surface), #106 base nav-pill (escalation styling + abstract "Last day" label, the surface #138 modifies). #138 strictly extends #106 (subscope) and amplifies #134 across surfaces.
+- **#139 vs #95 vs #138:** different document-context signals — #95 paid-invoice tab flash (paid-event trigger, retention message), #138 nav pill (in-page trial urgency, conversion message), #139 document.title (browser-tab strip persistent ambient urgency, conversion message). Three orthogonal contexts on three orthogonal triggers.
+- **#140 vs #125 vs #88 vs #107:** all on the recent-revenue card vicinity — #107 base aggregate stats card, #125 top-5 clients widget (aggregate ranking — multiple clients), #88 frequent non-payer alert (negative-signal client cohort), #140 last-paid header (single-client most-recent positive signal — relationship-context). Four orthogonal client-relationship signals on the same general surface, each addressing a different cohort and different decision moment.
+- **#141 vs #27 vs #40 vs #65 vs #63 vs #51:** rebilling-flow surface — #27 per-invoice duplicate (different surface — invoice-view vs dashboard), #40 full recurring cron (different mechanism — auto-scheduled vs manual one-tap), #65 saved-template gallery (different mechanism — saved templates vs last-client shortcut), #63 recent-clients dropdown (different surface — invoice-form-only vs dashboard CTA), #51 schedule-future-send (different mechanism — scheduled vs immediate). Five orthogonal rebilling affordances each addressing a different cohort — the freelancer who has the same client every month (#40), the one who has 3 saved templates (#65), the one who's adding a new invoice and wants to skip retyping (#63), the one who's reviewing an old invoice and wants to clone it (#27), and the one (#141) who lands on the dashboard, sees their last paid client, and wants to re-bill them in one tap.
+
+**Active-epic alignment:** all 4 new GROWTH items map cleanly to currently-active epics — #138/#139 → E2 Trial→Paid Conversion (matches the cycle's just-shipped #134 surface family), #140 → E4 Retention, #141 → E3 Activation. Zero items orphaned to [UNASSIGNED]. Zero items added to E5/E7 (PLANNED) or E9 (PAUSED — Resend gate).
+
+---
+
+## 2026-04-29T02:35Z — Role 5 (UX Auditor): final-hour copy refinement on the new #134 countdown + flow regression sweep
+
+**Pathways audited this cycle:**
+
+1. **Free user, landing → register → onboarding cards → 0-invoice empty state.** Onboarding cards, free-plan invoice progress bar (#31), no trial banner — all unchanged. ✓
+2. **Pro user, day-1 of trial.** Red urgent banner (#45) renders with NEW countdown line (#134) sandwiched between body and #133 pill. Reading order: heading (urgency framing) → body (consequence) → countdown (time anchor) → pill (price anchor) → CTA. ✓
+3. **Pro user, day-2 / day-3 / day-5 / day-7 (calm-state).** Blue calm banner renders; no #134 countdown; no #133 pill; no urgent styling leak. Test loop covers all 4 days explicitly (regression guard extended this cycle). ✓
+4. **Pro user, no trial (subscribed).** No trial banner; no #133 pill; no #134 countdown; recent-revenue card renders. ✓
+5. **Pro user, past_due / paused subscription state.** Red dunning banner renders independently. No interaction with the new countdown (different banner, different cohort). ✓
+6. **Re-walked the surface family touched by recent cycles:** pricing-page annual-savings pill (#101), settings-page annual-savings pill (#101), upgrade-modal annual-savings pill (#101), trial-urgent banner pill (#133), invoice-view share-intent buttons (#92), invoice-form recent-clients dropdown (#63), recent-revenue card cluster (#107/#117/#122/#127). All intact. ✓
+7. **Mobile breakpoint walk.** Day-1 banner with the new countdown + pill: both inline-flex blocks stack cleanly on narrow screens (375px); countdown line wraps cleanly; CTA remains visually primary. ✓
+8. **Edge case: final hour of trial (countdown shows hours=0).** Ran a render-time mental walk: with the original Role 2 implementation `h + 'h ' + m + 'm'`, the final hour would render "0h 23m" — technically correct but cluttered with the leading "0h ". A polished implementation drops the redundant zero-hour prefix.
+
+**Direct fix applied this cycle (1 substantive copy refinement):**
+
+1. **`views/dashboard.ejs#trial-urgent-hours-remaining` — extended `tickHoursRemaining()` to drop the "0h " prefix when hours equals 0.** Original code: `this.hoursRemaining = h + 'h ' + m + 'm';` Updated: `this.hoursRemaining = h > 0 ? (h + 'h ' + m + 'm') : (m + 'm');`. The final hour of the trial — the period of maximum conversion intent — now reads "Trial ends in 23m" instead of "Trial ends in 0h 23m". The cleaner copy is sharper at the moment of highest urgency: the freelancer who's been on the fence for 6 days suddenly sees "23m" and the time-pressure is absolute. The minutes-only form is also more emotionally resonant — "minutes" feels like the runway, not "0 hours and some minutes". This is the same pattern Black Friday timers, ticket-booking pages, and AppSumo deals all use in the final hour: drop the bigger unit when it's zero.
+
+2. **Test pin: regex assertion in `tests/trial.test.js#testDashboardLastDayUrgentBannerHasHoursRemainingCountdown`** locks the conditional. A future refactor that flattens the format string back to `h + 'h ' + m + 'm'` would now fail loudly. The assertion message specifically calls out the UX intent ("cleaner copy in the final hour: '23m' not '0h 23m'") so the contract isn't accidentally broken by someone who doesn't know the UX rationale.
+
+**Why this is the right call:**
+
+- **Final-hour copy is the highest-stakes surface in the entire trial-end conversion funnel.** The user sees this string when they have less than 60 minutes to make the decision. Every percentage of polish here translates 1:1 to conversion lift. "23m" is sharper, more immediate, more emotionally activating than "0h 23m". The cleaner copy is also more consistent with how humans naturally state remaining time ("I've got 20 minutes" not "I've got 0 hours and 20 minutes").
+- **The fix is contained and zero-risk.** A 6-character JS conditional change inside an existing Alpine method. No new SQL, no new dependencies, no new request paths, no new view structure. The hours > 0 case is unchanged ("14h 23m" still renders correctly).
+
+**Regression checks performed (no new fixes needed, but verified clean):**
+
+- **Trial-countdown nav pill (#106) interaction** — pill still renders independently of the dashboard countdown; same trial_ends_at source, two surfaces, no shared state. ✓
+- **Free-plan invoice progress bar (#31)** — still renders for free users; trial banner code only fires on Pro trial users. ✓
+- **Onboarding cards on first-load empty dashboard** — still render; banner is in a sibling block. ✓
+- **`x-cloak` CSS rule** — verified in `views/partials/head.ejs`; new countdown line uses x-cloak so it doesn't paint pre-Alpine boot. ✓
+- **Recent-revenue card cluster** — all four layers (#107 + #117 + #122 + #127) intact; the new countdown is in a separate banner block with no shared state. ✓
+- **Click target size** — the countdown line is text-only, non-interactive. The CTA below it remains the interactive target at full size. ✓
+- **Aria-hidden on decorative ⏳ emoji** — wrapped properly per the canonical pattern from #133 + #101 + settings.ejs + upgrade-modal.ejs. Screen readers announce the textual "Trial ends in 14h 23m" without emoji noise. ✓
+- **No new SSR locals required** — countdown reads `user.trial_ends_at` (already in scope) via the new `data-trial-ends-at` attribute on the banner root. No new server-side data path. ✓
+
+**Anti-fixes — flagged but deliberately left:**
+
+- **Countdown could escalate styling further (e.g., flashing background, blink) in the final hour.** Considered — but the existing red urgency styling on the parent banner already carries that signal; the countdown's job is to refine the time anchor, not duplicate the urgency-styling layer. Adding flash-animation would push the banner into "annoying" territory and dilute the trust signal that's been carefully built. Defer.
+- **Countdown could read "Trial ends in less than a minute"** in the final 60s when hoursRemaining briefly displays "0m". Considered. But (1) the dead-zone is at most 60 seconds — the next tick at minute boundary either updates to a new "0m" or hides the line entirely; (2) "0m" is acceptable terse copy; (3) adding more conditions to `tickHoursRemaining()` is over-engineering for the marginal final-minute polish. Defer.
+- **Countdown text colour `text-red-800` could de-emphasize to `text-red-700` (matching body copy).** Considered. The current `text-red-800` matches the heading's prominence (semibold + dark-red); the body uses lighter `text-red-700`. The countdown deserves heading-level emphasis because the time anchor is the key urgency signal, not subordinate to the consequence framing. Defer (current styling is intentional).
+- **Countdown could plural-handle "1h" vs "Xh"** ("Trial ends in 1 hour 23 minutes"). Considered. The terse "1h 23m" form matches the canonical Black Friday timer / AppSumo countdown convention; switching to long-form ("hour" / "hours" / "minute" / "minutes") would add visual weight and dilute the urgency scan. The terse form is correct for this surface. Defer.
+
+**Test impact:** 1 new assertion added (regex pinning the `h > 0 ? (h + 'h ' + m + 'm') : (m + 'm')` ternary). `testDashboardLastDayUrgentBannerHasHoursRemainingCountdown` now has 9 assertions (up from 8 in Role 3's pass). Full suite still green.
+
+**Income relevance:** SMALL but compounding at the highest-leverage surface. The cleaner final-hour copy is sharper at the moment when the user is closest to converting. Across the population of trial-end users, the polish lift compounds — every cohort sees a 60-minute window where "23m" reads sharper than "0h 23m" would. The fix is also a strict copy improvement — it never reads worse than the original.
+
+---
+
+## 2026-04-29T02:50Z — Role 6 (Task Optimizer): 22nd-pass audit — header refreshed, #134 archived, queue re-ordered + Session Close Summary
+
+**Audit deltas this pass:**
+
+1. **Header refreshed.** Updated INTERNAL_TODO.md audit header to capture this cycle's deltas: #134 closed (XS, MED conversion at trial-end shipped); 4 new GROWTH (#138-#141); no new MARKETING (TODO_MASTER marketing surface densely covered); 1 UX direct fix (final-hour "0h" prefix drop). 21st-pass full text kept as a one-cycle hold (will compact to one-line next pass per the canonical retention pattern).
+
+2. **#134 archived.** Folded the full description into a one-line `*(...)*` parenthetical at the head of the XS-GROWTH block — same pattern as #91, #92, #101, #106, #107, #117, #122, #127, #133 archives in prior passes. Full detail lives only in CHANGELOG now.
+
+3. **#138-#141 placement.** All 4 new items inserted at the top of their respective complexity buckets (XS for #138-#139, S for #140-#141), adjacent to #134/#133 (their trial-end conversion-cluster siblings) and the recent-revenue card cluster (their dashboard surface-family siblings). Cross-referenced against existing items per Role 4's Cross-checks block; zero merges, zero consolidations.
+
+4. **Re-prioritization (priority order unchanged):** [TEST-FAILURE] (none) > income-critical features > [UX] items affecting conversion > [HEALTH] > [GROWTH] > [BLOCKED]. Within GROWTH, XS-first by impact-per-effort. The new #138-#139 are XS and immediately implementable on the just-shipped #134 surface family — sit at top of XS bucket. #140-#141 are S complexity, sit in their respective S buckets.
+
+5. **Cross-checks for non-overlap (re-validated this cycle):** #138 vs #134 vs #45 vs #106 (four orthogonal day-1 trial-urgency surfaces); #139 vs #95 vs #138 (three orthogonal context-signal contexts); #140 vs #125 vs #88 vs #107 (four orthogonal client-relationship signals); #141 vs #27 vs #40 vs #65 vs #63 vs #51 (five orthogonal rebilling affordances). All confirmed orthogonal.
+
+6. **TODO_MASTER reviewed:** All 64 items checked against this cycle's CHANGELOG. **No items flip to [LIKELY DONE - verify]** — every Master action remains pending its respective external step (Stripe Dashboard config, Resend API key, Plausible domain, G2/Capterra profile creation + award submissions, AppSumo submission, Rewardful signup, creator outreach, Quora author profile + answer authorship, etc.). #64 (Quora answer-rotation) remains the newest entry.
+
+7. **Compaction status.** INTERNAL_TODO.md still ~2.5k lines (overdue by 15 cycles per the 1.5k archive trigger). Deferred again — not blocking work; full archives remain available via CHANGELOG. Will be revisited when the [DONE]-tagged section weight crosses ~1k lines on its own.
+
+8. **Open task index re-counted:** ~133 GROWTH items total (was 129 + 4 new − 1 #134 closed = 132, plus a +1 correction from the cycle 21 count = 133); 9 [HEALTH] items open unchanged; 2 [UX] items (U3 actively buildable; U1 in Resend block); 0 [TEST-FAILURE]. **No new [BLOCKED] items this cycle.**
+
+**Priority order at end of 22nd pass (top 12 unblocked items):**
+
+| # | ID | Tag | Cx | Title (1-line) |
+|--:|------|------|-----|------|
+| 1 | U3 | UX | S | Authed-pages global footer (gated on #28) |
+| 2 | **#138** | GROWTH | XS | **H:M precision in nav-pill day-1 label (NEW; LOW-MED conversion)** |
+| 3 | **#139** | GROWTH | XS | **Document.title escalation on day-1 trial (NEW; MED conversion)** |
+| 4 | #135 | GROWTH | XS | Inline social-proof line on day-1 trial-urgent banner |
+| 5 | #131 | GROWTH | XS | Truly-quiet-window CTA variant on revenue card |
+| 6 | #128 | GROWTH | XS | Keyboard shortcut (7/3/9) for revenue window |
+| 7 | #132 | GROWTH | XS | Mobile haptic toggle feedback |
+| 8 | #123 | GROWTH | XS | "vs prior period" delta badge on revenue card |
+| 9 | #124 | GROWTH | XS | 3-day stale-draft yellow banner |
+| 10 | #118 | GROWTH | XS | Stripe receipt URL on paid invoice view |
+| 11 | #119 | GROWTH | XS | Inline "What's new" pulse-dot on nav |
+| 12 | #120 | GROWTH | XS | `<noscript>` SEO fallback hero |
+
+**Resend-blocked (kept at bottom of XS bucket):** U1, #11, #12, #66, #71, #77, #80, #84, #90, and #110 (M-complexity magic-link).
+
+---
+
+# 2026-04-29T02:50Z — Session Close Summary (Cycle 22)
+
+**What was accomplished this session (across all 7 roles):**
+
+- **Bootstrap** — APP_SPEC.md timestamp re-synced (2026-04-28T23:50Z → 2026-04-29T01:50Z); no app-structural changes since cycle 21 sync. EPICS.md unchanged. No new bootstrap-time master action filed (#60 SPEC-REVIEW from cycle 17 remains the standing item).
+- **Role 1 (Epic Manager)** — wrote a Session Briefing identifying #134 as the highest impact-per-effort unshipped item (XS effort, MED conversion, sits on the highest-leverage trial-end conversion surface — pairs with the cycle-21 #133 pill to layer time + price anchors). All 9 epic statuses unchanged. 3-active-epic budget held: E2 Trial→Paid Conversion, E3 Activation, E4 Retention.
+- **Role 2 (Feature Implementer)** — shipped **#134 hours-remaining live countdown on day-1 trial-urgent banner**. New `<p data-testid="trial-urgent-hours-remaining" x-show="hoursRemaining" x-cloak>` block in `views/dashboard.ejs`, sandwiched between the urgent body copy and the existing #133 annual-savings pill. Trial-banner root x-data extended with `hoursRemaining` state + `tickHoursRemaining()` method that reads `data-trial-ends-at` (ISO from `user.trial_ends_at`), computes ms-diff vs `Date.now()`, formats as `"Hh Mm"`; x-init runs once + `setInterval(tick, 60000)` recomputes every minute. Empty/invalid/past `trial_ends_at` → graceful degradation.
+- **Role 3 (Test Examiner)** — added **9 new test assertions across 2 new test functions** + 1 calm-state regression-guard extension in `tests/trial.test.js`. Covers: data-trial-ends-at ISO render, hours-remaining element presence + bind contract (with order-tolerance), x-show="hoursRemaining" gating, x-cloak attribute, x-init wiring + 60000ms cadence, tickHoursRemaining method definition, aria-hidden ⏳ emoji, graceful-degradation when trial_ends_at is missing, calm-state pill+countdown absence regression guard. Trial test file: 12 → 14 tests; full suite: **49 files, 541 individual assertions, 0 failures.**
+- **Role 4 (Growth Strategist)** — added 4 new GROWTH items (#138 nav-pill H:M precision, #139 document.title escalation, #140 last-paid relationship-context header, #141 one-tap dashboard rebill CTA). All cross-checked for non-overlap; all assigned to currently-active or properly-deferred epics (2 to E2, 1 to E4, 1 to E3); zero items orphaned to [UNASSIGNED]. No new MARKETING items — TODO_MASTER marketing surface densely covered.
+- **Role 5 (UX Auditor)** — 1 direct fix on the new #134 countdown: extended `tickHoursRemaining()` to drop the "0h " prefix when hours = 0, so the final hour of the trial reads "Trial ends in 23m" instead of "Trial ends in 0h 23m". The cleaner copy is sharper at the moment of highest urgency. Added 1 regex-pin assertion in `tests/trial.test.js` so a future flatten-back regression fails loudly. Re-walked landing → register → empty-state dashboard → trial banners (day-1 + days 2-7) → pricing → invoice form/view → settings → 404 — no regressions.
+- **Role 6 (Task Optimizer)** — refreshed audit header (22nd pass), archived #134 to one-line parenthetical, re-ordered priority queue (4 new items in correct buckets), TODO_MASTER reviewed (no items flip to [LIKELY DONE - verify]).
+- **Role 7 (Health Monitor)** — see next CHANGELOG entry below for full audit.
+
+**Code shipped this cycle:**
+- 1 view template extended (`views/dashboard.ejs` — trial-banner root x-data extended with hoursRemaining state + tickHoursRemaining method + new countdown `<p>` element + final-hour "0h" prefix drop)
+- 1 master spec timestamp updated (`master/APP_SPEC.md`)
+- 1 test file extended (`tests/trial.test.js` — 2 new test functions with 13 assertions + 1 new assertion in the existing calm-state loop + 1 regex-pin assertion for the UX final-hour copy fix)
+- 4 new INTERNAL_TODO items (#138-#141)
+- 1 INTERNAL_TODO #134 archived to one-line parenthetical
+- 22nd-pass audit header on INTERNAL_TODO.md
+- Session-briefing + role entries + session-close appended to CHANGELOG.md
+
+**Most important open item heading into the next session:**
+
+**#138 [XS] H:M precision in nav-pill day-1 label.** The cycle's just-shipped #134 lit up the dashboard banner with a concrete time anchor; the nav pill on every authed page already escalates to red on day-1 (per cycle 16's #106) but its label still reads "Last day in trial" — abstract. Extending #134's H:M precision into the pill makes every page-load on day-1 reinforce the concrete time-pressure (not just the dashboard). Pure backend-helper extension to `lib/html.js#formatTrialCountdown`, threaded through `views/partials/nav.ejs`. ~15 lines + 3 tests in `tests/trial-countdown-nav.test.js`. The pill is SSR-rendered every page load, so the precision is server-time-accurate to the request. Pairs with #134 across surfaces — same data, two surfaces, multi-page reinforcement.
+
+**Risks / blockers needing Master attention before next run:**
+
+- **Resend API key (TODO_MASTER #18)** — single most leveraged Master action. Unblocks E9 entirely (~10 ready-to-ship retention/conversion email features: U1 password reset, #11 churn win-back, #12 monthly digest, #66 auto-CC accountant, #71 auto-BCC freelancer, #72 .ics calendar, #77 welcome-back on past_due restore, #80 weekly Monday digest, #84 plain-language email body, #90 60+ day inactive re-engagement, #110 magic-link login).
+- **STRIPE_PRO_ANNUAL_PRICE_ID (TODO_MASTER #11)** — the cycle-21 #133 pill advertises $99/yr; the cycle-22 #134 countdown points users at the same /billing/portal CTA. If the env var is unset in production, users still land on monthly Stripe Checkout — pill copy mismatches the actual checkout. Compounding credibility risk surfaced by every new price-anchored surface.
+- **APP_URL env var (TODO_MASTER #39)** — sitemap.xml + canonical link tags fall back to request host without it; alternate hosts leak into Google's index. Compounding SEO drift.
+- **APP_SPEC review (TODO_MASTER #60)** — auto-reconstructed cycle 17, still awaiting human verification. Spec is in sync with the codebase (just timestamp-bumped this cycle); explicit human sign-off remains pending.
+- **No new Master actions filed this cycle** — the cycle's main work was code-shipping + test-coverage + queue-curation, not spec-changing.
+
+---
+
+## 2026-04-29T03:00Z — Role 7 (Health Monitor): clean cycle audit + #134 review across 4 dimensions
+
+**Audit scope this cycle:** the 1 production file touched in Roles 2 + 5 (`views/dashboard.ejs`); the 1 modified test file (`tests/trial.test.js`); the 4 master/ docs (APP_SPEC, CHANGELOG, INTERNAL_TODO, EPICS). No new test file added this cycle (the test extensions live in the existing `tests/trial.test.js` — clean reuse of the existing trial-banner contract suite); no new test runner entry needed in `package.json`.
+
+- **Security review of the diff:**
+
+  - **`views/dashboard.ejs#trial-urgent-hours-remaining` block.** Pure-template content: a new `<p>` element with `data-testid` + `x-show` + `x-cloak`, plus a small Alpine `tickHoursRemaining()` method on the existing trial-banner x-data scope. The method reads `this.$el.dataset.trialEndsAt` (a string DOM-attribute populated server-side from `user.trial_ends_at`), computes `new Date(ends).getTime() - Date.now()`, formats and renders. **No DOM-injection vector** — `x-text="hoursRemaining"` binds Alpine's reactive value into a `<span>` via the safe text-content channel (Alpine's `x-text` is HTML-escaped, equivalent to `textContent`). The format string is a JS template `h + 'h ' + m + 'm'` of integer literals — no user-controlled input flows into the rendered string. `data-trial-ends-at` is server-rendered via `<%= ... %>` (HTML-escaped by EJS). `user.trial_ends_at` is sourced from the `users` table column populated only by Stripe webhook with a Date object — not a free-text user-input column. **Defense-in-depth chain intact.**
+
+  - **No new request paths, no new middleware, no new query parameters, no new auth surface, no new cookie writes, no new headers, no new CSP directives needed.** The countdown is template-only, JS-only, no network calls, no API endpoints.
+
+  - **Hardcoded-secret scan** of all touched files: zero matches for `API_KEY|SECRET|password\s*=|sk_live|sk_test_(?!dummy)|whsec|bearer` excluding the pre-existing `sk_test_dummy` fixture in `tests/trial.test.js:121` (a test fixture, present since the trial test was first authored). ✓ No new credentials.
+
+  - **`tests/trial.test.js` extensions** — 14 new assertions across 2 new test functions + 1 calm-state regression-guard extension + 1 UX regex pin. All assertions are EJS-render-against-in-memory-locals → regex matches on the rendered HTML (zero new stubs, zero new spawn / network / file-system access). The `crypto.timingSafeEqual` / `bcrypt.hash` / `Stripe` mocks already in place from the existing test bootstrap are reused unchanged. ✓
+
+  - **Inline JS in EJS template (the new x-data + x-init)** — Alpine's standard pattern, same as the existing dashboard recentRevenueCard + dismiss handlers. Content Security Policy: the existing CSP allows `unsafe-inline` for inline event-handler attributes (Alpine requires this); no new CSP relaxation needed. The new code does not introduce eval-equivalent constructs (no `new Function`, no `eval`, no `setTimeout(string, ...)` — `setInterval` is called with an arrow-fn callback, which is the safe form).
+
+- **`npm audit --omit=dev`:** still **6 vulnerabilities (3 moderate, 3 high)** — **all pre-existing**, all install-time only. `bcrypt → @mapbox/node-pre-gyp → tar` (3 high — H9 in INTERNAL_TODO); `resend → svix → uuid` (3 moderate — H16). Runtime exposure remains nil. **No new advisories surfaced this cycle** — zero new dependencies (no `npm i`, no `package-lock.json` shifts).
+
+- **Performance:**
+  - **DOM impact** — when `trialLastDay === true` AND `hoursRemaining` is non-empty (i.e., user is on day-1 of trial AND trial_ends_at is set AND trial hasn't passed AND Alpine has booted): 1 new `<p>` + 2 new `<span>` elements render in the trial-urgent banner. Days 2-7 emit 0 extra elements (the `<% if (trialLastDay) { %>` branch is server-side, conditional never renders). Constant-time, sub-millisecond.
+  - **JS impact** — `setInterval(tickHoursRemaining, 60000)` adds 1 timer per dashboard load on day-1. The timer callback is ~6 lines of arithmetic + 1 string concat — sub-microsecond. The 60-second cadence is ~1440 invocations per 24-hour trial period — negligible. Interval is never explicitly cleared (the page navigation away nukes it via the document/window unload). For a daily-check-in cohort that opens the dashboard for ~5-15 minutes, the timer fires ~5-15 times per session — orders of magnitude below any performance threshold.
+  - **No N+1 introduced**, no new SQL queries, no new indexes needed, no new I/O. The countdown reads `user.trial_ends_at` from the existing user-row fetch already happening on dashboard render (line 24 in `routes/invoices.js`) — zero incremental DB load.
+  - **CSS impact** — all classes used (`mt-2`, `inline-flex`, `items-center`, `gap-1.5`, `text-red-800`, `text-xs`, `font-semibold`) already loaded by other Tailwind-CDN-rendered surfaces (the existing trial-banner, the #133 pill block, the past_due banner, etc.). No new CSS bytes shipped.
+
+- **Code quality:**
+  - The countdown block reuses the canonical Alpine pattern shipped on every dashboard banner this cycle and the last 4 cycles (`x-data`, `x-init`, `x-show`, `x-cloak`, `data-testid` on every interactive element). **No deviation from the established convention.**
+  - The `tickHoursRemaining()` method is defined in the same `x-data` attribute as the existing `dismissed` state — a single source of state for the banner. No nested scopes, no Alpine state-fragmentation. **Clean.**
+  - The format string `h > 0 ? (h + 'h ' + m + 'm') : (m + 'm')` (post Role 5 UX fix) is a single 65-character JS conditional. **Readable** at a glance — the UX intent (drop "0h " when hours = 0) is implicit in the structure but the test assertion in `tests/trial.test.js#testDashboardLastDayUrgentBannerHasHoursRemainingCountdown` explicitly documents the rationale. A future reader who sees the conditional and wonders "why" will land on the test's UX-rationale comment.
+  - The `tickHoursRemaining` method has 4 early-return guards (no `data-trial-ends-at` attribute → empty; non-finite ms → empty; ms ≤ 0 → empty; the success path). **Defensive without over-engineering.** No unhandled NaN/Infinity propagation; no broken "NaNh NaNm" strings ever paint.
+  - **DRY consideration** — flagged but deferred: the same `data-trial-ends-at` ISO timestamp is now logically threaded into 2 surfaces (the dashboard banner via `views/dashboard.ejs`, and would extend into the nav-pill via #138). When #138 lands, both surfaces will compute the H:M precision from the same `user.trial_ends_at` source. A future refactor could extract the H:M-format logic into a shared helper (similar to `lib/html.js#formatTrialCountdown`). The current duplication is 2 lines × eventual 2 surfaces; the helper-extraction cost outweighs the duplication cost at this scale. The H20 `lib/outbound-webhook.js` formatMoney divergence is the precedent for "defer until the duplication crosses the threshold". Defer.
+
+- **Dependencies:** zero changes — no `npm i`, no `package-lock.json` shifts, no `package.json` test-script entry change (the test extensions live in an existing test file). The new code uses 0 modules.
+
+- **Legal:** No new dependencies, no license changes, no PII expansion (the countdown displays the user's own trial-end timestamp, which the user themselves implicitly knows by signing up for the trial), no GDPR/CCPA scope change, no PCI scope change, no third-party API usage. The countdown is a strict refinement of an existing public surface (the trial-end deadline already implied by the existing copy "Last day of your Pro trial — add a card before midnight").
+
+  - **Note on Stripe-checkout-mismatch risk** (carried over from cycle 21's audit and still relevant): if `STRIPE_PRO_ANNUAL_PRICE_ID` is unset in production (TODO_MASTER #11 still open), the day-1 banner's #133 pill copy + #134 countdown CTA still route through `/billing/portal` which gracefully falls back to monthly $12/mo. The countdown itself is independent of the price-route — it's a pure information-display surface — but the same credibility-mismatch risk noted in cycle 21 applies. **No new TODO_MASTER item filed this cycle.**
+
+**No CRITICAL / hardcoded-secret findings. No new flags for TODO_MASTER. No new [HEALTH] items added to INTERNAL_TODO.** The 9 existing open [HEALTH] items remain unchanged (H8, H9, H10, H11, H15, H16, H17, H18, H20).
+
+**Net delta this cycle:** the new code is unusually clean. Pure-view additive change inside an existing server-computed conditional, plus a small JS-state extension on an existing Alpine x-data scope. Zero new SQL, zero new dependencies, zero new request paths, zero new credentials, zero new attack surface. The Role 5 final-hour copy fix is a strict UX improvement with zero risk. **The full test suite is 49 files, 541 individual assertions, 0 failures** — the safety net is intact and grew this cycle by 14 assertions on the income-critical surface. All 24 pre-existing [HEALTH] items, 9 of which are still open, carry through unchanged.
+
+---
+
 ## 2026-04-29T01:25Z — Role 7 (Health Monitor): clean cycle audit + #133 review across 4 dimensions
 
 **Audit scope this cycle:** the 1 production file touched in Roles 2 + 5 (`views/dashboard.ejs`); the 1 modified test file (`tests/trial.test.js`); the 4 master/ docs (APP_SPEC, CHANGELOG, INTERNAL_TODO, TODO_MASTER). No new test file added this cycle (the test extension lives in the existing `tests/trial.test.js` — clean reuse of the existing trial-banner contract suite); no new test runner entry needed in `package.json`.

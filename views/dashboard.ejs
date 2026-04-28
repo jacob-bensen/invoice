@@ -48,8 +48,11 @@
 
   <% if (locals.days_left_in_trial && days_left_in_trial > 0) { %>
     <% const trialLastDay = days_left_in_trial === 1; %>
+    <% const trialEndsIso = (user && user.trial_ends_at) ? new Date(user.trial_ends_at).toISOString() : ''; %>
     <div
-      x-data="{ dismissed: false }"
+      x-data="{ dismissed: false, hoursRemaining: '', tickHoursRemaining() { const ends = this.$el.dataset.trialEndsAt; if (!ends) { this.hoursRemaining = ''; return; } const ms = new Date(ends).getTime() - Date.now(); if (!isFinite(ms) || ms <= 0) { this.hoursRemaining = ''; return; } const totalMinutes = Math.floor(ms / 60000); const h = Math.floor(totalMinutes / 60); const m = totalMinutes % 60; this.hoursRemaining = h > 0 ? (h + 'h ' + m + 'm') : (m + 'm'); } }"
+      x-init="tickHoursRemaining(); setInterval(() => tickHoursRemaining(), 60000)"
+      data-trial-ends-at="<%= trialEndsIso %>"
       x-show="!dismissed"
       x-cloak
       data-testid="trial-banner"
@@ -76,6 +79,12 @@
           <% } %>
         </p>
         <% if (trialLastDay) { %>
+          <p class="mt-2" data-testid="trial-urgent-hours-remaining" x-show="hoursRemaining" x-cloak>
+            <span class="inline-flex items-center gap-1.5 text-red-800 text-xs font-semibold">
+              <span aria-hidden="true">&#9203;</span>
+              Trial ends in <span data-testid="trial-urgent-hours-remaining-value" x-text="hoursRemaining"></span>
+            </span>
+          </p>
           <p class="mt-2" data-testid="trial-urgent-annual-pill">
             <span class="inline-flex items-center gap-1.5 bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full">
               <span aria-hidden="true">&#128176;</span>

@@ -394,13 +394,115 @@ async function testDashboardLastDayUrgentBannerHasAnnualSavingsPill() {
     'decorative 💰 emoji must be wrapped in <span aria-hidden="true"> for screen-reader cleanliness (matches canonical settings/upgrade-modal pattern)');
 }
 
+async function testDashboardLastDayUrgentBannerHasHoursRemainingCountdown() {
+  // #134 — the day-1 urgent banner must surface a live hours-remaining
+  // countdown so the urgency signal is concrete-time-anchored, not just
+  // abstract "midnight" wording. The countdown is JS-driven (Alpine
+  // ticker reading data-trial-ends-at, recomputing every 60s), so the
+  // assertions below pin the contract that lets the JS fill in the
+  // value at runtime: data-trial-ends-at attribute carries the ISO
+  // timestamp, the countdown <p> has the right test-id, x-show binds
+  // to a non-empty string, x-cloak prevents flash-of-unbound-template,
+  // and the bind-target span carries x-text="hoursRemaining".
+  const tpl = fs.readFileSync(path.join(__dirname, '..', 'views', 'dashboard.ejs'), 'utf8');
+  const trialEndsAt = new Date(Date.now() + 14 * 3600 * 1000); // 14 hours from now
+  const html = ejs.render(tpl, {
+    user: { plan: 'pro', invoice_count: 0, subscription_status: null, trial_ends_at: trialEndsAt },
+    invoices: [],
+    flash: null,
+    days_left_in_trial: 1,
+    title: 'Dashboard'
+  }, { views: [path.join(__dirname, '..', 'views')], filename: path.join(__dirname, '..', 'views', 'dashboard.ejs') });
+
+  // Countdown element rendered with the right test id.
+  assert.ok(/data-testid=["']trial-urgent-hours-remaining["']/.test(html),
+    'day-1 urgent banner must render the hours-remaining element (data-testid=trial-urgent-hours-remaining) for #134');
+  // The bind-target span is what receives x-text="hoursRemaining" — pin
+  // the contract so a future refactor that flattens the markup fails loudly.
+  assert.ok(/data-testid=["']trial-urgent-hours-remaining-value["'][^>]*x-text=["']hoursRemaining["']/.test(html)
+         || /x-text=["']hoursRemaining["'][^>]*data-testid=["']trial-urgent-hours-remaining-value["']/.test(html),
+    'countdown must bind hoursRemaining via x-text on the data-testid=trial-urgent-hours-remaining-value span');
+  // x-show gates rendering on the non-empty string set by tickHoursRemaining()
+  // so the countdown is hidden before Alpine boots AND when trial_ends_at is
+  // empty / past — graceful degradation, no broken "NaNh NaNm" ever paints.
+  assert.ok(/data-testid=["']trial-urgent-hours-remaining["'][^>]*x-show=["']hoursRemaining["']/.test(html),
+    'countdown <p> must use x-show="hoursRemaining" so the line stays hidden when the JS bind is empty');
+  assert.ok(/data-testid=["']trial-urgent-hours-remaining["'][^>]*x-cloak/.test(html),
+    'countdown <p> must use x-cloak to prevent flash-of-unbound-template');
+  // The trial-banner root element carries the ISO timestamp the JS reads.
+  // The "$" anchor would be too brittle (other attrs may follow); just check
+  // the attribute is present and non-empty for a future-dated trial.
+  const isoMatch = html.match(/data-trial-ends-at=["']([^"']+)["']/);
+  assert.ok(isoMatch, 'trial-banner root must carry the data-trial-ends-at attribute');
+  assert.ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(isoMatch[1]),
+    `data-trial-ends-at must be an ISO 8601 timestamp; got "${isoMatch[1]}"`);
+  // The decorative ⏳ emoji must be aria-hidden — same accessibility
+  // contract as the #133 pill emoji and the canonical settings/upgrade-modal
+  // pattern. Screen readers announce the textual "Trial ends in 14h 23m"
+  // not the emoji name.
+  assert.ok(/<span aria-hidden=["']true["']>[^<]*&#9203/.test(html),
+    'decorative ⏳ emoji must be wrapped in <span aria-hidden="true"> for screen-reader cleanliness');
+  // The tick method must be wired into x-init with a 60000ms interval so
+  // the countdown updates without page reload. The body of x-data/x-init
+  // can contain JS string literals (single quotes) — match the outer
+  // double-quote delimiter and allow anything except a closing double-quote.
+  assert.ok(/x-init="[^"]*tickHoursRemaining\(\)[^"]*setInterval[^"]*60000/.test(html),
+    'trial-banner x-init must call tickHoursRemaining() and setInterval with a 60000ms cadence so the countdown updates without page reload');
+  // The tickHoursRemaining method must be defined on the trial-banner
+  // x-data scope so the x-init reference resolves at runtime.
+  assert.ok(/x-data="[^"]*tickHoursRemaining\(\)\s*\{/.test(html),
+    'trial-banner x-data scope must define the tickHoursRemaining() method');
+  // UX contract: when hours = 0 (final hour of trial) the format drops the
+  // "0h " prefix so the user sees "23m" not "0h 23m". A future refactor that
+  // collapses to a flat single-format string ("h + 'h ' + m + 'm'") would
+  // regress the cleaner final-hour copy. Pin the conditional pattern.
+  assert.ok(/h > 0 \? \(h \+ 'h ' \+ m \+ 'm'\) : \(m \+ 'm'\)/.test(html),
+    'tickHoursRemaining must drop the "0h" prefix when hours = 0 (cleaner copy in the final hour: "23m" not "0h 23m")');
+}
+
+async function testDashboardLastDayUrgentBannerHandlesMissingTrialEndsAt() {
+  // #134 — graceful degradation contract. When user.trial_ends_at is null
+  // or missing (edge case: race between webhook clearing the field and
+  // dashboard render), the data-trial-ends-at attribute renders as an
+  // empty string. The JS contract treats empty-string the same as past-
+  // trial — hoursRemaining stays empty, the countdown line stays hidden
+  // via x-show. The rest of the urgent banner (heading, body, pill, CTA)
+  // must still render normally so the user is never stranded on a broken
+  // banner.
+  const tpl = fs.readFileSync(path.join(__dirname, '..', 'views', 'dashboard.ejs'), 'utf8');
+  const html = ejs.render(tpl, {
+    user: { plan: 'pro', invoice_count: 0, subscription_status: null /* trial_ends_at intentionally absent */ },
+    invoices: [],
+    flash: null,
+    days_left_in_trial: 1,
+    title: 'Dashboard'
+  }, { views: [path.join(__dirname, '..', 'views')], filename: path.join(__dirname, '..', 'views', 'dashboard.ejs') });
+
+  // The attribute renders as the empty string (the EJS conditional ternary
+  // handles missing/null safely — empty string is the documented contract).
+  assert.ok(/data-trial-ends-at=["']["']/.test(html),
+    'data-trial-ends-at must render as an empty string when user.trial_ends_at is missing/null (graceful degradation contract)');
+  // The countdown <p> still renders in the DOM (so x-show can drive
+  // visibility from JS state), but x-show="hoursRemaining" gates the
+  // display — when hoursRemaining is empty the line is invisible.
+  assert.ok(/data-testid=["']trial-urgent-hours-remaining["']/.test(html),
+    'countdown element must still render in the DOM for graceful x-show degradation');
+  // Rest of the urgent banner is intact — headings, pill, CTA all unchanged.
+  assert.ok(/Last day of your Pro trial/.test(html),
+    'urgent banner heading must render unchanged when trial_ends_at is missing');
+  assert.ok(/data-testid=["']trial-urgent-annual-pill["']/.test(html),
+    '#133 annual-savings pill must render unchanged when trial_ends_at is missing');
+  assert.ok(/Add payment method/.test(html),
+    'CTA must render unchanged when trial_ends_at is missing');
+}
+
 async function testDashboardCalmBannerOnEarlierDays() {
   // Regression guard — the urgent branch must NOT fire on day 2+, the
   // calm-state styling and copy must persist for the rest of the trial.
   const tpl = fs.readFileSync(path.join(__dirname, '..', 'views', 'dashboard.ejs'), 'utf8');
   for (const days of [2, 3, 5, 7]) {
     const html = ejs.render(tpl, {
-      user: { plan: 'pro', invoice_count: 0, subscription_status: null },
+      user: { plan: 'pro', invoice_count: 0, subscription_status: null, trial_ends_at: new Date(Date.now() + days * 86400000) },
       invoices: [],
       flash: null,
       days_left_in_trial: days,
@@ -421,6 +523,11 @@ async function testDashboardCalmBannerOnEarlierDays() {
     // 7 trial days would dilute the day-1 urgency signal.
     assert.ok(!/data-testid=["']trial-urgent-annual-pill["']/.test(html),
       `day ${days} banner must NOT render the urgent-branch annual-savings pill (#133)`);
+    // #134 — countdown is also urgent-branch-only. Calm days must NOT
+    // render the countdown line — same reason as the pill: leaking it
+    // across all 7 trial days would dilute the day-1 urgency signal.
+    assert.ok(!/data-testid=["']trial-urgent-hours-remaining["']/.test(html),
+      `day ${days} banner must NOT render the urgent-branch hours-remaining countdown (#134)`);
   }
 }
 
@@ -476,7 +583,9 @@ async function run() {
     ['Dashboard: renders trial banner when days_left_in_trial > 0', testDashboardRendersTrialBannerWhenDaysLeftPositive],
     ['Dashboard: last-day urgent banner copy + red styling on day 1 (#45)', testDashboardLastDayUrgentBanner],
     ['Dashboard: last-day urgent banner surfaces annual-savings pill (#133)', testDashboardLastDayUrgentBannerHasAnnualSavingsPill],
-    ['Dashboard: calm banner persists for days 2-7 (regression guard for #45 + #133)', testDashboardCalmBannerOnEarlierDays],
+    ['Dashboard: last-day urgent banner has hours-remaining countdown (#134)', testDashboardLastDayUrgentBannerHasHoursRemainingCountdown],
+    ['Dashboard: hours-remaining countdown handles missing trial_ends_at (#134)', testDashboardLastDayUrgentBannerHandlesMissingTrialEndsAt],
+    ['Dashboard: calm banner persists for days 2-7 (regression guard for #45 + #133 + #134)', testDashboardCalmBannerOnEarlierDays],
     ['Dashboard: omits trial banner when no trial / 0 days left', testDashboardOmitsBannerWhenNoTrial],
     ['Pricing: CTA reads "Start 7-day free trial"', testPricingCtaCopyMentionsTrial],
     ['Modal: CTA reads "Start 7-day free trial"', testUpgradeModalCtaCopyMentionsTrial]
