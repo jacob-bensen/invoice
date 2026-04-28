@@ -213,7 +213,7 @@
     %>
     <% if (locals.recentRevenue && recentRevenue) { %>
       <div
-        x-data='recentRevenueCard(<%- JSON.stringify({ days: recentRevenue.days, totalPaid: recentRevenue.totalPaid, invoiceCount: recentRevenue.invoiceCount, clientCount: recentRevenue.clientCount }).replace(/</g, "\\u003c") %>)'
+        x-data='recentRevenueCard(<%- JSON.stringify({ days: recentRevenue.days, totalPaid: recentRevenue.totalPaid, invoiceCount: recentRevenue.invoiceCount, clientCount: recentRevenue.clientCount, unpaidCount: recentRevenue.unpaidCount }).replace(/</g, "\\u003c") %>)'
         data-testid="recent-revenue"
         :data-days="days"
         data-days="<%= recentRevenue.days %>"
@@ -275,6 +275,24 @@
           role="status"
           data-testid="recent-revenue-error"
         >Couldn't load that window — showing the previous one.</p>
+        <p
+          x-show="totalPaid === 0 && unpaidCount > 0"
+          x-cloak
+          class="text-xs text-emerald-800 mt-2"
+          role="status"
+          aria-live="polite"
+          data-testid="recent-revenue-quiet-cta"
+        >
+          <a
+            href="#invoices-table"
+            class="inline-flex items-center gap-1 font-medium underline decoration-dotted hover:decoration-solid"
+            data-testid="recent-revenue-quiet-cta-link"
+          >
+            <span aria-hidden="true">📨</span>
+            Send <span x-text="unpaidCount"><%= recentRevenue.unpaidCount %></span> follow-up<span x-show="unpaidCount !== 1">s</span> now
+            <span aria-hidden="true">→</span>
+          </a>
+        </p>
       </div>
       <script>
         // Backs the recent-revenue card window toggle (#117). Initial state
@@ -313,6 +331,11 @@
             totalPaid: initial.totalPaid,
             invoiceCount: initial.invoiceCount,
             clientCount: initial.clientCount,
+            // unpaidCount drives the #127 quiet-window recovery CTA.
+            // Not windowed — counts all currently open invoices
+            // (status IN ('sent','overdue')) so the "send follow-ups"
+            // prompt reflects every invoice that could use a nudge.
+            unpaidCount: Number(initial.unpaidCount) || 0,
             loading: false,
             errored: false,
             init() {
@@ -350,10 +373,22 @@
                   this.totalPaid = data.card.totalPaid;
                   this.invoiceCount = data.card.invoiceCount;
                   this.clientCount = data.card.clientCount;
+                  // unpaidCount may be absent on legacy API shapes —
+                  // preserve the existing value rather than zeroing it,
+                  // so the CTA stays accurate during a partial deploy.
+                  if (typeof data.card.unpaidCount === 'number') {
+                    this.unpaidCount = data.card.unpaidCount;
+                  }
                 } else {
                   this.totalPaid = 0;
                   this.invoiceCount = 0;
                   this.clientCount = 0;
+                  // card === null means no paid invoices in the window;
+                  // the unpaidCount field is still useful so the CTA
+                  // can fire. Read from the top-level response if present.
+                  if (typeof data.unpaidCount === 'number') {
+                    this.unpaidCount = data.unpaidCount;
+                  }
                 }
                 // Only persist after a successful fetch — never persist
                 // a window the server couldn't honour.
@@ -388,7 +423,7 @@
 
     <!-- Invoice table -->
     <% const isProUser = user && (user.plan === 'pro' || user.plan === 'agency'); %>
-    <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+    <div id="invoices-table" class="bg-white rounded-2xl border border-gray-200 overflow-hidden scroll-mt-6">
       <table class="w-full text-sm">
         <thead class="bg-gray-50 border-b border-gray-200">
           <tr>

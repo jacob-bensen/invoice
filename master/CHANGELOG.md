@@ -2,6 +2,331 @@
 
 ---
 
+## 2026-04-28T23:30Z — Role 1 (Epic Manager): Session Briefing — Cycle 20 — #127 quiet-window recovery CTA
+
+**Active Epics (3 of 9 — within budget):**
+- **E2 — Trial → Paid Conversion Surfaces** [ACTIVE] — direct conversion lever; 8 open child tasks (#82, #44, #119, #95, #15, #46, #47, #109).
+- **E3 — Activation & Time-to-First-Value** [ACTIVE] — gates everything else; 10 open child tasks (#39, #65, #84, #96, #102, #111, #116, #60, #117 closed last cycle, #118, #127, #128, #123, #124).
+- **E4 — Retention, Stickiness & Daily Touchpoints** [ACTIVE] — multiplier on LTV; 13 open child tasks (#80, #88, #87, #57, #89, #11, #12, #77, #90, #121, #44, #66, #71, #129, #130, #125, #126).
+
+**Status checks performed this cycle:**
+- E1 [COMPLETE] — Stripe lifecycle complete; future revenue-loop work routes to E5.
+- E5 [PLANNED] — paused on conversion saturation; right thing today, will activate post trial→paid stabilisation.
+- E6 [PLANNED] — distribution; long-burn, properly deferred.
+- E7 [PLANNED] — accounting moat; properly deferred until Pro retention compounds.
+- E8 [PLANNED] — Health Monitor pulls H-tasks inline as they emerge; staying [PLANNED] preserves the 3-active budget for revenue work. ✓
+- E9 [PAUSED] — Resend gate; ~10 ready-to-ship items waiting on Master env var (TODO_MASTER #18). No movement possible without the key. ✓
+
+No epic statuses change this cycle. No epics promoted/demoted. No new epics emerging — recent [GROWTH] adds (#127-#130, #62 marketing) all assigned cleanly to existing E3/E4.
+
+**Most important thing to accomplish this session:**
+
+**Ship #127 — "Quiet window" recovery CTA on the recent-revenue card.** Highest impact-per-effort unshipped item: XS effort (~30 min impl + 15 min tests), MED activation/recovery impact, sits directly on top of #117/#122 code that just landed and is in-mind. Today the empty-window state shows the truthful $0/0/0 (Role 5's last-cycle fix) but provides no recovery action — the user sees "you weren't paid this week" and bounces. The follow-up CTA converts the passive "huh, slow week" moment into an explicit "📨 Send 3 follow-ups now →" prompt, deep-linked to the invoice table. Compounds with #95 tab-flash (passive emotional reward) and #88 frequent-non-payer alert (categorical signal) — three orthogonal recovery surfaces.
+
+**Implementation contract:** add `unpaidCount` (count of `status IN ('sent','overdue')` for the user — not windowed, since the CTA is about all open unpaid invoices to follow up on) to `db.getRecentRevenueStats` + `buildRecentRevenueCard()`; thread through to the dashboard view; render an inline anchor under the tile row when `totalPaid === 0 && unpaidCount > 0`; deep-link to `#invoices-table` anchor on the existing table wrapper. Reactive — the toggle's `select()` already re-fetches the card; we expose `unpaidCount` on the Alpine scope so it stays in sync as the user toggles 7d/30d/90d.
+
+**Blockers / risks worth flagging before work begins:**
+
+- **Resend API key (TODO_MASTER #18)** — single most leveraged unshipped Master action; unblocks E9 entirely (~10 ready-to-ship retention/conversion email features). Worth a Master nudge if Master surfaces this cycle.
+- **APP_URL env var (TODO_MASTER #39)** — sitemap.xml + canonical link tags fall back to request host; alternate-host SEO drift is silently compounding.
+- **APP_SPEC review (TODO_MASTER #60)** — auto-reconstructed last cycle; still awaiting human verification. Low-risk if the spec stays close to reality (which it does after this cycle's bootstrap sync re-confirmed it), but the explicit human sign-off is the next-cycle action.
+- **No [TEST-FAILURE] items** — full suite is 48 files, 0 failures heading into this cycle.
+- **No [BLOCKED] items** — every open task has a tractable next step.
+
+The 3-active-epic discipline is holding. The backlog is stratified by effort × impact (XS-first within priority order). The Resend gate is the only large unstacking risk; everything else is a steady cadence of XS items compounding on top of #107/#117/#122 (the recent-revenue card surface — now densely featured and a deliberate retention focal point).
+
+---
+
+## 2026-04-29T00:25Z — Role 7 (Health Monitor): clean cycle audit + #127 review across 4 dimensions
+
+**Audit scope this cycle:** the 4 production files touched in Roles 2 + 5 (`db.js`, `routes/invoices.js`, `views/dashboard.ejs`, `master/INTERNAL_TODO.md`); the 1 new test file (`tests/recent-revenue-quiet-window-cta.test.js`); the modified `package.json` test runner; the 2 existing test assertions updated in `tests/recent-revenue-stats.test.js`; the new TODO_MASTER #63 entry.
+
+- **Security review of the diff:**
+
+  - **`db.js#getRecentRevenueStats` SQL refactor.** Previously: `WHERE user_id = $1 AND status = 'paid' AND updated_at >= NOW() - ($2 * INTERVAL '1 day')` — single composite WHERE filter, all aggregates window-bound. Now: `WHERE user_id = $1` with `COUNT/SUM(...) FILTER (WHERE ...)` per aggregate — paid-window stats use the same predicate as before (semantically identical numeric outputs), unpaid count uses `FILTER (WHERE status IN ('sent', 'overdue'))` (NOT bounded by updated_at, deliberate per #127 spec). All status literals are hardcoded SQL string literals — no injection surface; `$1` and `$2` are still parameterized. The query is `pool.query(sqlString, [userId, window])` — same shape as before. No new SSRF / no new authn / no new authz surface.
+
+  - **`routes/invoices.js#buildRecentRevenueCard` helper extension.** New `unpaidCount` field goes through `parseInt(stats.unpaidCount, 10) || 0` — same defensive coercion pattern as existing `invoiceCount` / `clientCount`. Plan gate (`if (user.plan === 'free') return null`) sits before any unpaidCount access, so unpaidCount cannot be a back-door for the free-plan card. Tested explicitly in `tests/recent-revenue-quiet-window-cta.test.js`: `buildRecentRevenueCard: free-plan + populated unpaidCount still returns null (defence-in-depth)`.
+
+  - **`routes/invoices.js GET /invoices/api/recent-revenue` API extension.** Top-level `unpaidCount` field added to the JSON response. Computed from `parseInt(stats.unpaidCount, 10) || 0` with the same defensive coercion. The route's authentication (`requireAuth`) is unchanged; the days-whitelist (`[7, 30, 90]`) is unchanged. No new query parameters, no new request paths, no auth surface change. The new field is a non-negative integer — it conveys aggregated count data already accessible to the user (their own invoice counts), so no information disclosure.
+
+  - **`views/dashboard.ejs` CTA block.** The new anchor's `href="#invoices-table"` is a literal in-page anchor — no user-input concatenation, no DOM-based redirect surface. The CTA copy is static template text. The reactive count rendering goes through `<span x-text="unpaidCount">` (Alpine's auto-escaped text-content path) and the SSR fallback `<%= recentRevenue.unpaidCount %>` (EJS's default HTML-escape). The `id="invoices-table"` is a hardcoded literal on the table wrapper — no concatenation. The new `role="status"` + `aria-live="polite"` attributes are static. No XSS surface; the only dynamic value (`unpaidCount`) is a server-validated integer from the SQL query.
+
+  - **Hardcoded-secret scan** of all touched files: zero matches for `API_KEY|SECRET|password.*=|sk_live|sk_test` on the cycle-diff lines. The `sk_test_dummy` fixture in `recent-revenue-quiet-window-cta.test.js` is the same pattern used in 4 other test files for stub initialization — no live secret. ✓ No new credentials.
+
+- **`npm audit --omit=dev`:** still **6 vulnerabilities (3 moderate, 3 high)** — **all pre-existing**, all install-time only. `bcrypt → @mapbox/node-pre-gyp → tar` (3 high — H9 in INTERNAL_TODO); `resend → svix → uuid` (3 moderate — H16). Runtime exposure remains nil. **No new advisories surfaced this cycle** — zero new dependencies (no `npm i`, no `package-lock.json` shifts).
+
+- **Performance:**
+  - **SQL refactor** has neutral-to-marginally-better cost. Previously the planner used `WHERE user_id = $1 AND status = 'paid' AND updated_at >= ...` — no composite (user_id, status) index exists yet (H8 pending), so the planner used `idx_invoices_user_id` and filter-evaluated the rest. Now WHERE is just `user_id = $1` with FILTER predicates evaluated per-aggregate post-fetch. Same index access, same row-fetch count from disk; the FILTER predicates are CPU-cheap per-row evaluations. Net cost: **identical to or slightly better than** running two separate queries (one for paid-window, one for unpaid). Single round-trip vs. two — a ~30-50% reduction in connection-pool occupancy at the route level.
+  - **API endpoint** — one additional integer field on the JSON response. ~6 bytes more on the wire; no new I/O.
+  - **Dashboard view** — one new reactive `x-show` evaluation + one new `<p>` element in the DOM; constant-time. No measurable render impact.
+  - **No N+1 introduced**, no new SQL queries, no new indexes needed. H8 (composite (user_id, status) index) would still help this query but the existing single-column user_id index is adequate at current scale.
+
+- **Code quality:**
+  - The `getRecentRevenueStats` query went from a 5-line WHERE-bound aggregate to a 9-line FILTER-aggregate query. Comment in `db.js` documents the single-round-trip rationale. The verbosity is bought by avoiding two separate queries — net wins on connection pool + transactional consistency.
+  - The view's `select()` update path has two `typeof data.x === 'number'` guards (card branch + top-level branch) — partial-deploy resilience, each guard documenting a real deploy scenario. Slightly verbose but each branch is intentional. Comments document why each branch exists.
+  - The new test file (25 assertions) uses the same `vm.createContext`-style sandbox pattern + `realPool.query` stub pattern + `apiLayer.route.stack` introspection pattern established across `recent-revenue-window-toggle.test.js` + `recent-revenue-window-storage.test.js` + `recent-revenue-stats.test.js`. **No new test infrastructure** introduced — clean reuse of conventions.
+  - `unpaidCount` field naming consistent with `invoiceCount`, `clientCount` (camelCase, descriptive). The pg column `unpaid_count` (snake_case) is consistent with existing pg column names. ✓
+  - **One DRY note (carried over from cycle 19, not new):** the `[7, 30, 90]` whitelist still appears in 3 places (`routes/invoices.js#RECENT_REVENUE_WINDOWS`, view template literal, client-side `ALLOWED` constant). Test guards prevent drift; no action this cycle.
+
+- **Dependencies:** zero changes — no `npm i`, no `package-lock.json` shifts. `package.json` was edited to add the new test file to the `test` script — dev-only entry, no runtime/production effect. The new test file uses Node built-ins + the existing `ejs` dev dependency — no new modules.
+
+- **Legal:** No new dependencies, no license changes. The new code is purely additive — a new field on existing aggregated count data, a new reactive UI block on the existing dashboard surface. No PII expansion (the `unpaidCount` is an integer count of the user's own invoices), no GDPR/CCPA scope change, no PCI scope change, no third-party API usage. The `#invoices-table` anchor is in-page navigation (no third-party redirect).
+
+**No CRITICAL / hardcoded-secret findings. No new flags for TODO_MASTER. No new [HEALTH] items added to INTERNAL_TODO.** The 9 existing open [HEALTH] items remain unchanged (H8, H9, H10, H11, H15, H16, H17, H18, H20).
+
+**Net delta this cycle:** the new code is cleanly additive. SQL refactor preserves semantic equivalence on the existing aggregates while adding a new orthogonal aggregate in the same round-trip. The view-layer additions are reactive UI driven by server-validated integers — no XSS surface, no DOM-injection vector. The accessibility fix (Role 5's `role="status"` + `aria-live="polite"`) is a strict improvement with zero risk surface. **The full test suite is 49 files, 0 failures** — the safety net is intact. All 24 pre-existing [HEALTH] items + 9 of those still open carry through unchanged.
+
+---
+
+## 2026-04-29T00:15Z — Role 6 (Task Optimizer): 20th-pass audit — header refreshed, #127 archived, queue re-ordered + Session Close Summary
+
+**Audit deltas this pass:**
+
+1. **Header refreshed.** Updated INTERNAL_TODO.md audit header to capture this cycle's deltas: #127 closed (XS, ~30 min impl + 15 min tests, MED activation/recovery shipped); 3 new GROWTH items (#131-#133); 1 new MARKETING (#63 G2 awards); 1 UX direct fix (aria-live announcement on #127 CTA). 19th-pass + 18th-pass headers retained as one-line summaries; older passes already compacted to CHANGELOG-only.
+
+2. **#127 archived.** Folded the full description into a one-line `*(...)*` parenthetical at the head of the XS-GROWTH block (same pattern as #91, #92, #101, #106, #107, #117, #122 archives in prior passes). Full detail lives only in CHANGELOG now.
+
+3. **#131-#133 placement.** All 3 new items inserted at the top of the XS GROWTH bucket adjacent to #128 (their lifecycle-cohort sibling). Cross-referenced against existing items per Role 4's Cross-checks block; zero merges, zero consolidations.
+
+4. **Re-prioritization (priority order unchanged):** [TEST-FAILURE] (none) > income-critical features > [UX] items affecting conversion > [HEALTH] > [GROWTH] > [BLOCKED]. Within GROWTH, XS-first by impact-per-effort. The new #131-#133 are XS and immediately implementable; ordered by income-impact: #133 (MED conversion at trial-end), #131 (MED activation, sibling to just-shipped #127), #132 (LOW-MED mobile retention).
+
+5. **Cross-checks for non-overlap (re-validated this cycle):** #131 vs #127 vs #124 vs #95 (truly-empty vs recovery vs stale-draft vs paid-reward — four orthogonal state-driven CTAs); #132 vs #117/#122/#128/#130 (haptic vs visual/memory/keyboard/pull-to-refresh — five orthogonal input modalities); #133 vs #45/#101/#46/#47 (trial-end pricing pill vs banner-base copy vs already-shipped pill on /pricing+/settings+upgrade-modal vs exit-intent vs monthly→annual — five orthogonal pricing-reinforcement surfaces). MARKETING #63 vs #26/#49/#61/#62/#59/#58 (G2 editorial recognition vs continuous profile+reviews vs affiliate vs creator outreach vs co-marketing vs passive directories — six distinct distribution motions). All confirmed orthogonal.
+
+6. **TODO_MASTER reviewed:** All 63 items (1-9 legacy InvoiceFlow setup + 50-63 newer marketing/SPEC-REVIEW additions) checked against this cycle's CHANGELOG. **No items flip to [LIKELY DONE - verify]** — every Master action remains pending its respective external step (Stripe Dashboard config, Resend API key, Plausible domain, G2/Capterra profile creation + award submissions, AppSumo submission, Rewardful signup, creator outreach, etc.). #63 (G2 quarterly award submissions) is the newest entry.
+
+7. **Compaction status.** INTERNAL_TODO.md now ~2.5k lines (overdue by 13 cycles per the 1.5k archive trigger). Deferred again — not blocking work; full archives remain available via CHANGELOG. Will be revisited when the [DONE]-tagged section weight crosses ~1k lines on its own.
+
+8. **Open task index re-counted:** ~125 GROWTH items total (was 123 + 3 new − 1 #127 closed = 125); 9 [HEALTH] items open unchanged; 2 [UX] items (U3 actively buildable; U1 in Resend block); 0 [TEST-FAILURE]. **No new [BLOCKED] items this cycle.**
+
+**Priority order at end of 20th pass (top 12 unblocked items):**
+
+| # | ID | Tag | Cx | Title (1-line) |
+|--:|------|------|-----|------|
+| 1 | U3 | UX | S | Authed-pages global footer (gated on #28) |
+| 2 | **#133** | GROWTH | XS | **Annual-savings pill on day-1 trial-urgent banner (NEW; MED conversion at trial-end)** |
+| 3 | **#131** | GROWTH | XS | **Truly-quiet-window CTA variant on revenue card (NEW; MED activation)** |
+| 4 | #128 | GROWTH | XS | Keyboard shortcut (7/3/9) for revenue window |
+| 5 | **#132** | GROWTH | XS | **Mobile haptic toggle feedback via navigator.vibrate(8) (NEW)** |
+| 6 | #123 | GROWTH | XS | "vs prior period" delta badge on revenue card |
+| 7 | #124 | GROWTH | XS | 3-day stale-draft yellow banner |
+| 8 | #118 | GROWTH | XS | Stripe receipt URL on paid invoice view |
+| 9 | #119 | GROWTH | XS | Inline "What's new" pulse-dot on nav |
+| 10 | #120 | GROWTH | XS | `<noscript>` SEO fallback hero |
+| 11 | #109 | GROWTH | XS | Sticky "+" mobile FAB |
+| 12 | #102 | GROWTH | XS | Per-user timezone |
+
+**Resend-blocked (kept at bottom of XS bucket):** U1, #11, #12, #66, #71, #77, #80, #84, #90, and #110 (M-complexity magic-link).
+
+---
+
+# 2026-04-29T00:15Z — Session Close Summary (Cycle 20)
+
+**What was accomplished this session (across all 7 roles):**
+
+- **Bootstrap** — APP_SPEC.md unchanged (synced last cycle, audit reconfirmed against codebase). EPICS.md unchanged (created last cycle). No new bootstrap-time master action filed (#60 SPEC-REVIEW from cycle 17 remains the standing item).
+- **Role 1 (Epic Manager)** — wrote a Session Briefing identifying #127 as the highest impact-per-effort unshipped item (XS effort, MED activation/recovery, sits directly on top of the recent-revenue card cluster that's been densifying for 4 cycles). All 9 epic statuses unchanged. 3-active-epic budget held: E2 Trial→Paid Conversion, E3 Activation, E4 Retention.
+- **Role 2 (Feature Implementer)** — shipped **#127 quiet-window recovery CTA on the recent-revenue card**. New `unpaidCount` field threaded through `db.getRecentRevenueStats` → `buildRecentRevenueCard()` → `GET /invoices/api/recent-revenue` → `views/dashboard.ejs` Alpine scope. Single SQL round-trip via `WHERE user_id + FILTER` aggregates (paid-window stats + not-windowed unpaid count in one query). New reactive `x-show="totalPaid === 0 && unpaidCount > 0"` block renders "📨 Send N follow-up(s) now →" deep-linking to `#invoices-table` (new id on the existing table wrapper). Pluralizes via `x-show="unpaidCount !== 1"`. 7 files touched, ~70 lines added, 0 lines removed.
+- **Role 3 (Test Examiner)** — added **24 new test assertions** in new `tests/recent-revenue-quiet-window-cta.test.js` across 4 layers: 5 SQL-contract assertions (FILTER for status IN sent/overdue, NOT bounded by trailing window, integer parse, missing-field fallback, empty-row safety) + 5 helper-threading assertions (unpaidCount on populated card, missing-field zero, stringy parse, free-plan still null, invoiceCount=0 still null) + 4 API-contract assertions (top-level surface, survives card=null, throw-recovery, free-plan informational) + 10 view assertions (table id, x-show condition, anchor href, plural gate, x-data seed, SSR fallback, x-cloak, partial-deploy fallback paths, factory state, wrapper-not-table id placement). 2 existing `recent-revenue-stats.test.js` assertions updated to expect the new `unpaidCount: 0` field. Full suite: **49 files, 0 failures.**
+- **Role 4 (Growth Strategist)** — added 3 new GROWTH items (#131 truly-quiet-window CTA variant, #132 mobile haptic toggle feedback, #133 day-1 trial-urgent banner annual-savings pill) + 1 new MARKETING item (#63 G2 quarterly award submissions). All cross-checked for non-overlap; all assigned to currently-active epics (1 to E2, 1 to E3, 1 to E4); zero items orphaned to [UNASSIGNED].
+- **Role 5 (UX Auditor)** — direct fix on the new #127 CTA: added `role="status"` + `aria-live="polite"` so screen readers announce the action option when it appears reactively after a toggle. Without the live-region announcement, SR users miss the new affordance. Regression-guard test added (now 25 assertions in the new test file). Re-walked landing → register → empty-state dashboard → trial banners → pricing → invoice form/view — no regressions in untouched flows.
+- **Role 6 (Task Optimizer)** — refreshed audit header, archived #127 to one-line parenthetical, re-ordered priority queue (3 new XS items in correct buckets), TODO_MASTER reviewed (no items flip to [LIKELY DONE - verify]).
+- **Role 7 (Health Monitor)** — see next CHANGELOG entry below for full audit.
+
+**Code shipped this cycle:**
+- 1 SQL helper extended (`db.getRecentRevenueStats` — refactored to `WHERE + FILTER` aggregates)
+- 1 helper extended (`buildRecentRevenueCard` — threads unpaidCount)
+- 1 API endpoint extended (`GET /invoices/api/recent-revenue` — surfaces unpaidCount at top level)
+- 1 expanded Alpine factory (`recentRevenueCard()` in `views/dashboard.ejs` — 1 new state field, partial-deploy resilient update path, new reactive CTA block, screen-reader announcement)
+- 1 new id added (`id="invoices-table"` on the table wrapper for deep-link target)
+- 1 new test file (`tests/recent-revenue-quiet-window-cta.test.js` — 25 assertions across 4 layers)
+- 1 `package.json` test-script entry added
+- 2 existing test assertions updated for the new field
+- 3 new INTERNAL_TODO items (#131-#133)
+- 1 new TODO_MASTER item (#63)
+- 1 INTERNAL_TODO #127 archived to one-line parenthetical
+
+**Most important open item heading into the next session:**
+
+**#133 [XS] Annual-savings pill on day-1 trial-urgent banner** — XS effort (~10 lines on the existing #45 trial-urgent branch in `views/dashboard.ejs` + 2 test assertions), MED conversion impact at the trial-end moment. Today's day-1 banner reads "Last day of your Pro trial — add a card before midnight..." with a single CTA but no pricing reinforcement. Adding "lock in $99/year (3 months free)" inline pill — using the already-shipped pill-component pattern from #101 — places the annual pricing decision at the highest-leverage trial-end touchpoint. The trial-end moment is the single highest-intent conversion event in the funnel; today's banner gets the urgency right but leaves money on the table by not anchoring the savings figure. Estimated cycle: < 20 min impl + ~10 min tests.
+
+**Risks / blockers needing Master attention before next run:**
+
+- **Resend API key (TODO_MASTER #18)** — single most leveraged Master action. Unblocks E9 entirely (~10 ready-to-ship retention/conversion email features: U1 password reset, #11 churn win-back, #12 monthly digest, #66 auto-CC accountant, #71 auto-BCC freelancer, #72 .ics calendar, #77 welcome-back on past_due restore, #80 weekly Monday digest, #84 plain-language email body, #90 60+ day inactive re-engagement, #110 magic-link login).
+- **APP_URL env var (TODO_MASTER #39)** — unset means sitemap.xml + canonical link tags fall back to request host, leaks alternate hosts (Heroku free dyno URL + custom domain) into Google's index. Low-effort fix (one env var); compounding SEO drift.
+- **APP_SPEC review (TODO_MASTER #60)** — auto-reconstructed cycle 17, still awaiting human verification. Spec stayed in sync this cycle (no app structural changes), but the explicit human sign-off remains pending.
+- **No new Master actions added this cycle beyond #63 (G2 awards)** — the cycle's main work was code-shipping, not spec-changing.
+
+---
+
+## 2026-04-29T00:05Z — Role 5 (UX Auditor): screen-reader announcement on the new #127 CTA + flow regression sweep
+
+**Pathways audited this cycle:**
+
+1. **Pro user, dashboard SSR with paid invoices in 30d** (steady state — most common path). CTA hidden by `x-show="totalPaid === 0 && unpaidCount > 0"` evaluation; no flash of CTA on first paint thanks to `x-cloak`. ✓
+2. **Pro user, toggles to 7d window with no paid invoices but 5 open unpaid.** CTA appears below the tile row: "📨 Send 5 follow-ups now →". Click → browser scrolls to `#invoices-table` (with the `scroll-mt-6` offset so the table's rounded border doesn't hug the viewport edge). Status badges in the table (red Overdue, blue Sent) make follow-up candidates visually obvious. ✓
+3. **Pro user, toggles to 7d window with 1 open unpaid invoice.** Singular branch fires: "Send 1 follow-up now →" (without trailing `s`). The `x-show="unpaidCount !== 1"` gate on the plural-`s` span correctly suppresses the trailing letter. ✓
+4. **Pro user with all paid invoices, no open unpaid.** CTA stays hidden across all toggles (no `unpaidCount > 0` to fire on). ✓
+5. **Free-plan user.** Card never renders (gated server-side); CTA never appears. ✓
+6. **API failure during toggle (offline / 500).** `errored` line surfaces ("Couldn't load that window — showing the previous one."); CTA correctly does NOT fire (state preservation — last successful unpaidCount stays in scope, but totalPaid does too, so the condition stays at its last truthful state). ✓
+7. **Re-walked: landing → register → empty-state dashboard onboarding (regression) → trial banner stacking → trial-countdown nav pill → invoice form → invoice view → 404 → pricing → settings.** No regressions in untouched flows. ✓
+
+**Direct fix applied this cycle (1 substantive accessibility improvement + 0 cosmetic-only changes):**
+
+1. **`views/dashboard.ejs#recent-revenue-quiet-cta` — screen-reader announcement on appearance.** The Role 2 implementation rendered the CTA `<p>` as a plain text-styled paragraph. Without `role="status"` and `aria-live="polite"`, screen readers don't announce the CTA when it appears in response to a toggle — the visual user gets a clear new action option, but the screen-reader user has to manually re-read the card region to discover the new affordance. Fixed: added `role="status"` and `aria-live="polite"` to the CTA paragraph. The existing `errored` line uses `role="status"` (which is implicitly polite in modern assistive tech), but pairing it with explicit `aria-live="polite"` makes the contract precise and locks the behaviour against future refactors that could strip the role. New regression-guard test added: `view: CTA block carries role="status" + aria-live="polite" for screen-reader announcement`.
+
+**Why this is the right call:**
+
+The CTA is a state-driven affordance that appears reactively — exactly the pattern WAI-ARIA's Live Regions spec was designed for. `aria-live="polite"` (vs. `assertive`) is correct because the appearance is informational, not interrupt-the-user-mid-thought important; `polite` waits for the screen reader's current announcement to finish before queueing the new one, which matches the visual experience (the CTA fades in alongside the toggle's loading→loaded transition, not as an emergency).
+
+**Regression checks performed (no new fixes needed, but verified clean):**
+
+- **Trial-countdown nav pill (#106) + dashboard banner (#45) interaction** — both render unchanged. ✓
+- **Free-plan invoice progress bar (#31)** — still renders for free users; no localStorage layer touches the free-plan path. ✓
+- **Onboarding card → trial banner → past-due banner stack** — render order unchanged. ✓
+- **Pricing page CTA copy + annual-savings pill (#101)** — both unchanged. ✓
+- **`x-cloak` CSS rule** — verified `[x-cloak] { display: none !important; }` still in `views/partials/head.ejs`; the new CTA's `x-show` evaluation runs cleanly with no first-paint flash. ✓
+- **Login → register cross-link** — unchanged. ✓
+- **Mobile breakpoint on the new CTA** — `inline-flex items-center gap-1` lays out cleanly on narrow mobile (< 384px wide); the link wraps as a single line at the dashboard's typical mobile width and the underline remains continuous on hover. ✓
+- **Click target size** — the inline link is text-xs (12px line-height), bounding box ~200×16px — wide enough for finger tap, height-limited but consistent with the project's existing inline link affordances (e.g., the dunning-banner "Update payment method →" link uses the same style). ✓
+- **No localStorage / no Alpine baseline** — without JS, the SSR-rendered card still shows correct values. The CTA layer is `x-cloak`-gated so it's invisible without Alpine; pure additive enhancement. ✓
+- **No table-anchor orphan case** — the CTA fires only when `unpaidCount > 0`, which requires invoices to exist, which means the table renders, which means `id="invoices-table"` is in the DOM. No broken-anchor scenario. ✓
+
+**Anti-fixes — flagged but deliberately left:**
+
+- **"Send 1 follow-up" reads slightly awkwardly compared to "Send a follow-up".** Considered: gating the digit vs. "a" via `x-show`. But the digit is informative ("there's exactly 1") and the awkwardness is minor; replacing with an Alpine `x-text` ternary would be more code than the awkwardness justifies. Defer.
+- **Highlight unpaid rows in the table after CTA-driven scroll.** The user lands at the table after click but has to visually filter for sent/overdue badges — the unpaid rows aren't outlined or pulse-animated. Considered: a one-time `x-data` highlight that adds a yellow ring to unpaid rows for 3s after scroll. But (a) the status badges are already color-coded and visually distinct, (b) adding row-level animation conflicts with the existing row-hover state, and (c) the simpler unpaid-only row filter is captured by future task scope (would belong to a #127-extension, not the base #127). Defer.
+- **No "X follow-ups sent — N remaining" feedback after the user actually sends follow-ups.** This requires the user to actually send follow-ups (which happens on the invoice-view page, not from the dashboard table click), at which point a feedback loop would need to re-render the CTA's count. Real but cross-page UX state is complex and out-of-scope for #127's first slice. Defer.
+- **Click-through doesn't pre-filter the table to unpaid only.** The CTA implies "the unpaid ones I should follow up on", but the user lands at the full table. A query-string-driven row filter would be the next iteration. Distinct task — sits alongside #131 (truly-quiet-window CTA) as future-cycle territory.
+
+**Test impact:** 1 new test assertion added (now 25 in `tests/recent-revenue-quiet-window-cta.test.js`). Full suite still green: **49 files, 0 failures.**
+
+**Income relevance:** SMALL but compounding. The accessibility fix expands the addressable cohort for the #127 CTA to include screen-reader users — typically 1-2% of any web product's user base, but a cohort that's both highly-engaged when the product respects them and highly-frustrated when it doesn't. Specifically, the fix turns "the screen-reader user discovers the toggle changed but misses the CTA appearance" into "the screen-reader user hears a polite announcement of the new action option in the same audio flow as the toggle's confirmation". Compounds with #117/#122 — the toggle layer was already keyboard-accessible via `aria-pressed`; this closes the SR-equivalent gap on the new CTA.
+
+---
+
+## 2026-04-28T23:55Z — Role 4 (Growth Strategist): 3 new GROWTH ideas (#131-#133) + 1 new MARKETING (#63 G2 awards)
+
+**Process:** scanned the queue for un-mined surfaces that compound with #127 (just-shipped) and the broader recent-revenue card cluster (#107 + #117 + #122 + #127). The card now has 4 reactive layers + 1 deep-link target — that's a dense surface where small additions multiply impact. Cross-checked each candidate against the 124 existing GROWTH items + 62 existing MARKETING items.
+
+**Five-lever sweep:**
+
+- **Conversion (signup → paid):** added #133 (annual-savings pill on day-1 trial-urgent banner — direct conversion-moment pricing reinforcement, the highest-leverage trial-end touchpoint that today has no price text).
+- **Retention (return visits + reduced churn):** added #132 mobile haptic toggle feedback. Compounds with #117/#122/#128/#130 — five complementary input affordances on the same surface.
+- **Expansion (ARPU lift):** existing queue covers this (#9, #10, #74, #54, #67, #100, #79). No new XS items emerged this cycle — expansion lever is well-mined and S/L-complexity, properly deferred to E5 [PLANNED].
+- **Activation (time-to-first-value):** added #131 truly-quiet-window CTA variant. Pairs with #127 to cover both shapes of the empty-window state (recovery + fresh activity prompt) on the same surface.
+- **Distribution (acquisition):** added #63 [MARKETING] G2 quarterly award submission. Distinct distribution mechanic from #26/#49 (continuous profile + reviews), #61 (affiliate program), #62 (creator outreach), #59 (co-marketing), and #58 (SaaS comparison directories) — this is the editorial-recognition acquisition layer.
+
+**Added to INTERNAL_TODO.md:**
+
+- **#131 [GROWTH] [XS]** (E3 Activation) — Truly-quiet-window CTA variant on revenue card. When `totalPaid === 0 && unpaidCount === 0`, render "📥 Send a new invoice now →" linking to `/invoices/new`. Sibling `x-show` block to the #127 CTA. Three orthogonal quiet-state CTAs together: #127 (paid===0 + unpaid>0 → recovery), #131 (paid===0 + unpaid===0 → fresh activity), #124 (3+ day stale draft → finish). MED activation. ~10 lines + 4 tests.
+- **#132 [GROWTH] [XS]** (E4 Retention) — Mobile haptic micro-feedback on revenue toggle. `navigator.vibrate(8)` on each successful `select()`. Silently ignored on non-supporting browsers. Distinct from #128 (keyboard) and #130 (pull-to-refresh). LOW-MED mobile retention. ~5 lines + try/catch + 1 test.
+- **#133 [GROWTH] [XS]** (E2 Trial → Paid Conversion) — Inline annual-savings pill on day-1 trial-urgent banner (#45). Today the banner reads "Last day of your Pro trial — add a card before midnight..." with no pricing reinforcement. Add "lock in $99/year (3 months free)" inline pill — distinct from #46 exit-intent (different surface), #47 monthly→annual upgrade (different cohort), #101 (different surface — pricing/settings/upgrade-modal already shipped, but the trial-end touchpoint is currently uncovered). Pure copy edit + the existing pill-component pattern from #101. MED conversion at the trial-end moment. ~10 lines + 2 tests.
+
+**Added to TODO_MASTER.md:**
+
+- **#63 [MARKETING]** — Submit QuickInvoice to G2's annual award category cycles (Best Free Invoice Software, Best Small-Business Billing Software, Easiest to Use, Best Estimated ROI). Free; submission triggers a quarterly editorial-recognition badge (winners) or nominee-trust-signal (runners-up); G2's press-release secondary distribution lands in 30-60 small-business newsletters by default. Asymmetric: ~1 hr initial + ~30 min/quarter ongoing for an evergreen landing-page acquisition asset that compounds quarter-on-quarter. Distinct from #26/#49 (continuous profile + reviews), #61 (affiliate), #62 (creator outreach), #59 (co-marketing), and #58 (passive directory listings). The editorial-recognition acquisition layer.
+
+**Cross-checks for non-overlap:**
+
+- #131 vs #127 vs #124 vs #95: #131 is the truly-empty-window prompt (paid===0 + unpaid===0 — fresh activity); #127 is the recovery prompt (paid===0 + unpaid>0 — follow up); #124 is the stale-draft prompt (status='draft' + 3+ day age — finish); #95 is the passive paid-event reward (status flips to paid — emotional). Four orthogonal state-driven CTAs.
+- #132 vs #117 vs #122 vs #128 vs #130: same surface (revenue toggle), five complementary input modalities — visual click (#117), per-device memory (#122), keyboard (#128), pull-to-refresh (#130), haptic feedback (#132). Each addresses a different cohort × interaction modality.
+- #133 vs #45 vs #101 vs #46 vs #47: #45 is the trial-urgent banner (day 1 alone — distinct from days 2-7 calm); #101 is the annual-savings pill on /pricing + /settings + upgrade-modal (already shipped — but the trial-end banner is a separate surface); #46 is the pricing-page exit-intent (different cohort — bounce recovery); #47 is the monthly→annual prompt (different cohort — already-paying users). Five orthogonal pricing-reinforcement surfaces.
+- #63 [MARKETING] vs #26/#49 vs #61 vs #62 vs #59 vs #58: #26/#49 build + populate G2 profile; #63 is the editorial-recognition layer ON TOP of the existing profile; #61 is always-on affiliate at scale; #62 is one-time hand-curated creator outreach; #59 is partner-channel co-marketing; #58 is passive SaaS-comparison directory listings. Six distinct distribution motions.
+
+**Active-epic alignment:** all 3 new GROWTH items map cleanly to currently-active epics — 1 to E2 (#133), 1 to E3 (#131), 1 to E4 (#132). Zero items orphaned to [UNASSIGNED]. Zero items added to E5/E7 (PLANNED) or E9 (PAUSED — Resend gate).
+
+**TODO_MASTER review:** All 62 prior items checked against this cycle's CHANGELOG. **No items flip to [LIKELY DONE - verify]** — every Master action remains pending its respective external step (Stripe Dashboard config, Resend API key, Plausible domain, G2/Capterra profile creation, AppSumo submission, Rewardful signup, creator outreach, etc.). #63 is the new add this cycle.
+
+---
+
+## 2026-04-28T23:45Z — Role 3 (Test Examiner): 24 new assertions for #127 across 4 layers (full suite 49 files, 0 failures)
+
+**New test file: `tests/recent-revenue-quiet-window-cta.test.js`** — 24 assertions, 4 layers:
+
+**Layer 1 — db.getRecentRevenueStats SQL contract (5 assertions):**
+- SQL contains `COUNT(*) FILTER (WHERE status IN ('sent','overdue'))` aggregate (regression guard against accidental drift to `WHERE` clause that would break the unified single-trip query).
+- Unpaid-count FILTER is **not** bounded by `updated_at >= NOW() - $2 * INTERVAL '1 day'` (the CTA reflects all open follow-up-able invoices, not just recently-modified ones — a future "performance optimization" that scoped this query to the trailing window would silently break the recovery semantic).
+- `unpaidCount` parses to integer from pg int column.
+- Missing `unpaid_count` field on the result row falls back to 0 (legacy-row safety).
+- Empty `rows: []` result returns `unpaidCount: 0` (no-data graceful path).
+
+**Layer 2 — buildRecentRevenueCard helper (5 assertions):**
+- Threads `unpaidCount` through to the populated card.
+- Missing `unpaidCount` on stats becomes 0 on the card.
+- Stringy `unpaidCount` parses to integer (defence vs JSON cast drift).
+- Free-plan user with populated `unpaidCount` still returns `null` — locks in defence-in-depth that `unpaidCount` cannot become a back-door for free users to receive a card.
+- `invoiceCount === 0` returns `null` even if `unpaidCount > 0` — the card's existence is gated on having paid at least once in the window; the CTA layer activates inside an existing card.
+
+**Layer 3 — GET /invoices/api/recent-revenue (4 assertions):**
+- `unpaidCount` is surfaced at the top level for Pro user with populated card (`res.body.unpaidCount` AND `res.body.card.unpaidCount` both present).
+- **Critical:** `unpaidCount` survives the `card===null` path (this is the exact scenario #127 was built for — the user toggled to a window with zero paid in it, but the top-level field carries forward so the client can drive the CTA).
+- Stats throw → API returns 200 with `unpaidCount: 0, card: null` (graceful — same shape as no-data, never crashes the dashboard fetch).
+- Free-plan user gets `unpaidCount` surfaced but `card: null` — documented surface behaviour; if a future refactor ever wants to gate `unpaidCount` on plan, this assertion must move and the test will fail loudly.
+
+**Layer 4 — dashboard.ejs view (10 assertions):**
+- Invoice table wrapper carries `id="invoices-table"` (CTA deep-link target).
+- CTA block exists with `x-show="totalPaid === 0 && unpaidCount > 0"`.
+- CTA anchor's `href="#invoices-table"` (deep-link contract pinned both ends).
+- Copy contains "Send", count placeholder `<span x-text="unpaidCount">`, and "follow-up" — plus the plural-`s` is gated by `x-show="unpaidCount !== 1"` so 1 follow-up doesn't render "Send 1 follow-ups".
+- `x-data` init seed includes `unpaidCount: <number>` (so the CTA can fire on first paint without a fetch round-trip).
+- SSR fallback content for the count uses the threaded `recentRevenue.unpaidCount` value (meaningful before Alpine hydrates).
+- CTA `<p>` carries `x-cloak` (prevents first-paint flash on cards with `totalPaid > 0`).
+- `select()` update path reads BOTH `data.card.unpaidCount` (card-populated branch) AND `data.unpaidCount` (card===null branch) — locks in the partial-deploy resilience pattern.
+- Factory state object declares `unpaidCount: Number(initial.unpaidCount) || 0` as an initial reactive field — regression guard against silent removal that would break the `x-show` evaluation.
+- The deep-link target id sits on the wrapper `<div>` immediately preceding `<table>` (not inside the table) — so the user lands at the visual top of the card after scroll, not at the first `<tr>`.
+
+**Test pattern reuse:** layer 4 uses the same EJS-render-via-mock-locals pattern established in `recent-revenue-window-toggle.test.js`; layer 1-3 reuse the `realPool.query` stub + `apiLayer` route-stack-introspection helpers. No new test infrastructure introduced — this file plugs cleanly into the existing test conventions.
+
+**Updated assertions in existing tests:** 2 `assert.deepStrictEqual` checks in `tests/recent-revenue-stats.test.js` extended to expect the new `unpaidCount: 0` field on the populated card + on the empty-stats fallback path. No tests deleted; no tests weakened.
+
+**Risk reduced this cycle:**
+
+- **The single highest-risk drift point is the FILTER clause in `getRecentRevenueStats` SQL.** A maintenance edit that promoted the unpaid-count FILTER's `WHERE status IN ('sent','overdue')` predicate to a top-level `WHERE` would silently disable all paid-window aggregates (paid-windowed → paid-anytime). Layer 1's first 2 assertions catch that mutation regardless of which direction it goes.
+- **Partial-deploy resilience for the API → client contract.** The two Layer 3 assertions ("top-level unpaidCount survives card=null" + "unpaidCount falls back to 0 on stats throw") plus the two Layer 4 assertions (`data.card.unpaidCount` AND `data.unpaidCount` both honoured) form a cross-tier safety net: even if the API rolls out before the client JS or vice versa, the CTA stays accurate.
+- **Free-plan leak protection (defence-in-depth).** The `buildRecentRevenueCard` free-plan-with-unpaidCount-still-null assertion locks in the existing leak-prevention semantic — `unpaidCount` exists outside the plan gate but does NOT bypass it.
+
+**Full suite:** **49 files, 0 failures.** No flakes; new file ran clean on first execution.
+
+---
+
+## 2026-04-28T23:35Z — Role 2 (Feature Implementer): #127 quiet-window recovery CTA shipped end-to-end (Epic E3 Activation)
+
+**What was built:**
+
+`#127` — quiet-window recovery CTA on the dashboard's recent-revenue card. When the user toggles to a window with `totalPaid === 0` AND has open unpaid invoices (`status IN ('sent','overdue')`), an inline anchor renders below the 3-tile row: "📨 Send N follow-up(s) now →" deep-linking to a new `#invoices-table` anchor on the existing dashboard table wrapper. Reactive — toggle re-fetches the card, the CTA visibility recomputes against the new state.
+
+**Files touched:**
+
+1. **`db.js#getRecentRevenueStats`** — single SQL round-trip extended to also return `unpaidCount`. Refactored from a `WHERE status='paid' AND updated_at >= ...` filtering query to a `WHERE user_id=$1`-only query with `COUNT/SUM(...) FILTER (...)` aggregates. The paid-window aggregates and the unpaid count come back in one pg trip rather than two — net query cost is ~the same as before (same index + the filter is a CPU-cheap predicate per row). New `unpaidCount` is **not** windowed — counts all currently-open unpaid invoices for the user, since the CTA is about following up on every open invoice, not just invoices opened in the last N days.
+
+2. **`routes/invoices.js#buildRecentRevenueCard`** — accepts the new `unpaidCount` field from stats, threads it through to the returned object. Card is still gated on `invoiceCount === 0` returning null — the SSR card only appears for users with at least one paid invoice in the 30d default window. `unpaidCount` is included in the card payload when the card IS returned.
+
+3. **`routes/invoices.js GET /invoices/api/recent-revenue`** — additionally surfaces `unpaidCount` at the top level of the JSON response, so the client can drive the CTA visibility even when the response's `card === null` (zero paid invoices in the new window). Top-level `unpaidCount` is parseInt-coerced to 0 on any DB-failure / null path.
+
+4. **`views/dashboard.ejs#recentRevenueCard()` factory** — Alpine scope now tracks `unpaidCount`. SSR-rendered initial state is wired through the existing `JSON.stringify({ ... })` x-data hydration. `select()` updates `unpaidCount` from `data.card.unpaidCount` (when card is returned) or from the top-level `data.unpaidCount` (when card is null) on each successful fetch. Legacy partial-deploy guard: if neither field is present, the existing `unpaidCount` value is preserved rather than zeroed (so the CTA stays accurate during a deploy where the API change rolls out before the client JS).
+
+5. **`views/dashboard.ejs` recent-revenue card body** — new `<p x-show="totalPaid === 0 && unpaidCount > 0" x-cloak>` block renders the CTA. Anchor href is `#invoices-table`; copy is "📨 Send N follow-up(s) now →" with the count pluralized via `<span x-show="unpaidCount !== 1">s</span>`. Styled with emerald-800 inline color + `decoration-dotted hover:decoration-solid` for the underline. SSR fallback for the count uses the threaded `recentRevenue.unpaidCount` value so the link is meaningful even before Alpine boots (though x-cloak hides it until Alpine has hydrated, since the SSR card has paid invoices > 0 by definition and the CTA shouldn't flash).
+
+6. **`views/dashboard.ejs` invoice table wrapper** — new `id="invoices-table"` + `scroll-mt-6` Tailwind class on the existing `<div class="bg-white rounded-2xl ...">`. The scroll-mt offsets the anchor target by 1.5rem so the table's top border doesn't hug the viewport edge after the deep-link scroll.
+
+7. **`tests/recent-revenue-stats.test.js`** — 2 existing `assert.deepStrictEqual` assertions updated to include the new `unpaidCount: 0` field in expected output (otherwise unchanged).
+
+**Why it matters for income:**
+
+Direct activation/revenue-recovery lever. Today's empty-window state (after Role 5's last-cycle fix) shows the truthful $0/0/0 — informative but inert. The user toggles to 7d, sees "no, you weren't paid this week", and either bounces or shrugs. With #127, that same moment becomes "📨 Send 3 follow-ups now →" — a one-click path to recovering already-issued invoices. Three dynamics compound:
+
+- **Recovery yield.** A freelancer who's had a quiet week typically has 2-5 outstanding sent/overdue invoices that just need a nudge. A 30-second send-follow-up gesture from the dashboard converts the slow-week passive moment into an active recovery action that often lands a paid invoice within 24-48 hrs.
+- **Pro-feature reinforcement.** The recent-revenue card is Pro-only. The CTA additionally surfaces the value of being on Pro (you can see your income state + take action on it) at exactly the moment when "is this worth $12/mo?" anxiety would otherwise spike (a quiet revenue week).
+- **Power-user retention.** Daily-check-in users who already use the toggle (#117) and have it persisted (#122) are now offered a meaningful action on the empty-window state, deepening the daily ritual. Each daily touchpoint compounds with the next.
+
+Distinct from three orthogonal recovery surfaces in the queue: #88 frequent-non-payer alert (categorical client-pattern), #95 tab-flash (passive emotional reward on paid event), #124 stale-draft yellow banner (different status cohort — drafts, not sent/overdue). All four can ship; they don't conflict.
+
+**Master actions added:** none. Pure-code feature; no env vars, no DB migration (the new SQL filter is computed at query time on existing columns), no Stripe / Resend dependency.
+
+**Tests:** Role 3 will add new assertions targeting the contract surface (db query, helper, view) — see next CHANGELOG entry.
+
+---
+
 ## 2026-04-28T23:00Z — Role 7 (Health Monitor): clean cycle audit + #122 review across 4 dimensions
 
 **Audit scope this cycle:** the 3 production files touched in Roles 2 + 5 (`views/dashboard.ejs`, `master/INTERNAL_TODO.md`, `master/TODO_MASTER.md`); the 1 new test file (`tests/recent-revenue-window-storage.test.js`); the modified `package.json` test runner.

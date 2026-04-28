@@ -108,7 +108,7 @@ test('buildRecentRevenueCard returns populated card for pro user with paid invoi
     { plan: 'pro' },
     { totalPaid: 1234.56, invoiceCount: 4, clientCount: 2, days: 30 }
   );
-  assert.deepStrictEqual(card, { days: 30, totalPaid: 1234.56, invoiceCount: 4, clientCount: 2 });
+  assert.deepStrictEqual(card, { days: 30, totalPaid: 1234.56, invoiceCount: 4, clientCount: 2, unpaidCount: 0 });
 });
 
 test('buildRecentRevenueCard works for agency plan users too', () => {
@@ -311,7 +311,7 @@ test('db.getRecentRevenueStats handles empty result row gracefully', async () =>
   realPool.query = async () => ({ rows: [] });
   try {
     const stats = await db.getRecentRevenueStats(1, 30);
-    assert.deepStrictEqual(stats, { days: 30, totalPaid: 0, invoiceCount: 0, clientCount: 0 });
+    assert.deepStrictEqual(stats, { days: 30, totalPaid: 0, invoiceCount: 0, clientCount: 0, unpaidCount: 0 });
   } finally {
     realPool.query = originalQuery;
   }

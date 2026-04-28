@@ -122,12 +122,19 @@ function buildRecentRevenueCard(user, stats) {
   const totalPaid = Number(stats.totalPaid) || 0;
   const invoiceCount = parseInt(stats.invoiceCount, 10) || 0;
   const clientCount = parseInt(stats.clientCount, 10) || 0;
+  const unpaidCount = parseInt(stats.unpaidCount, 10) || 0;
+  // Card stays gated on having at least one paid invoice in the window —
+  // the 30d default determines whether the card appears at all on SSR.
+  // unpaidCount is threaded through so toggle re-fetches can drive the
+  // quiet-window recovery CTA (#127) when the user toggles to a window
+  // with totalPaid===0 but has open unpaid invoices to follow up on.
   if (invoiceCount === 0) return null;
   return {
     days: parseInt(stats.days, 10) || 30,
     totalPaid,
     invoiceCount,
-    clientCount
+    clientCount,
+    unpaidCount
   };
 }
 
@@ -151,8 +158,16 @@ router.get('/api/recent-revenue', requireAuth, async (req, res) => {
       loadRecentRevenueStats(req.session.user.id, days)
     ]);
     const card = buildRecentRevenueCard(user, stats);
+    // Surface unpaidCount at the top level too, so the quiet-window
+    // recovery CTA (#127) can fire even when card===null (i.e. when
+    // invoiceCount===0 in this window — buildRecentRevenueCard returns
+    // null in that case but the user may still have open unpaid invoices
+    // worth following up on).
+    const unpaidCount = stats && typeof stats === 'object'
+      ? parseInt(stats.unpaidCount, 10) || 0
+      : 0;
     res.set('Cache-Control', 'no-store');
-    res.json({ days, card });
+    res.json({ days, card, unpaidCount });
   } catch (err) {
     console.error('Recent revenue API error:', err && err.message);
     res.status(500).json({ days, card: null, error: 'lookup_failed' });
