@@ -12,7 +12,7 @@ function buildContentSecurityPolicy() {
       formAction: ["'self'", 'https://checkout.stripe.com', 'https://billing.stripe.com'],
       frameAncestors: ["'none'"],
       objectSrc: ["'none'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", TAILWIND_CDN, JSDELIVR_CDN],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", TAILWIND_CDN, JSDELIVR_CDN],
       scriptSrcAttr: ["'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'", TAILWIND_CDN],
       imgSrc: ["'self'", 'data:', 'blob:'],
