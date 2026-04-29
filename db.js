@@ -123,6 +123,166 @@ const db = {
     return rows[0] || null;
   },
 
+  async dismissOnboarding(userId) {
+    const { rows } = await pool.query(
+      'UPDATE users SET onboarding_dismissed = true, updated_at = NOW() WHERE id = $1 RETURNING id',
+      [userId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
+   * Returns invoices whose owner is on a paid plan, status='sent', past their
+   * due date, and either never reminded or last reminded more than
+   * `cooldownDays` ago. Joined to the owner so jobs/reminders.js can compose
+   * the email without an extra round-trip per invoice.
+   */
+  async getOverdueInvoicesForReminders(cooldownDays = 3) {
+    const { rows } = await pool.query(
+      `SELECT
+         i.id              AS invoice_id,
+         i.user_id          AS user_id,
+         i.invoice_number   AS invoice_number,
+         i.client_name      AS client_name,
+         i.client_email     AS client_email,
+         i.total            AS total,
+         i.due_date         AS due_date,
+         i.payment_link_url AS payment_link_url,
+         i.last_reminder_sent_at AS last_reminder_sent_at,
+         i.items            AS items,
+         u.email            AS owner_email,
+         u.name             AS owner_name,
+         u.business_name    AS owner_business_name,
+         u.business_email   AS owner_business_email,
+         u.reply_to_email   AS owner_reply_to_email,
+         u.plan             AS owner_plan
+       FROM invoices i
+       JOIN users u ON u.id = i.user_id
+       WHERE i.status = 'sent'
+         AND i.due_date IS NOT NULL
+         AND i.due_date < CURRENT_DATE
+         AND u.plan IN ('pro', 'business', 'agency')
+         AND (i.last_reminder_sent_at IS NULL
+              OR i.last_reminder_sent_at < NOW() - ($1 * INTERVAL '1 day'))
+       ORDER BY i.due_date ASC
+       LIMIT 500`,
+      [cooldownDays]
+    );
+    return rows;
+  },
+
+  async markInvoiceReminderSent(invoiceId) {
+    const { rows } = await pool.query(
+      `UPDATE invoices SET last_reminder_sent_at = NOW(), updated_at = NOW()
+        WHERE id = $1 RETURNING id, last_reminder_sent_at`,
+      [invoiceId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
+   * Trial-nudge query (INTERNAL_TODO #29). Returns trial users whose
+   * `trial_ends_at` falls in the day-3-to-day-5 window from now and who
+   * haven't been nudged yet. The `trial_nudge_sent_at IS NULL` filter is the
+   * idempotency guard — every user gets exactly one nudge per trial. The
+   * `subscription_status` clause keeps the cohort tight: only users still in
+   * the trial state ('trialing'), or whose status was never written for any
+   * reason (NULL), are eligible. Users who already added a card mid-trial
+   * (`active`) or whose card failed (`past_due`) get different funnels.
+   */
+  async getTrialUsersNeedingNudge() {
+    const { rows } = await pool.query(
+      `SELECT id, email, name, business_name, trial_ends_at, invoice_count
+         FROM users
+        WHERE plan = 'pro'
+          AND trial_ends_at IS NOT NULL
+          AND trial_ends_at BETWEEN NOW() + INTERVAL '2 days'
+                                AND NOW() + INTERVAL '4 days'
+          AND trial_nudge_sent_at IS NULL
+          AND (subscription_status IS NULL OR subscription_status = 'trialing')
+        ORDER BY trial_ends_at ASC
+        LIMIT 500`
+    );
+    return rows;
+  },
+
+  async markTrialNudgeSent(userId) {
+    const { rows } = await pool.query(
+      `UPDATE users SET trial_nudge_sent_at = NOW(), updated_at = NOW()
+         WHERE id = $1 RETURNING id, trial_nudge_sent_at`,
+      [userId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
+   * Recent paid-revenue stats for the dashboard "what you collected lately"
+   * row (INTERNAL_TODO #107). Returns SUM(total), COUNT(*) and a count of
+   * distinct paying clients (deduped on lowercased email-or-name) over a
+   * trailing window. We use `updated_at` as the paid-time proxy because
+   * `status` only flips to 'paid' once and the same UPDATE bumps
+   * `updated_at`; the column drifts only if a paid invoice is later edited
+   * (rare: the typical workflow ends at paid). DECIMAL columns come back
+   * from pg as strings — we cast to numbers in JS so the template can
+   * format and toLocaleString without re-parsing.
+   */
+  async getRecentRevenueStats(userId, days = 30) {
+    const window = Math.max(1, Math.min(365, parseInt(days, 10) || 30));
+    // Single round-trip: paid-window aggregates + a NOT-windowed
+    // count of currently-unpaid invoices (status IN ('sent','overdue'))
+    // used by the quiet-window recovery CTA (#127). The unpaid count is
+    // not bounded by the trailing window because the CTA is about
+    // follow-ups on all open invoices, not invoices opened in the last N days.
+    const { rows } = await pool.query(
+      `SELECT
+         COALESCE(SUM(total) FILTER (WHERE status = 'paid' AND updated_at >= NOW() - ($2 * INTERVAL '1 day')), 0)::text AS total_paid,
+         COUNT(*) FILTER (WHERE status = 'paid' AND updated_at >= NOW() - ($2 * INTERVAL '1 day'))::int                AS invoice_count,
+         COUNT(DISTINCT LOWER(COALESCE(NULLIF(client_email, ''), client_name)))
+           FILTER (WHERE status = 'paid' AND updated_at >= NOW() - ($2 * INTERVAL '1 day'))::int                       AS client_count,
+         COUNT(*) FILTER (WHERE status IN ('sent', 'overdue'))::int                                                    AS unpaid_count
+         FROM invoices
+        WHERE user_id = $1`,
+      [userId, window]
+    );
+    const row = rows[0] || { total_paid: '0', invoice_count: 0, client_count: 0, unpaid_count: 0 };
+    return {
+      days: window,
+      totalPaid: parseFloat(row.total_paid) || 0,
+      invoiceCount: parseInt(row.invoice_count, 10) || 0,
+      clientCount: parseInt(row.client_count, 10) || 0,
+      unpaidCount: parseInt(row.unpaid_count, 10) || 0
+    };
+  },
+
+  /*
+   * Returns up to `limit` most-recent unique clients for a user, deduplicated
+   * by email-then-name. Powers the "quick-pick recent clients" dropdown on
+   * the invoice form (INTERNAL_TODO #63). DISTINCT ON groups by the
+   * lowercased email (or the lowercased name when email is missing) so two
+   * invoices to the same address don't produce two dropdown entries even if
+   * the freelancer typed the email with different casing.
+   */
+  async getRecentClientsForUser(userId, limit = 10) {
+    const cap = Math.max(1, Math.min(50, parseInt(limit, 10) || 10));
+    const { rows } = await pool.query(
+      `SELECT client_name, client_email, client_address
+         FROM (
+           SELECT DISTINCT ON (LOWER(COALESCE(NULLIF(client_email, ''), client_name)))
+                  client_name, client_email, client_address, created_at
+             FROM invoices
+            WHERE user_id = $1
+              AND client_name IS NOT NULL
+              AND client_name <> ''
+            ORDER BY LOWER(COALESCE(NULLIF(client_email, ''), client_name)),
+                     created_at DESC
+         ) AS uniq
+         ORDER BY created_at DESC
+         LIMIT $2`,
+      [userId, cap]
+    );
+    return rows;
+  },
+
   async getNextInvoiceNumber(userId) {
     const { rows } = await pool.query(
       'SELECT COUNT(*) as count FROM invoices WHERE user_id=$1',

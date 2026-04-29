@@ -59,37 +59,45 @@
       </ul>
 
       <!-- Billing-cycle selector (Monthly / Annual) -->
-      <div class="flex items-center justify-center gap-2 mb-4">
+      <div class="flex items-center justify-center gap-2 mb-2">
         <button
           type="button"
           @click="cycle = 'monthly'"
           :class="cycle === 'monthly' ? 'bg-brand-50 text-brand-700 border-brand-200' : 'bg-white text-gray-500 border-gray-200'"
           class="px-3 py-1.5 rounded-lg text-xs font-semibold transition border"
-        >Monthly</button>
+        >Monthly — $12/mo</button>
         <button
           type="button"
           @click="cycle = 'annual'"
           :class="cycle === 'annual' ? 'bg-brand-50 text-brand-700 border-brand-200' : 'bg-white text-gray-500 border-gray-200'"
           class="px-3 py-1.5 rounded-lg text-xs font-semibold transition border flex items-center gap-1.5"
         >
-          Annual
+          Annual — $99/yr
           <span class="bg-green-100 text-green-700 text-[10px] font-bold px-1.5 py-0.5 rounded">Save 31%</span>
         </button>
       </div>
+      <p class="text-center text-xs font-semibold mb-4" x-show="cycle === 'annual'" x-cloak>
+        <span class="inline-flex items-center gap-1.5 bg-green-100 text-green-700 px-2.5 py-1 rounded-full">
+          <span aria-hidden="true">💰</span>
+          Save $45/year vs. paying monthly
+        </span>
+      </p>
+      <p class="text-center text-xs mb-4" x-show="cycle === 'monthly'">&nbsp;</p>
 
       <form action="/billing/create-checkout" method="POST" class="mb-3">
+        <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
         <input type="hidden" name="billing_cycle" :value="cycle">
         <button
           type="submit"
           class="w-full bg-brand-600 text-white font-bold py-3 rounded-xl hover:bg-brand-700 transition text-center"
         >
-          <span x-show="cycle === 'monthly'">Upgrade to Pro — $12/month →</span>
-          <span x-show="cycle === 'annual'" x-cloak>Upgrade to Pro — $99/year →</span>
+          Start 7-day free trial &rarr;
         </button>
       </form>
 
       <p class="text-center text-xs text-gray-400 mb-4">
-        Join thousands of freelancers already on Pro · Secure checkout via Stripe
+        No credit card required. Cancel anytime.<br>
+        After trial: <span x-show="cycle === 'monthly'">$12/month</span><span x-show="cycle === 'annual'" x-cloak>$99/year</span> · Secure checkout via Stripe
       </p>
 
       <div class="flex items-center justify-center gap-4 text-xs">

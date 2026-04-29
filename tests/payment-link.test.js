@@ -302,8 +302,22 @@ async function testInvoiceViewRendersPayButtonForPro() {
     flash: null
   }, { views: [path.join(__dirname, '..', 'views')] });
 
-  assert.ok(html.includes('💳 Pay Now'), 'Pay Now button must render');
-  assert.ok(html.includes('https://buy.stripe.com/test_42'), 'Payment URL must appear in view');
+  // The owner-facing pay-link surface is consolidated into the dedicated
+  // "Payment Link" copy-card: a readonly URL input + Copy button + a
+  // "Preview ↗" anchor that opens the Stripe page in a new tab. The
+  // earlier action-bar "Preview Pay Link" button was redundant with the
+  // copy-card and was removed in the U4 UX consolidation.
+  assert.ok(html.includes('Payment Link'),
+    'Payment Link card must render for Pro user with a payment_link_url');
+  assert.ok(html.includes('Preview ↗'),
+    'Preview anchor must render alongside Copy in the Payment Link card');
+  assert.ok(!html.includes('💳 Preview Pay Link'),
+    'Old action-bar "Preview Pay Link" button must NOT render (consolidated into card)');
+  // Both the readonly input value and the Preview anchor href use the URL,
+  // so it should appear at least twice in the rendered HTML.
+  const occurrences = html.split('https://buy.stripe.com/test_42').length - 1;
+  assert.ok(occurrences >= 2,
+    `Payment URL must appear in the readonly input AND the Preview anchor (got ${occurrences} occurrences)`);
 }
 
 async function testInvoiceViewHidesPayButtonForFree() {

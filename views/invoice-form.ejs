@@ -1,7 +1,15 @@
 <%- include('partials/head') %>
 <%- include('partials/nav') %>
 
-<div class="max-w-4xl mx-auto px-4 py-10" x-data="invoiceEditor(<%= JSON.stringify(invoice ? invoice.items : []) %>)">
+<%
+  const recentClientsList = (locals.recentClients && Array.isArray(recentClients)) ? recentClients : [];
+  const initialClient = {
+    name: invoice ? (invoice.client_name || '') : '',
+    email: invoice && invoice.client_email ? invoice.client_email : '',
+    address: invoice && invoice.client_address ? invoice.client_address : ''
+  };
+%>
+<div class="max-w-4xl mx-auto px-4 py-10" x-data="invoiceEditor(<%= JSON.stringify(invoice ? invoice.items : []) %>, <%= JSON.stringify(recentClientsList) %>, <%= JSON.stringify(initialClient) %>)">
   <div class="flex items-center gap-3 mb-8">
     <a href="/invoices" class="text-gray-400 hover:text-gray-600 text-sm">← Invoices</a>
     <span class="text-gray-300">/</span>
@@ -15,6 +23,7 @@
   <% } %>
 
   <form action="/invoices/<%= invoice ? invoice.id + '/edit' : 'new' %>" method="POST">
+    <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
     <div class="grid md:grid-cols-2 gap-6">
 
       <!-- Invoice Details -->
@@ -35,9 +44,9 @@
                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Due Date <span class="text-gray-400 font-normal text-xs">(defaults to 30 days)</span></label>
               <input type="date" name="due_date"
-                value="<%= invoice && invoice.due_date ? invoice.due_date.toISOString().split('T')[0] : '' %>"
+                value="<%= invoice && invoice.due_date ? invoice.due_date.toISOString().split('T')[0] : new Date(Date.now() + 30*86400000).toISOString().split('T')[0] %>"
                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
             </div>
           </div>
@@ -58,24 +67,35 @@
       <div class="bg-white rounded-2xl border border-gray-200 p-6">
         <h2 class="font-semibold text-gray-700 mb-4 text-sm uppercase tracking-wide">Bill To</h2>
         <div class="space-y-4">
+          <% if (recentClientsList.length > 0) { %>
+          <div data-recent-clients>
+            <label for="recent-client-picker" class="block text-sm font-medium text-gray-700 mb-1">Recent clients</label>
+            <select id="recent-client-picker" x-model="picked" @change="fillFromRecent()"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <option value="">Quick-pick from recent…</option>
+              <% recentClientsList.forEach(function(c, idx) { %>
+                <option value="<%= idx %>"><%= c.client_name %><%= c.client_email ? ' · ' + c.client_email : '' %></option>
+              <% }) %>
+            </select>
+            <p class="text-xs text-gray-400 mt-1">Selecting fills the fields below — you can still edit them.</p>
+          </div>
+          <% } %>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Client Name <span class="text-red-400">*</span></label>
-            <input type="text" name="client_name" required
-              value="<%= invoice ? invoice.client_name : '' %>"
+            <input type="text" name="client_name" required x-model="clientName"
               placeholder="Acme Corp"
               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Client Email</label>
-            <input type="email" name="client_email"
-              value="<%= invoice ? (invoice.client_email || '') : '' %>"
+            <input type="email" name="client_email" x-model="clientEmail"
               placeholder="client@example.com"
               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Client Address</label>
-            <textarea name="client_address" rows="3" placeholder="123 Main St&#10;City, State 12345"
-              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"><%= invoice ? (invoice.client_address || '') : '' %></textarea>
+            <textarea name="client_address" rows="3" placeholder="123 Main St&#10;City, State 12345" x-model="clientAddress"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>
           </div>
         </div>
       </div>
@@ -164,24 +184,40 @@
     <div class="flex items-center justify-between mt-6">
       <a href="/invoices" class="text-gray-500 hover:text-gray-700 text-sm">Cancel</a>
       <button type="submit" class="bg-brand-600 text-white font-semibold px-8 py-3 rounded-xl hover:bg-brand-700 transition">
-        <%= invoice ? 'Save Changes' : 'Create Invoice' %>
+        <% if (invoice) { %>Save changes<% } else { %>Create invoice &rarr;<% } %>
       </button>
     </div>
   </form>
 </div>
 
 <script>
-function invoiceEditor(initialItems) {
+function invoiceEditor(initialItems, initialRecentClients, initialClient) {
+  const c = initialClient && typeof initialClient === 'object' ? initialClient : {};
   return {
     items: initialItems && initialItems.length > 0
       ? initialItems.map(i => ({ description: i.description, quantity: Number(i.quantity), unit_price: Number(i.unit_price) }))
       : [{ description: '', quantity: 1, unit_price: 0 }],
-    taxRate: <%= invoice ? invoice.tax_rate : 0 %>,
+    taxRate: <%= invoice ? Number(invoice.tax_rate) : 0 %>,
     subtotal: 0,
     taxAmount: 0,
     total: 0,
+    recentClients: Array.isArray(initialRecentClients) ? initialRecentClients : [],
+    picked: '',
+    clientName: typeof c.name === 'string' ? c.name : '',
+    clientEmail: typeof c.email === 'string' ? c.email : '',
+    clientAddress: typeof c.address === 'string' ? c.address : '',
 
     init() { this.recalculate(); },
+
+    fillFromRecent() {
+      const idx = parseInt(this.picked, 10);
+      if (Number.isNaN(idx) || idx < 0 || idx >= this.recentClients.length) return;
+      const c = this.recentClients[idx];
+      if (!c) return;
+      this.clientName = c.client_name || '';
+      this.clientEmail = c.client_email || '';
+      this.clientAddress = c.client_address || '';
+    },
 
     addItem() {
       this.items.push({ description: '', quantity: 1, unit_price: 0 });

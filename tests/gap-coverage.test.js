@@ -189,6 +189,9 @@ const mockStripeClient = {
     sessions: {
       async create() { return { url: 'https://billing.stripe.com/portal/test' }; }
     }
+  },
+  subscriptions: {
+    async retrieve(subId) { return { id: subId, trial_end: null }; }
   }
 };
 

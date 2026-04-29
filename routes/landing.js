@@ -18,7 +18,7 @@ const router = express.Router();
 
 const NICHES = {
   'freelance-designer': {
-    title: 'Free Invoice Template for Freelance Designers · QuickInvoice',
+    title: 'Free Invoice Template for Freelance Designers · DecentInvoice',
     audience: 'designers',
     singular: 'designer',
     headline: 'Invoicing built for freelance designers.',
@@ -43,19 +43,19 @@ const NICHES = {
       total: '2,700.00'
     },
     faq: [
-      { q: 'Do I need to know accounting to use this?', a: 'No. Fill in client, line items, rates, and download the PDF. QuickInvoice does the math and tracks payment status for you.' },
+      { q: 'Do I need to know accounting to use this?', a: 'No. Fill in client, line items, rates, and download the PDF. DecentInvoice does the math and tracks payment status for you.' },
       { q: 'Can I add a deposit or 50/50 split invoice?', a: 'Yes. Create two invoices — the first for the deposit amount, the second for the balance. Both live in the same client view so you can track totals.' },
-      { q: 'Will clients see "QuickInvoice" on the PDF?', a: 'Free-plan PDFs carry a small attribution footer. Pro-plan invoices are 100% your brand — your logo, your color, your business info only.' }
+      { q: 'Will clients see "DecentInvoice" on the PDF?', a: 'Free-plan PDFs carry a small attribution footer. Pro-plan invoices are 100% your brand — your logo, your color, your business info only.' }
     ]
   },
 
   'freelance-developer': {
-    title: 'Free Invoice Template for Freelance Developers · QuickInvoice',
+    title: 'Free Invoice Template for Freelance Developers · DecentInvoice',
     audience: 'developers',
     singular: 'developer',
     headline: 'Invoicing that fits how developers work.',
     description:
-      'Hourly, milestone, or retainer — QuickInvoice handles all three. Add line items, mark paid, move on to the next ticket.',
+      'Hourly, milestone, or retainer — DecentInvoice handles all three. Add line items, mark paid, move on to the next ticket.',
     subheadline:
       'Built for the side project that grew into three clients, not the agency with an accounting department.',
     benefits: [
@@ -75,25 +75,25 @@ const NICHES = {
       total: '3,300.00'
     },
     faq: [
-      { q: 'Can I invoice in multiple currencies?', a: 'QuickInvoice invoices default to your business currency. You can override the currency per invoice in the line-item description if needed.' },
+      { q: 'Can I invoice in multiple currencies?', a: 'DecentInvoice invoices default to your business currency. You can override the currency per invoice in the line-item description if needed.' },
       { q: 'Is there an API?', a: 'Pro plans include an outbound webhook on invoice-paid events — the lowest-common-denominator integration for any tool on Earth.' },
-      { q: 'Can I self-host this?', a: 'QuickInvoice is a hosted SaaS. If you need on-prem invoicing, the freelance-developer niche isn\'t the worst audience to ask about it — send us a note.' }
+      { q: 'Can I self-host this?', a: 'DecentInvoice is a hosted SaaS. If you need on-prem invoicing, the freelance-developer niche isn\'t the worst audience to ask about it — send us a note.' }
     ]
   },
 
   'freelance-writer': {
-    title: 'Free Invoice Template for Freelance Writers · QuickInvoice',
+    title: 'Free Invoice Template for Freelance Writers · DecentInvoice',
     audience: 'writers',
     singular: 'writer',
     headline: 'Invoicing for freelance writers.',
     description:
       'Bill per word, per article, or per retainer. Send professional invoices that get paid faster — and stop chasing editors for late cheques.',
     subheadline:
-      'You\'d rather be writing than chasing payment. QuickInvoice makes "send the invoice" a 60-second task.',
+      'You\'d rather be writing than chasing payment. DecentInvoice makes "send the invoice" a 60-second task.',
     benefits: [
       { icon: '✍️', title: 'Per-word or per-piece', body: 'Line items support any unit — "Words × $0.50", "Articles × $350", or a flat monthly retainer.' },
       { icon: '📬', title: 'Email-ready PDFs', body: 'Download the PDF, drop it into your email to the editor. Done. No printer, no scanner, no fax machine from 1997.' },
-      { icon: '📅', title: 'Overdue alerts', body: 'QuickInvoice shows you what\'s outstanding on every dashboard load — no more "wait, did that March piece get paid?"' }
+      { icon: '📅', title: 'Overdue alerts', body: 'DecentInvoice shows you what\'s outstanding on every dashboard load — no more "wait, did that March piece get paid?"' }
     ],
     exampleInvoice: {
       businessName: 'Margaret Cole',
@@ -109,12 +109,12 @@ const NICHES = {
     faq: [
       { q: 'How do I invoice for a kill fee?', a: 'Add a line item named "Kill fee" with the agreed amount. Most standard contracts put this between 25% and 50% of the assigned fee.' },
       { q: 'Can I add net-30 payment terms?', a: 'Yes. Set the due date on the invoice; the PDF shows "Due: [date]" and the dashboard flags overdue invoices automatically.' },
-      { q: 'What if the publication pays via a third-party platform?', a: 'Send them the QuickInvoice PDF for their records, then mark the invoice paid manually once the platform deposit clears.' }
+      { q: 'What if the publication pays via a third-party platform?', a: 'Send them the DecentInvoice PDF for their records, then mark the invoice paid manually once the platform deposit clears.' }
     ]
   },
 
   'freelance-photographer': {
-    title: 'Free Invoice Template for Freelance Photographers · QuickInvoice',
+    title: 'Free Invoice Template for Freelance Photographers · DecentInvoice',
     audience: 'photographers',
     singular: 'photographer',
     headline: 'Invoices for freelance photographers.',
@@ -142,17 +142,17 @@ const NICHES = {
     faq: [
       { q: 'How do I invoice a deposit and the balance separately?', a: 'Create two invoices under the same client — the first for the deposit (often 25–50%) with an early due date, and the second for the balance due on the shoot date.' },
       { q: 'Can I charge for usage rights separately?', a: 'Yes. Add "Commercial usage licence — 1 year" as a dedicated line item with its own rate. Puts the value of the licence in front of the client in writing.' },
-      { q: 'Do invoices include a contract?', a: 'QuickInvoice handles the invoice side only; use your usual contract tool for the shoot agreement and reference the invoice number in the contract.' }
+      { q: 'Do invoices include a contract?', a: 'DecentInvoice handles the invoice side only; use your usual contract tool for the shoot agreement and reference the invoice number in the contract.' }
     ]
   },
 
   'consultant': {
-    title: 'Free Invoice Template for Consultants · QuickInvoice',
+    title: 'Free Invoice Template for Consultants · DecentInvoice',
     audience: 'consultants',
     singular: 'consultant',
     headline: 'Consultant-grade invoices, without the agency overhead.',
     description:
-      'Retainer, project, or hourly — QuickInvoice sends clean, professional invoices that match your day rate. Built for independent consultants.',
+      'Retainer, project, or hourly — DecentInvoice sends clean, professional invoices that match your day rate. Built for independent consultants.',
     subheadline:
       'You charge $200/hour. Your invoicing tool should not look like it was made for a lemonade stand.',
     benefits: [
@@ -179,7 +179,7 @@ const NICHES = {
   },
 
   'invoice-generator': {
-    title: 'Free Online Invoice Generator · QuickInvoice',
+    title: 'Free Online Invoice Generator · DecentInvoice',
     audience: 'freelancers',
     singular: 'freelancer',
     headline: 'Free online invoice generator.',
@@ -204,8 +204,8 @@ const NICHES = {
     },
     faq: [
       { q: 'Is it really free?', a: 'The Free plan is free forever, up to 3 invoices. Upgrade to Pro for $12/month (or $99/year) when you need unlimited invoices, payment links, and custom branding.' },
-      { q: 'Do I need to install anything?', a: 'No. QuickInvoice runs in your browser. Register, create an invoice, download the PDF — that\'s the whole flow.' },
-      { q: 'Can I use this for my side business?', a: 'Yes — QuickInvoice is built for freelancers, side-hustlers, consultants, and small agencies. No business registration required.' }
+      { q: 'Do I need to install anything?', a: 'No. DecentInvoice runs in your browser. Register, create an invoice, download the PDF — that\'s the whole flow.' },
+      { q: 'Can I use this for my side business?', a: 'Yes — DecentInvoice is built for freelancers, side-hustlers, consultants, and small agencies. No business registration required.' }
     ]
   }
 };
@@ -226,7 +226,11 @@ function buildLocals(slug) {
     nicheBenefits: niche.benefits,
     nicheFaq: niche.faq,
     exampleInvoice: niche.exampleInvoice,
-    screenshotAlt: `Example QuickInvoice invoice for a ${niche.singular}`
+    screenshotAlt: `Example DecentInvoice invoice for a ${niche.singular}`,
+    ogTitle: niche.headline,
+    ogDescription: niche.description,
+    ogPath: publicUrls(slug),
+    ogType: 'article'
   };
 }
 

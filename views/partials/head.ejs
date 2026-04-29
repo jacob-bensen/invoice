@@ -4,6 +4,42 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><%= title %></title>
+  <%
+    // Open Graph + Twitter Card metadata. Per-page locals (ogTitle,
+    // ogDescription, ogPath, ogType, ogImage) override the safe defaults.
+    // APP_URL is read from env; when unset the absolute URLs fall back to
+    // a relative path so dev and tests don't render half-broken share previews.
+    var __ogAppUrl = (process.env.APP_URL || '').replace(/\/+$/, '');
+    var __ogTitle = locals.ogTitle || 'DecentInvoice — Professional invoices for freelancers';
+    var __ogDescription = locals.ogDescription || 'Send invoices freelancers can pay in one click. Free to start, $12/mo for Pro. 7-day free trial, no credit card.';
+    var __ogPath = locals.ogPath || '/';
+    var __ogType = locals.ogType || 'website';
+    var __ogImagePath = locals.ogImage || '/og-image.png';
+    var __ogImage = /^https?:\/\//i.test(__ogImagePath) ? __ogImagePath : (__ogAppUrl + __ogImagePath);
+    var __ogUrl = __ogAppUrl + __ogPath;
+    // Canonical URL — locals.canonicalPath overrides the OG path; absolute
+    // canonical URLs (locals.canonicalUrl) pass through untouched. Only render
+    // the tag when APP_URL is set (a relative canonical confuses search engines
+    // more than the absence of one).
+    var __canonicalUrl = locals.canonicalUrl
+      || (locals.canonicalPath ? (__ogAppUrl + locals.canonicalPath) : (__ogAppUrl ? __ogUrl : ''));
+    // Indexability — pages can opt out of the index (auth, settings, dashboard,
+    // billing) by passing `noindex: true`.
+    var __robots = locals.noindex ? 'noindex, nofollow' : 'index, follow';
+  %>
+  <% if (__canonicalUrl) { %><link rel="canonical" href="<%= __canonicalUrl %>"><% } %>
+  <meta name="robots" content="<%= __robots %>">
+  <meta name="description" content="<%= __ogDescription %>">
+  <meta property="og:title" content="<%= __ogTitle %>">
+  <meta property="og:description" content="<%= __ogDescription %>">
+  <meta property="og:image" content="<%= __ogImage %>">
+  <meta property="og:url" content="<%= __ogUrl %>">
+  <meta property="og:type" content="<%= __ogType %>">
+  <meta property="og:site_name" content="DecentInvoice">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="<%= __ogTitle %>">
+  <meta name="twitter:description" content="<%= __ogDescription %>">
+  <meta name="twitter:image" content="<%= __ogImage %>">
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {

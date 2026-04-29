@@ -1,4 +1,4 @@
--- QuickInvoice Database Schema
+-- DecentInvoice Database Schema
 
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
   business_address TEXT,
   business_phone VARCHAR(50),
   business_email VARCHAR(255),
-  plan VARCHAR(20) DEFAULT 'free' CHECK (plan IN ('free', 'pro')),
+  plan VARCHAR(20) DEFAULT 'free' CHECK (plan IN ('free', 'pro', 'business', 'agency')),
   stripe_customer_id VARCHAR(255),
   stripe_subscription_id VARCHAR(255),
   subscription_status VARCHAR(20),
@@ -46,7 +46,26 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_link_url TEXT;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_link_id VARCHAR(255);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status VARCHAR(20);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS webhook_url TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reply_to_email VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMP;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_dismissed BOOLEAN DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_nudge_sent_at TIMESTAMP;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_reminder_sent_at TIMESTAMP;
+
+-- INTERNAL_TODO H5: widen users.plan CHECK to allow 'business' and 'agency'.
+-- The CREATE TABLE above already uses the wide list for fresh installs; this
+-- block migrates pre-existing deployments whose constraint still pins
+-- ('free','pro'). Drop-then-add is idempotent: DROP IF EXISTS no-ops on a
+-- fresh DB (where the new constraint already exists with the wide list, so we
+-- drop and re-add the same definition). On an old DB it swaps the narrow
+-- definition for the wide one.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_plan_check;
+ALTER TABLE users ADD CONSTRAINT users_plan_check
+  CHECK (plan IN ('free', 'pro', 'business', 'agency'));
 
 CREATE INDEX IF NOT EXISTS idx_invoices_user_id ON invoices(user_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
 CREATE INDEX IF NOT EXISTS idx_invoices_payment_link_id ON invoices(payment_link_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_reminder_due
+  ON invoices(status, due_date)
+  WHERE status = 'sent';

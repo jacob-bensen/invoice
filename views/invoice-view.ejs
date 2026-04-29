@@ -28,38 +28,47 @@
 
   <!-- Action bar -->
   <div class="flex flex-wrap gap-3 mb-8">
-    <% if (invoice.payment_link_url && user.plan === 'pro') { %>
-      <a href="<%= invoice.payment_link_url %>" target="_blank" rel="noopener"
-        class="bg-green-600 text-white font-semibold px-5 py-2.5 rounded-lg hover:bg-green-700 transition flex items-center gap-2">
-        💳 Pay Now
+    <% if (invoice.status === 'draft') { %>
+      <!-- Draft: the next-action CTA is "Mark as Sent" (Pro users also email the client + create a Stripe Payment Link). Print/Download is demoted to secondary so the lifecycle CTA wins the visual hierarchy. -->
+      <form action="/invoices/<%= invoice.id %>/status" method="POST" class="inline">
+        <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+        <input type="hidden" name="status" value="sent">
+        <button class="bg-brand-600 text-white font-semibold px-5 py-2.5 rounded-lg hover:bg-brand-700 transition flex items-center gap-2">
+          📤 Mark as Sent
+        </button>
+      </form>
+      <a href="/invoices/<%= invoice.id %>/print" target="_blank"
+        class="border border-gray-300 text-gray-700 font-semibold px-5 py-2.5 rounded-lg hover:bg-gray-50 transition">
+        📄 View / Download PDF
+      </a>
+    <% } else { %>
+      <a href="/invoices/<%= invoice.id %>/print" target="_blank"
+        class="bg-brand-600 text-white font-semibold px-5 py-2.5 rounded-lg hover:bg-brand-700 transition flex items-center gap-2">
+        📄 View / Download PDF
       </a>
     <% } %>
-    <a href="/invoices/<%= invoice.id %>/print" target="_blank"
-      class="bg-brand-600 text-white font-semibold px-5 py-2.5 rounded-lg hover:bg-brand-700 transition flex items-center gap-2">
-      🖨️ Print / Download PDF
-    </a>
     <a href="/invoices/<%= invoice.id %>/edit"
       class="border border-gray-300 text-gray-700 font-semibold px-5 py-2.5 rounded-lg hover:bg-gray-50 transition">
       ✏️ Edit
     </a>
-    <% if (invoice.status !== 'sent') { %>
-      <form action="/invoices/<%= invoice.id %>/status" method="POST" class="inline">
-        <input type="hidden" name="status" value="sent">
-        <button class="border border-gray-300 text-gray-700 font-semibold px-5 py-2.5 rounded-lg hover:bg-gray-50 transition">
-          📤 Mark as Sent
-        </button>
-      </form>
-    <% } %>
     <% if (invoice.status !== 'paid') { %>
       <form action="/invoices/<%= invoice.id %>/status" method="POST" class="inline">
+        <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
         <input type="hidden" name="status" value="paid">
-        <button class="border border-green-300 text-green-700 font-semibold px-5 py-2.5 rounded-lg hover:bg-green-50 transition">
-          ✅ Mark as Paid
-        </button>
+        <% if (invoice.status === 'sent' || invoice.status === 'overdue') { %>
+          <button class="bg-green-600 text-white font-semibold px-5 py-2.5 rounded-lg hover:bg-green-700 transition flex items-center gap-2">
+            ✅ Mark as Paid
+          </button>
+        <% } else { %>
+          <button class="border border-green-300 text-green-700 font-semibold px-5 py-2.5 rounded-lg hover:bg-green-50 transition">
+            ✅ Mark as Paid
+          </button>
+        <% } %>
       </form>
     <% } %>
     <form action="/invoices/<%= invoice.id %>/delete" method="POST" class="inline"
       onsubmit="return confirm('Delete this invoice? This cannot be undone.')">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
       <button class="border border-red-200 text-red-600 font-semibold px-5 py-2.5 rounded-lg hover:bg-red-50 transition">
         🗑️ Delete
       </button>
@@ -156,18 +165,87 @@
 
     <!-- Payment Link (Pro) -->
     <% if (invoice.payment_link_url && user.plan === 'pro') { %>
+      <%
+        const methods = (typeof paymentMethods !== 'undefined' && Array.isArray(paymentMethods)) ? paymentMethods : ['card'];
+        const labelFor = { card: 'card', us_bank_account: 'US bank transfer (ACH)', sepa_debit: 'SEPA Direct Debit', au_becs_debit: 'BECS Direct Debit', bacs_debit: 'BACS Direct Debit', acss_debit: 'Pre-authorised debit', link: 'Stripe Link' };
+        const labels = methods.map(m => labelFor[m] || m);
+        const methodCopy = labels.length === 1
+          ? labels[0]
+          : labels.slice(0, -1).join(', ') + ' or ' + labels[labels.length - 1];
+        // Share-intent prefill (#92). Native compose targets:
+        //   wa.me   → WhatsApp web/app, single `text` query param
+        //   sms:    → iOS/Android Messages, `body` after `?` (RFC 5724)
+        //   mailto: → Mail.app/Gmail/Outlook, `subject` + `body`
+        // Body kept short to fit SMS 160-char window with the URL itself; URL
+        // is appended last so even truncated previews preserve the click target.
+        const shareGreeting = invoice.client_name ? ('Hi ' + invoice.client_name + ',') : 'Hi,';
+        const shareTotal = '$' + parseFloat(invoice.total).toFixed(2);
+        const shareBody = shareGreeting + ' here\'s invoice ' + invoice.invoice_number +
+          ' for ' + shareTotal + '. You can pay securely here: ' + invoice.payment_link_url;
+        const shareSubject = 'Invoice ' + invoice.invoice_number + ' — ' + shareTotal;
+        const waHref = 'https://wa.me/?text=' + encodeURIComponent(shareBody);
+        const smsHref = 'sms:?&body=' + encodeURIComponent(shareBody);
+        // Defence in depth: percent-encode the recipient so a malformed
+        // client_email (e.g. one containing `?` or `&`) cannot inject extra
+        // mailto: query params. Modern mail clients un-encode `%40` back to
+        // `@` correctly; the alternative — passing the raw email — would
+        // allow `foo@bar.com?cc=attacker%40evil.com` to silently CC a third
+        // party from the user's mail client.
+        const mailHref = 'mailto:' + encodeURIComponent(invoice.client_email || '') +
+          '?subject=' + encodeURIComponent(shareSubject) +
+          '&body=' + encodeURIComponent(shareBody);
+      %>
       <div class="border-t border-gray-100 pt-6 mb-6" x-data="{ copied: false }">
         <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Payment Link</p>
-        <p class="text-gray-500 text-sm mb-3">Send this secure Stripe link to your client so they can pay in one click.</p>
+        <p class="text-gray-500 text-sm mb-1">Send this secure Stripe link to your client so they can pay in one click.</p>
+        <p class="text-gray-400 text-xs mb-3">Clients can pay via <%= methodCopy %>.</p>
         <div class="flex items-center gap-2">
           <input type="text" readonly value="<%= invoice.payment_link_url %>"
+            data-pay-link-url="<%= invoice.payment_link_url %>"
             class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-gray-50 font-mono" />
           <button type="button"
-            @click="navigator.clipboard.writeText('<%= invoice.payment_link_url %>').then(() => { copied = true; setTimeout(() => copied = false, 2000); })"
+            @click="navigator.clipboard.writeText($root.querySelector('[data-pay-link-url]').dataset.payLinkUrl).then(() => { copied = true; setTimeout(() => copied = false, 2000); })"
             class="border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-gray-50 transition text-sm">
             <span x-show="!copied">Copy</span>
             <span x-show="copied" class="text-green-600">Copied!</span>
           </button>
+          <a href="<%= invoice.payment_link_url %>" target="_blank" rel="noopener"
+            title="Open the Stripe payment page your client will see"
+            class="border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-gray-50 transition text-sm whitespace-nowrap">
+            Preview ↗
+          </a>
+        </div>
+        <p class="text-gray-400 text-xs mt-2">Preview opens the page your client sees.</p>
+
+        <!-- Share to client (#92) — WhatsApp / SMS / Email open the user's
+             native compose window with the pay link prefilled. No data leaves
+             the browser; clicking just calls the OS's URL handler. -->
+        <div class="mt-4 pt-4 border-t border-gray-100">
+          <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Send to client</p>
+          <div class="flex flex-wrap gap-2">
+            <a href="<%= waHref %>" target="_blank" rel="noopener"
+              data-share="whatsapp"
+              title="Open WhatsApp with a prefilled message"
+              class="inline-flex items-center gap-2 border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-green-50 hover:border-green-300 transition text-sm">
+              <span aria-hidden="true">💬</span>
+              <span>WhatsApp</span>
+            </a>
+            <a href="<%= smsHref %>"
+              data-share="sms"
+              title="Open Messages with a prefilled SMS"
+              class="inline-flex items-center gap-2 border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition text-sm">
+              <span aria-hidden="true">📱</span>
+              <span>SMS</span>
+            </a>
+            <a href="<%= mailHref %>"
+              data-share="email"
+              title="Open your email client with a prefilled message"
+              class="inline-flex items-center gap-2 border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-indigo-50 hover:border-indigo-300 transition text-sm">
+              <span aria-hidden="true">✉️</span>
+              <span>Email</span>
+            </a>
+          </div>
+          <p class="text-gray-400 text-xs mt-2">Each button opens your native app with the message prefilled — review and hit send.</p>
         </div>
       </div>
     <% } %>
