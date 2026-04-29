@@ -12,12 +12,17 @@ const { sendInvoiceEmail } = require('../lib/email');
 const router = express.Router();
 const FREE_LIMIT = 3;
 const ALLOWED_INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue'];
+// Whitelist of windows the recent-revenue JSON endpoint accepts (#117). Any
+// other value falls through to the default 30. Keeps the API surface small
+// and predictable — the toggle UI only offers these three.
+const RECENT_REVENUE_WINDOWS = [7, 30, 90];
 
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const [invoices, user] = await Promise.all([
+    const [invoices, user, recentRevenue] = await Promise.all([
       db.getInvoicesByUser(req.session.user.id),
-      db.getUserById(req.session.user.id)
+      db.getUserById(req.session.user.id),
+      loadRecentRevenueStats(req.session.user.id)
     ]);
     const flash = req.session.flash;
     delete req.session.flash;
@@ -29,7 +34,8 @@ router.get('/', requireAuth, async (req, res) => {
         ...req.session.user,
         plan: user.plan,
         subscription_status: user.subscription_status || null,
-        invoice_count: user.invoice_count
+        invoice_count: user.invoice_count,
+        trial_ends_at: user.trial_ends_at || null
       };
     }
     let days_left_in_trial = 0;
@@ -40,15 +46,30 @@ router.get('/', requireAuth, async (req, res) => {
       }
     }
     const onboarding = buildOnboardingState(user, invoices);
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, noindex: true });
+    const invoiceLimitProgress = buildInvoiceLimitProgress(user);
+    const recentRevenueCard = buildRecentRevenueCard(user, recentRevenue);
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
       title: 'My Invoices', invoices: [], user: req.session.user || null,
-      flash: null, days_left_in_trial: 0, onboarding: null, noindex: true
+      flash: null, days_left_in_trial: 0, onboarding: null,
+      invoiceLimitProgress: null, recentRevenue: null, noindex: true
     });
   }
 });
+
+function buildInvoiceLimitProgress(user) {
+  if (!user || user.plan !== 'free') return null;
+  const used = Math.max(0, parseInt(user.invoice_count, 10) || 0);
+  const max = FREE_LIMIT;
+  const cappedUsed = Math.min(used, max);
+  const percent = max > 0 ? Math.round((cappedUsed / max) * 100) : 0;
+  const remaining = Math.max(0, max - used);
+  const atLimit = used >= max;
+  const nearLimit = !atLimit && remaining <= 1;
+  return { used, max, percent, remaining, atLimit, nearLimit };
+}
 
 function buildOnboardingState(user, invoices) {
   if (!user || user.onboarding_dismissed) return null;
@@ -77,6 +98,81 @@ async function loadRecentClients(userId) {
     return [];
   }
 }
+
+async function loadRecentRevenueStats(userId, days = 30) {
+  try {
+    return await db.getRecentRevenueStats(userId, days);
+  } catch (err) {
+    console.error('Recent revenue stats lookup failed:', err && err.message);
+    return null;
+  }
+}
+
+/*
+ * Decides whether to show the last-N-days "what you collected" card on the
+ * dashboard (INTERNAL_TODO #107). Hidden for free users and for anyone who
+ * has zero paid invoices in the window — the card is a positive-momentum
+ * surface, not an empty-state nag. `stats` is whatever loadRecentRevenueStats
+ * returned (object on success, null on DB failure or missing user).
+ */
+function buildRecentRevenueCard(user, stats) {
+  if (!user) return null;
+  if (user.plan === 'free') return null;
+  if (!stats || typeof stats !== 'object') return null;
+  const totalPaid = Number(stats.totalPaid) || 0;
+  const invoiceCount = parseInt(stats.invoiceCount, 10) || 0;
+  const clientCount = parseInt(stats.clientCount, 10) || 0;
+  const unpaidCount = parseInt(stats.unpaidCount, 10) || 0;
+  // Card stays gated on having at least one paid invoice in the window —
+  // the 30d default determines whether the card appears at all on SSR.
+  // unpaidCount is threaded through so toggle re-fetches can drive the
+  // quiet-window recovery CTA (#127) when the user toggles to a window
+  // with totalPaid===0 but has open unpaid invoices to follow up on.
+  if (invoiceCount === 0) return null;
+  return {
+    days: parseInt(stats.days, 10) || 30,
+    totalPaid,
+    invoiceCount,
+    clientCount,
+    unpaidCount
+  };
+}
+
+/*
+ * JSON endpoint that powers the dashboard's recent-revenue window toggle
+ * (INTERNAL_TODO #117). Reuses the same db.getRecentRevenueStats helper +
+ * buildRecentRevenueCard render shape used by the SSR dashboard. Days arg
+ * is whitelisted to [7, 30, 90] — any other value (including 0, negative,
+ * or out-of-range) falls back to 30. Free-plan users get a 200 with
+ * `card: null` so the client can hide the card without a 4xx error
+ * branch; this matches the SSR behaviour (free → null card) exactly.
+ *
+ * Mounted before /:id so 'api' isn't matched as an invoice id.
+ */
+router.get('/api/recent-revenue', requireAuth, async (req, res) => {
+  const requested = parseInt(req.query.days, 10);
+  const days = RECENT_REVENUE_WINDOWS.includes(requested) ? requested : 30;
+  try {
+    const [user, stats] = await Promise.all([
+      db.getUserById(req.session.user.id),
+      loadRecentRevenueStats(req.session.user.id, days)
+    ]);
+    const card = buildRecentRevenueCard(user, stats);
+    // Surface unpaidCount at the top level too, so the quiet-window
+    // recovery CTA (#127) can fire even when card===null (i.e. when
+    // invoiceCount===0 in this window — buildRecentRevenueCard returns
+    // null in that case but the user may still have open unpaid invoices
+    // worth following up on).
+    const unpaidCount = stats && typeof stats === 'object'
+      ? parseInt(stats.unpaidCount, 10) || 0
+      : 0;
+    res.set('Cache-Control', 'no-store');
+    res.json({ days, card, unpaidCount });
+  } catch (err) {
+    console.error('Recent revenue API error:', err && err.message);
+    res.status(500).json({ days, card: null, error: 'lookup_failed' });
+  }
+});
 
 router.get('/new', requireAuth, async (req, res) => {
   const user = await db.getUserById(req.session.user.id);
@@ -323,5 +419,9 @@ async function onboardingDismissHandler(req, res) {
 
 module.exports = router;
 module.exports.buildOnboardingState = buildOnboardingState;
+module.exports.buildInvoiceLimitProgress = buildInvoiceLimitProgress;
+module.exports.buildRecentRevenueCard = buildRecentRevenueCard;
 module.exports.onboardingDismissHandler = onboardingDismissHandler;
 module.exports.ALLOWED_INVOICE_STATUSES = ALLOWED_INVOICE_STATUSES;
+module.exports.FREE_LIMIT = FREE_LIMIT;
+module.exports.RECENT_REVENUE_WINDOWS = RECENT_REVENUE_WINDOWS;

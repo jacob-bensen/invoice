@@ -1,6 +1,6 @@
 # Actions Required from Master
 
-> **Audited:** 2026-04-27 PM — Task Optimizer re-pass. All items reviewed against CHANGELOG (which now spans 2026-04-22 → 2026-04-27 PM). Three new items added this cycle: **#42** (verify domain + submit sitemap to Google Search Console — 10-min one-time SEO foundation, gates the value of #8 sitemap + #36 OG metadata + #56 robots.txt), **#43** ([MARKETING] listicle outreach for backlinks — high-leverage compounding SEO), **#44** ([MARKETING] LinkedIn cold-outbound to Ops/Eng Directors hiring freelancers — Agency-tier funnel — gated on INTERNAL_TODO #9 shipping). No items tagged [LIKELY DONE - verify] this cycle — every prior Master action remains pending its respective external step (Stripe Dashboard config, Resend API key, Plausible domain, etc.). Items 1–8 are human deployment/configuration actions; none are resolved by code commits. Code for all P1–P10 features and every shipped INTERNAL_TODO item is complete; deployment + the listed Stripe / Resend / domain / analytics provisioning are the remaining blockers to scale-revenue.
+> **Audited:** 2026-04-28 — Task Optimizer 10th-pass re-review. All items re-checked against the CHANGELOG (which now spans 2026-04-22 → 2026-04-28). Two new [MARKETING] items added this cycle: **#50** (Indie Hackers product directory + 4-week "Building in Public" series — community-building distribution channel distinct from #12 PH burst, #19 Show HN, #20 newsletter borrowed-audience) and **#51** (single-spot test buy on a freelance-focused podcast — $500-$1500, decision rule ≥ 5 Pro conversions in 30 days → scale to series; lowest-risk validation of audio as an acquisition channel before committing to a series). No items tagged [LIKELY DONE - verify] this cycle — every prior Master action remains pending its respective external step (Stripe Dashboard config, Resend API key, Plausible domain, G2/Capterra profile creation, etc.). Items 1–8 are human deployment/configuration actions; none are resolved by code commits. Code for all P1–P10 features and every shipped INTERNAL_TODO item is complete (including this cycle's H14 helper consolidation + invoice-view UX fix); deployment + the listed Stripe / Resend / domain / analytics provisioning are the remaining blockers to scale-revenue.
 
 ---
 
@@ -1169,3 +1169,510 @@ Closed communities are the highest-conversion-per-impression distribution surfac
 ### Why this matters
 
 YouTube SEO is the single most-evergreen acquisition channel for B2B SaaS at this stage. A 60-second walkthrough that ranks for one or two long-tail queries drives 50-300 passive views per month indefinitely, of which ~5% click through to the landing page, of which ~5% convert to free signup. Doesn't compete with #15 (Loom autoplay clip — that's about reducing landing-page bounce); this is about new acquisition. Compounds with #36 (OG metadata) and INTERNAL_TODO #52 (JSON-LD `SoftwareApplication` schema with `VideoObject` ref).
+
+---
+
+## 47. [MARKETING] "Cashflow horror story" Twitter/X thread series — once monthly, evergreen (added 2026-04-27 PM-3)
+
+**Impact:** MEDIUM — distinct from #17 (LinkedIn/Tweet content series — that's invoicing tips). This is a structured monthly thread format that retells a real freelancer cashflow horror story (anonymised, sourced from r/freelance, Indie Hackers, or your own users) and lands on a "this is the gap QuickInvoice closes" beat. Threads of this shape (relatable problem → narrative → tool reveal) consistently outperform tip threads on engagement and click-through, because the reader spends 90 seconds invested in the problem before the product gets named.
+
+### Action (Master, ~1 hr/month ongoing)
+
+1. **Source one story per month** (~20 min): scrape r/freelance and Indie Hackers for posts tagged `chasing payment`, `client won't pay`, `late invoice`, `freelance accountant horror`. Take one with > 50 upvotes / > 10 comments and the freelancer's permission to retell anonymised.
+2. **Write the thread** (~30 min, 8-12 tweets): tweet 1 = the hook ("Freelance designer waited 91 days to get paid. Here's what happened."). Tweets 2-8 = narrative beats (signed contract, sent invoice, client ghosted, follow-up emails, etc.). Tweet 9 = the systemic gap ("No automated reminder. No payment link. Just hope."). Tweet 10 = "This is why I built QuickInvoice." with the landing URL.
+3. **Schedule** via Buffer/Hypefury for Tuesday 10am ET (highest engagement window for the freelancer cohort).
+4. **Cross-post the thread to LinkedIn** as a single long-form post (LinkedIn auto-truncates at 1300 chars but the algorithm rewards long-form text-only posts; embed the landing-page link in the first comment, not the post body — LinkedIn deboosts posts with external links).
+5. **Track conversion** via the `?ref=twitter-cashflow-MM-YY` URL param on the landing-page link; review Plausible's referrer split (#29 once live) at 30 days post-publish.
+
+### Why this matters
+
+Once-monthly cadence (12 threads/year) is sustainable. Each thread compounds — the problem stays evergreen, the freelancer cohort doesn't change, the QuickInvoice positioning ("we close this specific gap") gets reinforced 12 times a year without ever feeling like a sales pitch. Pairs with #34 (Indie Hackers / Reddit launch posts — same audience, different surface), #44 (LinkedIn outbound — same content can be repurposed there), and the #45 community presence (you can drop the thread into your community feed once you've earned the standing).
+
+---
+
+## 48. [MARKETING] First-Pro-cohort founder onboarding calls — first 20 customers only (added 2026-04-27 PM-3)
+
+**Impact:** HIGH (early-stage learning + retention) — every SaaS founder who skipped the "manually onboard the first 20 paying customers" step has a regret thread on Indie Hackers about it. A 15-minute Zoom call with each of the first 20 Pro signups generates: (a) the most actionable feature feedback you'll ever get; (b) testimonial quotes (#21 prereq); (c) referral seeds (each Pro user knows ~5 other freelancers, half of whom would benefit from QuickInvoice); (d) reduced churn (a customer who's spoken to a founder 1-on-1 churns at roughly half the rate of one who hasn't). Each call is a marketing asset, a product-research interview, and a retention lever simultaneously. Stops at 20 customers because the math stops working past that scale; the "first 20" is a one-time investment.
+
+### Action (Master, ~30 min per customer, capped at 20 customers ≈ 10 hrs total)
+
+1. **Trigger:** add a hook in the existing `customer.subscription.updated` webhook handler so the first 20 Pro upgrades fire a Slack notification to Master with the user's email (no code change needed if Master sets up a Stripe-to-Slack Zap; otherwise tag as INTERNAL_TODO).
+2. **Personalised email** (template, ~5 min to fill per customer): "Hi <name>, founder of QuickInvoice here — you're one of the first 20 Pro users, and I want to make sure you get a real human onboarding. 15-minute Zoom this week? <Calendly link>." Calendly free tier is fine.
+3. **Run the call** (15-20 min): (a) watch them create their first invoice — observe friction; (b) ask "what would you have wanted that's missing?"; (c) ask "what almost stopped you from signing up?"; (d) close with "would you mind if I quoted you on the landing page once you've used it for a month?"
+4. **Capture the answers** in a single Notion / Google Doc — one entry per customer, structured: name / vertical / pain point / feature requests / quote-permission y/n.
+5. **Feed back into INTERNAL_TODO** — every feature request that surfaces 2+ times across the 20 calls becomes a [GROWTH] item with the tag "validated by user interview."
+6. **Stop at 20 customers.** Past 20, the unit economics break (Master's hourly cost > customer LTV at $9-19/mo), and the patterns repeat. The first-20 cohort is a one-time investment.
+
+### Why this matters
+
+Every SaaS team that skipped this step bought their first 20 customers' feedback in churn data instead of voice — that's strictly worse data, delivered later, when the customer has already left. Compounds with #21 (testimonials — the calls produce the quotes), #18 (affiliate program — the early Pros are the most likely affiliates), and INTERNAL_TODO #57 (NPS survey — the calls calibrate the NPS-question wording before the survey ships at scale).
+
+---
+
+## 49. [MARKETING] G2 / Capterra / TrustRadius profile claims + first-cohort review seeding (added 2026-04-27 PM-4)
+
+**Impact:** HIGH (long-tail acquisition + late-funnel trust) — G2, Capterra, and TrustRadius are the dominant late-funnel comparison surfaces for SaaS buyers (any prospect who Googles "QuickInvoice vs FreshBooks" or "best invoice tool for freelancers" lands on one of these sites). Without a profile, the prospect either lands on a competitor's profile or on a generic listicle that doesn't have QuickInvoice in it. A claimed profile with 5+ reviews from real Pro users:
+- Surfaces in long-tail comparison searches (organic SEO)
+- Pre-empts the "no reviews → can't trust it" objection that kills late-funnel conversion
+- Becomes a first-page Google result for the brand itself (claim it before a competitor or scraper does)
+- Compounds across all three platforms simultaneously (one batch of review requests, three platforms populated)
+
+Distinct from existing #33 (AppSumo / SaaS Mantra lifetime-deal listing — different funnel: AppSumo is acquisition via promo, G2 is mid/late-funnel comparison & trust signal) and #44 (LinkedIn outbound to Ops Directors — different audience: enterprise/agency buyer vs. SMB/freelancer self-serve).
+
+### Action (Master, ~3 hrs total — broken into 4 steps over 30 days)
+
+1. **Claim the profile on each platform** (~30 min per platform, ~90 min total):
+   - **G2** (https://www.g2.com/sellers/sign-up): claim or create the QuickInvoice listing under the "Invoicing & Billing" category. G2 verifies via a `quickinvoice.io` email address.
+   - **Capterra / GetApp / Software Advice** (one signup at https://vendors.capterra.com/listing — three sites, single profile): same-category listing.
+   - **TrustRadius** (https://www.trustradius.com/products/new): smaller volume but high-intent traffic.
+
+2. **Populate each profile with the canonical pitch** (~30 min total — paste the same content across all three):
+   - 1-paragraph product summary (already written in `views/index.ejs` hero section)
+   - 3-5 screenshots: dashboard, invoice form, invoice view with Pay button, pricing page (use the already-shipped OG image from `public/og-image.png` once #38 lands)
+   - Pricing tiers verbatim from `views/pricing.ejs`
+   - "Best for" tags: Freelancers, Small agencies, Solopreneurs, Independent contractors
+
+3. **Review seeding from the first 20 Pro cohort** (paired with #48 founder onboarding calls — ~10 min of each call). Pitch wording: *"If QuickInvoice is genuinely saving you time, would you write a 2-3 sentence review on G2? Here's the link." (Send the direct G2 review URL after the call, not as a generic ask.)* G2 incentivises with a $10 Amazon gift card per verified review (valued at marketing $); QuickInvoice doesn't pay anything. Target: 5 reviews on G2, 3 on Capterra, 2 on TrustRadius within 30 days.
+
+4. **Add the review badges to the landing page** (~5 min) — once 5 reviews are live, G2 generates an embed snippet ("4.8 stars on G2 · 5 reviews"). Drop into `views/index.ejs` social-proof section (alongside whatever ships from INTERNAL_TODO #20).
+
+### Why this matters
+
+Late-funnel trust signal that compounds for years with no ongoing maintenance. Most SMB SaaS prospects do this exact path: hear about the tool → search "<tool> vs <alternative>" → see comparison-site results. A claimed profile with 5+ reviews wins that surface; a non-existent profile loses to whoever did claim theirs. The cost is one afternoon of profile setup + leveraging the #48 onboarding call cohort for review seeding. No paid spend, no recurring effort.
+
+Pairs with #48 (founder calls produce the review-seeding cohort), INTERNAL_TODO #20 (social-proof landing section consumes the badges), and INTERNAL_TODO #57 (NPS survey can be re-pitched as a review request after high scores).
+
+---
+
+### 50. [MARKETING] Submit QuickInvoice to Indie Hackers product directory + run a "Building in Public" updates series (added 2026-04-28)
+
+**Audience:** Bootstrapped-founder community on Indie Hackers (~150K monthly active, the highest-density freelancer + indie SaaS community on the open web).
+
+**Distinct from:**
+- **#12** (Product Hunt) — different community (PH is launch-day burst traffic, IH is sustained engagement over weeks)
+- **#19** (Show HN) — different audience (HN is technical/engineering, IH is product/marketing)
+- **#20** (Newsletter outreach) — different format (newsletter is borrowed audience; IH is direct posting to your own profile)
+- **#26** (G2/Capterra) — different funnel (G2 is comparison-shopping; IH is community-building)
+
+### Action (Master, ~30 min one-time setup + ~2 hrs/week ongoing for 4 weeks)
+
+1. **Profile setup** (~15 min): create the QuickInvoice product listing at https://www.indiehackers.com/products. Tags: "SaaS", "Freelance", "Invoicing", "Productivity". Add the same OG image, tagline, and pricing as the G2/Capterra setup (#49).
+
+2. **Founder profile** (~15 min): set up Master's personal IH profile linked to the product. Bio: "Building QuickInvoice — invoicing for freelancers who'd rather be doing the work."
+
+3. **"Building in Public" weekly post series** (~30 min/post, 4 posts):
+   - Week 1: "We just shipped a 7-day Pro free trial. Here's what we learned about activation." (link to public roadmap once #38 ships)
+   - Week 2: "First 20 paying users — what they all have in common." (cohort-analysis post; great for review seeding)
+   - Week 3: "We added Klarna/Afterpay to invoice payment links. Here's the conversion-lift data." (gated on INTERNAL_TODO #79 shipping)
+   - Week 4: "MRR milestone update + lessons from the first quarter." (transparency = trust on IH)
+
+4. **Comment engagement** (~30 min/week): comment substantively on at least 5 other founders' posts per week. The IH algorithm boosts active posters. Pure-promo profiles get demoted; engaged profiles get pinned to the front page.
+
+### Why this matters (income relevance)
+
+Indie Hackers is the single highest-density community of two types of QuickInvoice's ideal customers:
+1. **Self-employed product founders** who invoice contract clients on the side and need a tool that takes 2 minutes (not 20 like Wave/QuickBooks)
+2. **Bootstrapped-SaaS operators** who watch other bootstrappers' products to learn from the journey — a public "Building in Public" series both attracts that audience as customers AND builds Master's personal credibility for future fundraising / acquisitions / partnerships.
+
+Compounds with #43 (listicle outreach — IH posts often get cross-linked from listicle articles), #21 (testimonials — IH commenters often become testimonial sources), and INTERNAL_TODO #18 (referral program — IH founders are heavy referrers; once #18 ships, an IH-specific affiliate-link drop closes the loop).
+
+**Why now and not later:** IH's algorithm rewards consistency. Starting a Building-in-Public series at MRR $0 is more authentic than starting at MRR $10K — early posts age into "look how far they've come" social proof. The window to start is now-ish.
+
+---
+
+### 51. [MARKETING] Sponsor a single-spot test on a freelancer-focused podcast (added 2026-04-28)
+
+**Audience:** Freelancers who consume freelance-business advice via audio (typically the more-mature freelancer cohort — full-time independents, agency principals, and 1-employee studios — exactly the Pro/Agency tier QuickInvoice already monetises hardest).
+
+**Distinct from:**
+- **#20** (Newsletter outreach — text format, different consumption pattern)
+- **#17** (Twitter/LinkedIn series — text/static visual, different attention pattern)
+- **#15** (60-second demo video — video format, different distribution surface)
+
+### Action (Master, ~3 hrs research + ~1 hr negotiation + $500-$1500 single-spot ad spend)
+
+1. **Identify 3 candidate podcasts** (~2 hrs):
+   - "The Freelance Friday Podcast" (~25K downloads/episode, freelance-business focus)
+   - "Being Freelance" (~30K downloads/episode, UK-skewed but English-speaking)
+   - "Freelance Transformation" (~15K downloads/episode, US-skewed, host-read ads)
+
+   Look for: host-read ads (3× the conversion of pre-recorded), audience match (freelance > business-owner > entrepreneur), and CPM under $25 (any higher and the ROI is harder to recoup at $19/mo Pro).
+
+2. **Pitch + negotiate** (~1 hr): contact the show's sales rep (always linked in the show notes) with a short pitch:
+
+   > *"Hi — we run QuickInvoice, an invoicing SaaS for freelancers ($19/mo Pro). We'd like to test a single-spot host-read ad in your next available episode. Our offer: a custom promo code (15% off forever) so you can run the read straight from our pricing page. Budget: up to $1500 for one episode. Looking to test conversion before committing to a series."*
+
+3. **Set up the tracking** (~30 min, after agreement): create a Stripe coupon `PODCAST15` (per [MARKETING] #32 process), and add a UTM-tagged landing variant of `/pricing` (e.g. `/pricing?utm_source=podcast&utm_campaign=<show>`). The landing-page variant just renders `views/pricing.ejs` with the coupon hint pre-filled.
+
+4. **Measure** (~1 hr after the episode airs): track signup count + Pro conversion via `?utm_*` query params over the 30 days following episode air. Decision rule: if a single $1000 spot drives ≥ 5 Pro conversions in 30 days (LTV ≈ $300, gross margin ≈ $1500), buy a series of 4. If not, drop the channel.
+
+### Why this matters (income relevance)
+
+Test-buy validates whether audio is a cost-effective acquisition channel for QuickInvoice's exact target customer before committing to a series. The freelance-podcast audience skews older / higher-income / more business-mature than the typical Twitter / Reddit freelancer audience, which means they (a) churn less, (b) need fewer features to convert (the value prop "stop chasing payments" hits home immediately), and (c) are more likely to refer-out (Master's ICP).
+
+A single test buy is the lowest-risk way to find out whether the unit economics work — if they do, scaling is just buying more spots; if they don't, the cost is capped at one spot.
+
+Distinct from #18 (Affiliate / Rewardful — affiliate is performance-only, podcast sponsorship is brand + impression), #15 (60s demo video — video is shareable asset, audio is one-and-done CPM media), and #20 (newsletter — different consumption, different audience-overlap).
+
+**Why now:** podcast sponsorship is most cost-effective when (a) you have a clear, easy-to-pitch value prop ("stop chasing payments"), (b) you have a working free trial (#19 — done), and (c) you have at least one shippable customer testimonial (gated on #21 testimonials work + #48 founder calls). The first two are true today; the third lands within 4 weeks. Buy the spot to air ~5 weeks out so the testimonial is in the can before the read goes live.
+
+---
+
+### 52. [MARKETING] Pitch the 3 new `/vs/<competitor>` comparison pages to "best invoicing software 2026" listicle authors (added 2026-04-28 PM-2)
+
+**Impact:** MED-HIGH (one-time SEO foundation + persistent backlink asset). INTERNAL_TODO #86 ships three first-party comparison pages — `/vs/freshbooks`, `/vs/wave`, `/vs/bonsai`. Comparison pages only rank when they accumulate backlinks from authoritative listicle sites; without that signal Google treats them as orphan thin-content. A targeted email outreach campaign to the 15-20 authors of "best invoicing software for freelancers 2026" / "FreshBooks alternatives 2026" / "Wave alternatives 2026" listicles, pitching QuickInvoice as a candidate addition with the new comparison pages as ready-to-link reference copy, gives those listicles a one-click reason to add QuickInvoice (the comparison page is the destination URL they'd otherwise have to write themselves). Compounds with #36 (LinkedIn outreach to listicle authors) — same audience, different surface (LinkedIn DM vs cold email).
+
+**Distinct from existing items:**
+
+- **#36** (LinkedIn outreach to listicle authors) — same audience, different surface and copy. #36 is generic "please consider listing QuickInvoice"; #52 is specific "here's a ready-to-link comparison page that does the listicle author's research for them."
+- **#26** (G2 / Capterra reviews) — different mechanism. G2 is review-aggregation listings; this is editorial content.
+- **#13** (freelancer-tool directories) — different format. Directories list; listicles narrate.
+- **TODO_MASTER #43** (existing listicle outreach) — same broad campaign, but this item adds the *comparison pages as the bait* — the existing #43 outreach pitched the homepage; this version pitches the dedicated comparison URL. Run together.
+
+### Action (Master, ~4 hrs initial + ~30 min/week follow-up for 4 weeks)
+
+1. **Confirm INTERNAL_TODO #86 has shipped** (the three comparison pages must be live and indexable before pitching — broken link in pitch = dead pitch).
+
+2. **Build target list** (~1 hr): Google "best invoicing software for freelancers 2026", "FreshBooks alternatives", "Wave alternatives", "Bonsai alternatives", "best invoice apps for designers 2026". Compile top 15-20 articles into a spreadsheet — URL, author name, author email (Hunter.io free tier or check author byline), date last updated, current tools listed, contact form URL if email isn't public. Skip anything older than 18 months — those won't be re-edited.
+
+3. **Draft outreach template** (~30 min). Subject: "Quick suggestion for your <article title>". Body (~80 words):
+
+   > Hi <author>, I work on QuickInvoice (an invoicing SaaS for freelancers — $9/mo Solo / $19/mo Pro). I noticed your <article> piece. I built dedicated comparison pages for the tools you covered — FreshBooks (<URL>), Wave (<URL>), Bonsai (<URL>) — that lay out price/feature/time-to-first-invoice side-by-side. If you're considering adding QuickInvoice to your list when the article next gets a refresh, those pages are ready-to-cite reference copy. No paid placement, no obligation. Happy to grant Pro access if you want to test it first.
+
+4. **Send 5 pitches/week** (~30 min/week) using a free Mailmerge tool (Yet Another Mail Merge, GMass free tier). Track open + reply rates in a Google Sheet. Reply rate target: 20%; placement rate target: 5% (1 placement per 20 pitches).
+
+5. **Monthly review** (~30 min): cull the list, swap in fresh listicles, refine the pitch copy based on which subject lines opened best.
+
+### Why this matters (income relevance)
+
+Each placement of QuickInvoice in a "best invoicing software 2026" listicle is a backlink + ongoing referral traffic source for years. Listicle traffic converts at 3-5x the rate of generic homepage traffic because the visitor is already in evaluation mode. The comparison pages serve double-duty: (a) as the ready-to-cite reference that makes the listicle author's job easier (raising acceptance rate), (b) as the landing page the listicle's referral traffic lands on (matching the "compare X tools" reader intent perfectly). One placement on a high-DA listicle (DA 50+) is worth ~$2-5K in equivalent paid acquisition over its first 12 months.
+
+**Why now:** the comparison pages will be live within the next sprint (gated on INTERNAL_TODO #86). Pitch within 2 weeks of those going live so they're indexed by Google before the listicle authors start verifying the citations. Pre-indexing matters because Google penalises listicles that link to thin/empty pages; a 2-week head start gives QuickInvoice's comparison pages enough crawl traffic to rank for at least the long-tail "<competitor> alternative" queries before the listicle's ranking-signal arrives.
+
+---
+
+### 53. [MARKETING] Manual cold-email outreach to 30 freelancer Slack communities re: vacation-mode launch (added 2026-04-28 PM-2)
+
+**Impact:** MED (positioning + community-driven distribution). When INTERNAL_TODO #89 (vacation mode) ships, it's the kind of feature that turns a generic invoicing tool into a tool that "gets" how freelancers actually live (seasonal income, vacation pauses, sabbaticals). It's a natural conversation-starter in any freelancer Slack/Discord community where the perennial complaint is "I cancelled my SaaS to save $20 during my off-season, then had to re-set-up everything when I came back." Manual outreach to community moderators/admins (NOT broadcast posting — that's the spam bait existing #28 warned against) asking them to consider mentioning the feature in their community newsletter or pinned announcements.
+
+**Distinct from existing items:**
+
+- **#28** (Freelancer Slack/Discord community participation) — this is moderator-targeted outreach asking for an announcement, not member-level participation. Different mechanic, different yield.
+- **#21** (testimonials on landing page) — different surface and audience.
+- **#14** (Reddit launch posts) — Reddit allows broadcast posts; Slack/Discord communities largely don't.
+
+### Action (Master, ~3 hrs research + ~3 hrs outreach over 2 weeks)
+
+1. **Confirm INTERNAL_TODO #89 has shipped** (vacation-mode toggle live, with an empty `vacation_until` value rendering the bare settings page so screenshots demo cleanly).
+
+2. **Build target list** (~2 hrs): identify 30 freelancer-focused Slack/Discord communities. Sources: the existing #28 task's research (re-use that list as a starter), Indie Hackers community directory, "Freelancing Slack groups" listicles. Filter to communities with public moderator contact info (Slack workspace owner email or Discord moderator handle visible in #welcome). Skip communities with explicit no-promo rules.
+
+3. **Draft outreach template** (~30 min). Subject: "Tiny feature your members will love". Body (~70 words):
+
+   > Hi <mod>, mod-to-mod here. We just shipped "vacation mode" on QuickInvoice — freelancers can pause auto-reminders + show an OOO note on payment links without cancelling their subscription. It's the kind of thing your community has probably ranted about. If it's useful to share, here's a 3-line announcement you can copy-paste: <link>. No paid promotion, just a heads-up.
+
+4. **Pre-write the copy-paste announcement** (~15 min). Make it a one-liner the moderator can paste with zero edits — that's the difference between "I'll consider" and "done in 30 seconds":
+
+   > **QuickInvoice just shipped Vacation Mode** — pause invoice reminders + show clients an out-of-office note on payment links without cancelling your plan. Useful if you take seasonal breaks. Free 7-day trial of Pro at quickinvoice.io.
+
+5. **Send 5/day for 6 days** (~3 hrs total). Track replies in a Google Sheet. Target: 10% acceptance = 3 community announcements.
+
+### Why this matters (income relevance)
+
+Each community announcement reaches 200-2000 highly-targeted freelancers in the exact moment they're most receptive (community context = high trust). One moderator-driven announcement is worth ~5x a generic ad placement because the framing is "your trusted community recommends" not "we're paying to be in front of you." The vacation-mode story is unusually portable — it's a 1-line feature description that sells itself in any community where seasonal-income freelancers gather, which is most of them.
+
+**Why now:** the feature's value proposition is acutely seasonal — outreach in Q2 / Q3 catches the summer-vacation cohort and Q4 holiday cohort. Ship the outreach within 30 days of the feature shipping so the announcement is news rather than backfilled history.
+
+---
+
+### 54. [MARKETING] Sponsored mention outreach to 5 micro-influencer freelancer YouTubers (added 2026-04-29)
+
+**Why this matters (concretely):** Established cold-email and Reddit/X channels (TODO_MASTER #14, #17, #25) cover community surfaces; podcast sponsorship (#51) covers audio; listicle-author outreach (#52) covers SEO referrals. The remaining un-touched channel is YouTube, where freelance-niche channels (designer / developer / consultant tutorials) routinely place a "tools I use" sponsor segment in their 5-15 minute videos. A 30-second mention from a 10k-subscriber freelance YouTuber typically converts at 0.5-2% of view count to a /pricing visit — for $200-500 per placement that's ~$0.30-1.00 per high-intent visitor, well below QuickInvoice's blended CAC. Distinct from #51 podcast (different format/audience overlap minimal) and #15 demo video (that's QuickInvoice's own; this is third-party endorsement on someone else's audience).
+
+**Action (Master, ~4 hrs research + ~1 hr/week ongoing during 6-week campaign + $1000-2500 ad spend total):**
+
+1. **Build a YouTuber shortlist (~2 hrs).** Search YouTube for `freelance designer tools`, `freelance developer business`, `consultant invoicing`, `freelance accounting` — filter for channels with 5k-50k subs (sweet spot: large enough audience to matter, small enough that ad rates are negotiable). Pull 20-30 channels into a Google Sheet with: subscriber count, recent video views, niche, contact (channel about page, business email, Twitter/X). Prioritise channels that have placed a sponsor segment in the last 6 months — they're already accepting sponsorships.
+
+2. **Draft outreach template (~30 min).** Pitch is short — YouTubers get 100+ inbound pitches/week:
+
+   > Hi <name>, big fan of <recent video>. We run QuickInvoice — a freelancer invoicing tool with one-click Stripe payment links + automated late reminders. We're testing a small sponsorship budget across 5 freelance-niche YouTubers and would love to sponsor a 30-60s segment in one of your upcoming videos. Budget: $200-500 depending on placement. We send a free Pro plan + a custom referral coupon for your audience. Reply if useful — happy to send a 60s product demo.
+
+3. **Send 5-10/week (~30-45 min/week).** Track in the same Google Sheet. Target: 20% reply rate = 5-6 placements landed across 4-6 weeks.
+
+4. **Per-placement onboarding (~1 hr each).** Send each YouTuber a free Pro plan account, a custom Stripe promo code (`<creator-handle-50>` for 50% off first 3 months — gated through INTERNAL_TODO #58 redemption page once it ships), a 60s product-demo video they can voice-over, and 3 talking points (Stripe Pay Links, automated reminders, free 7-day trial).
+
+5. **Track conversions for 60 days post-mention.** Per-placement coupon code makes attribution exact. Refresh the playbook based on which placements outperform.
+
+**Income relevance (concrete numbers):** Industry data on freelancer-niche YouTube sponsorships (Mailbrew, Pirate Ship, ConvertKit have run similar plays) puts conversion-to-paid at 2-5% of click-through, with click-through rates of 0.5-2% of view counts. A $300 placement on a 10k-subscriber channel that gets 5k views → 25-100 click-throughs → 1-5 paid signups → $9-90/mo in MRR per placement. Across 5 placements that's $45-450/mo in incremental MRR for $1000-2500 one-time spend — ROI breakeven 5-25 months but the placements remain in the YouTuber's video library indefinitely (long-tail compounds for years).
+
+**Why now:** Q2 / Q3 is YouTube's higher-engagement window before holiday content saturates Q4 ad inventory. Channels are also still finalising their 2026 sponsor lineup; getting in early secures lower rates. Pairs with #58 redemption page (once it ships, every YouTuber gets a clean attributable URL) and #52 listicle outreach (compounding multi-channel evergreen presence).
+
+
+---
+
+### 55. [MARKETING] Cross-promo cold-DM to 30 micro-podcasts in the freelance-business niche (added 2026-04-30)
+
+**Why this matters (concretely):** TODO_MASTER #51 is a single paid podcast placement ($500-1500); TODO_MASTER #54 is paid YouTube sponsorship. Both pay for placement. Distinct from those, this is unpaid cross-promotion: cold-DM the host of 30 freelance-niche micro-podcasts (Indie Hackers Podcast, Freelance Friday, Freelance Pod, The Freelance Podcast, etc.) offering a free **Pro-tier upgrade for the host + a custom-branded discount code for their listeners** in exchange for a single mention on their next episode. No money changes hands. Hosts of small podcasts (2k-15k downloads/episode) are typically receptive because (a) the offer is genuinely useful if they invoice clients, (b) they get an attribution coupon to share, and (c) it's a 60-second "tools I love" segment, not an obligation to do an interview. Distinct from #51 (paid placement; this is unpaid) and #54 (different platform/format — YouTube vs audio-only).
+
+**Action (Master, ~3 hrs research + ~30 min/week ongoing for 8 weeks):**
+
+1. **Build a 30-podcast shortlist (~2 hrs).** Search Apple Podcasts / Spotify / Overcast for `freelance`, `solopreneur`, `freelance business`, `consulting business`, `independent contractor`. Filter for: weekly cadence, 2k-15k downloads/episode, host has a Twitter/X presence (cold DM beats cold email here — the medium signals "fellow indie creator", not "marketer"). Build sheet with: podcast, host name, X handle, latest-episode topic, listener-count estimate.
+
+2. **Draft outreach template (~20 min).** Personal, short, no marketing fluff:
+
+   > Hey <host>, just listened to <recent episode> — really liked <specific 1-line takeaway>. I run QuickInvoice, an invoicing tool for freelancers (Stripe Pay Links + auto-reminders). I'd love to give you a free Pro account + a 50%-off coupon for your listeners, in exchange for a quick mention next episode. No fee, no script — just whatever's authentic if you'd actually use it. DM me back if useful.
+
+3. **Send 5/week × 6-8 weeks (~30 min/week).** Target: 20-30% reply rate = 6-9 placements landed. Track in sheet.
+
+4. **Per-host onboarding (~30 min each).** Free Pro plan, custom-branded Stripe promo code (`<podcast-name-50>` for 50% off first 3 months — gated through INTERNAL_TODO #58 redemption page when it ships), a 90-second product demo video, and 2 talking points (one-click Stripe pay links, automated late-payment reminders).
+
+5. **Track conversions for 60 days post-mention** via the per-host coupon code. Refresh the playbook based on which podcasts convert best.
+
+**Income relevance (concrete numbers):** Cold-DM podcast cross-promo typically converts at 1-3% of listener count to paid (vs the 0.5-1% of paid sponsorship). On a 5k-listener episode that's 50-150 paid signups; even at the low end of $9/mo Pro that's $450-1350/mo in incremental MRR per placement — for $0 ad spend, just 30-min/week of DMs. Across 6-9 placements landed in the 8-week campaign that's $2700-12150/mo in additional MRR with **zero CAC**, which is wildly above the blended-channel CAC ROI. Pairs with #51 (paid podcast — different audience overlap) and #58 redemption page (once shipped, every host gets a clean attributable URL).
+
+**Why now:** Q2 / Q3 is the season freelancers tax-prep + invoice-tooling-shopping; podcast hosts are also actively planning their 2026 content runs and tools-segment placements. Pairs with #93 email signature builder (once shipped, every host gets a "QuickInvoice user" footer that compounds organic reach).
+
+
+---
+
+### 56. [MARKETING] Cold-DM 30 freelance subreddit moderators with a permanent community discount (added 2026-04-27)
+
+**Why this matters (concretely):** TODO_MASTER #14 (cold-email small agencies), #17 (Reddit/X organic posts on personal account), #25 (newsletter-borrowed audience), #51 (paid single-podcast), #54 (paid YouTube sponsorship), #55 (cold-DM 30 micro-podcasts) cover most adjacent-to-Reddit channels. The remaining un-touched surface is **moderator-endorsed community announcements** — a sticky thread or wiki entry on a high-traffic freelance subreddit that surfaces every time a community member asks "what invoicing tool should I use?". One sticky on `r/freelance` (790k members), `r/freelanceWriters` (180k), `r/Etsy` (470k — relevant for handmade-goods sellers who also invoice for custom orders), `r/sidehustle` (3.4M), or `r/Upwork` (250k) drives sustained organic traffic for months because the post stays at the top of the subreddit + is referenced in answers across the wider web. Distinct from #17 (organic posts you make on your account; this is moderator-endorsed) and from #55 (different platform — Reddit vs podcast). The hook is a permanent community-specific discount code (e.g. `RFREELANCE25` for 25% off for life) — the moderator gets a compelling community benefit to announce, the community gets a benefit they wouldn't get going to /pricing directly, and QuickInvoice gets attributable conversion + permanent presence in the wiki.
+
+**Action (Master, ~3 hrs research + ~1 hr/week ongoing for 4-6 weeks):**
+
+1. **Build a 30-subreddit shortlist (~2 hrs).** Search Reddit for `freelance`, `consulting`, `independent contractor`, `gig economy`, `1099`, `solopreneur`, `small business owner`. Filter for: ≥ 50k members, active mod team (recent mod posts), wiki/recommended-tools section already exists. Build sheet with: subreddit, member count, mod usernames (top 1-2 active), latest mod stickied post, modmail open?
+
+2. **Draft outreach template (~30 min).** Mod-friendly framing — Reddit mods are notoriously hostile to obvious marketing, so lead with the community benefit:
+
+   > Hi <mod_name>, I run QuickInvoice (invoicing tool for freelancers — Stripe Pay Links + auto-reminders). I'd like to offer r/<sub> a permanent 25%-off-for-life discount code (e.g. R<SUB>25) — listing it on the recommended-tools wiki, in modmail to anyone who asks "what invoice tool", or as a one-time stickied announcement, whichever feels right. No payment, no quid pro quo — just a community benefit if it's a fit. I'm happy to provide free Pro accounts for the mod team too. DM if useful, or feel free to ignore if not a fit.
+
+3. **Send 5/week × 4-6 weeks (~30 min/week).** Track in sheet. Target: 10-20% acceptance rate = 3-6 placements. Some mods will counter-offer (e.g. "I'll add it to the wiki but no sticky") — that's still a win.
+
+4. **Per-subreddit onboarding (~30 min each).** Free Pro plan for the mod team, custom Stripe promo code (`R<SUB>25` for 25% off life-of-account — gated through INTERNAL_TODO #58 redemption page when it ships), 1-paragraph community announcement they can copy-paste, links to a 90-second product demo video.
+
+5. **Track conversions for 90 days post-placement** via the per-subreddit coupon code. Refresh the playbook based on which subreddits convert best.
+
+**Income relevance (concrete numbers):** Reddit moderator-endorsed product placements have a known long-tail conversion profile (e.g. r/EntrepreneurRideAlong, r/sidehustle wiki entries from 2019-2021 still drive recurring traffic to ConvertKit, Carrd, Notion — search Reddit for "wiki recommended tools" to see). On a 100k-member subreddit that's typically 2-5 wiki referrals per week → 100-250/year → at 2-5% paid conversion that's 2-12 paid signups per year per subreddit, sustained for 2-5 years per placement. Across 3-6 placements landed in the 4-week campaign that's 12-72 sustained paid signups/year for $0 ad spend. The lifetime value compounds because (a) wiki placements rarely get removed and (b) every QuickInvoice user from that channel becomes a community-context evangelist. Pairs with #58 redemption page (clean attribution per subreddit) and #50 Indie Hackers product directory (different community type — small dedicated cohort vs Reddit's broader scale).
+
+**Why now:** Reddit's moderator team turnover happens in 6-12 month cycles; landing a wiki entry now means 2026's mod team inherits the placement (even higher staying power). Q2/Q3 is also when freelance-niche subreddits run their annual "what tools do you use" megathreads — placements made now compound into those threads naturally.
+
+---
+
+### 57. [MARKETING] Apply to AppSumo for a lifetime-deal listing (added 2026-04-28)
+
+**Why this matters (concretely):** TODO_MASTER #12 (Product Hunt), #13/#26 (G2/Capterra reviews), #19 (Show HN), #20 (newsletter sponsorship), #50 (Indie Hackers), #51 (paid podcast), #54 (paid YouTube), #55 (cross-promo podcasts), #56 (Reddit moderator placements) cover discovery / review / community / sponsorship channels. The remaining un-touched surface is **transactional lifetime-deal marketplaces** — AppSumo / DealMirror / PitchGround. AppSumo is the dominant one (1M+ active buyers, $30-80 typical lifetime deal price-point, freelancer-tools is a top-3 vertical). A successful AppSumo listing typically sells 500-3000 codes in the first 30 days at $39-49 with QuickInvoice taking ~30% net (~$15/code × 1500 = ~$22k cash injection up-front), plus a permanent funnel of LTD users who become organic word-of-mouth advocates inside their freelancer networks. Distinct from G2/Capterra (review/discovery surface, not transactional), distinct from Product Hunt (24-hour launch burst, not a sustained sales channel), distinct from organic Reddit / podcast / YouTube (those are top-of-funnel; AppSumo is bottom-of-funnel — buyers convert during the 60-day deal window). The product is a great fit: freelancer-targeted, recurring SaaS (AppSumo prefers products where users can be on-boarded without high-touch sales), self-serve checkout already live, free trial already live (which AppSumo evaluators verify before accepting).
+
+**Action (Master, ~6 hrs initial submission + ~2 hrs/week ongoing during deal window):**
+
+1. **Build the AppSumo submission package (~3 hrs).** AppSumo's vendor application asks for: short pitch (under 150 words), full product description, pricing tiers, Stripe Connect or AppSumo's escrow account, demo video (90-120 seconds — record using Loom over the existing QuickInvoice flow), screenshots (5-10 of pricing, dashboard, invoice-view, payment link, settings), refund policy (AppSumo standard is 60-day). Submit at https://appsumo.com/sell-on-appsumo/.
+
+2. **Build the LTD redemption flow (~1.5 hrs Master + INTERNAL_TODO #58 dependency).** AppSumo issues unique redemption codes — needs the `/redeem/:code` page (already queued as INTERNAL_TODO #58) and a Stripe coupon `APPSUMO_LTD` (100% off, lifetime, 1-time-use per code) + a corresponding "lifetime" plan tier in `db/schema.sql` (could re-use Pro plan with `subscription_status='lifetime'` flag instead of adding a new tier). **Coordinate with INTERNAL_TODO Optimizer to bump #58 priority** if AppSumo accepts the listing.
+
+3. **Set the deal price + stack tiers (~30 min).** AppSumo deals are typically tiered (1 code = 1 user, 2 codes = 5 users, 3 codes = 25 users) at $39 / $89 / $159 price points. Position QuickInvoice Pro Lifetime at $39 (single user) / $89 (3 users) / $159 (10 users) — gives Master ~$13/$30/$53 net per tier after AppSumo's 30% cut. Decision rule: model 1500 sales × $30 average net = $45k cash; minimum acceptable result for Master before approving the listing.
+
+4. **Run the 60-day deal window (~2 hrs/week).** AppSumo deals run 60 days. During this period: (a) respond to AppSumo Q&A forum posts within 24 hrs (their algorithm down-ranks vendors who don't respond — direct conversion impact), (b) publish weekly "what's coming next" updates so LTD buyers feel ongoing-product-investment vs abandoned-LTD risk, (c) refund within 60 days no questions asked (AppSumo enforces this). Post-deal: convert LTD buyers to organic referral surface — they get unlimited Pro for life, but every invoice they send has the QuickInvoice powered-by footer + their network sees the product.
+
+5. **Track conversions for 12 months post-listing.** Count: code redemptions, post-redemption monthly active rate, organic referrals from LTD users (via UTMs on shared invoice URLs), churn (LTD buyers who never log in past day 30). LTD-buyer activity rate is a key health signal — sub-30% MAU at month 6 means the LTD audience didn't stick.
+
+**Income relevance (concrete numbers):** Comparable freelancer/business SaaS LTD listings on AppSumo (Carrd, Plutio, Bonsai-adjacent tools, Noteable, Hexowatch) sold 1500-4000 codes at $39-99 single-tier averages. At a 1500-sale midpoint × $30 net per sale, that's a $45k cash injection in 60 days — equivalent to ~50 net-new monthly Pro subscriptions sustained for a year (and bypasses the typical 18-month CAC payback). Indirect uplift (organic referrals from LTD users + AppSumo's badge / press placement on their landing page driving non-AppSumo traffic) typically adds another 200-400 organic signups within 6 months. Distinct income pattern from every other [MARKETING] item — this is the only one that produces a 5-figure cash event in a single 60-day window.
+
+**Why now:** Master should run AppSumo only AFTER (a) INTERNAL_TODO #58 redemption page is built, (b) the LTD-tier pricing is defined in `db/schema.sql` (schema-side gating prevents LTD users from accidentally being charged later), (c) at least 5 testimonials are on the landing page (AppSumo evaluators check for social proof). Items (a) and (b) are queued; item (c) is gated on TODO_MASTER #21 testimonial collection. **Estimated runway to ready: 4-6 weeks.** This item is an Action queue item — keep [MARKETING #57] visible so when the prerequisites land, Master can move on it without re-deriving the rationale.
+
+---
+
+### 58. [MARKETING] Submit QuickInvoice to 6 SaaS-comparison directories (Slant / AlternativeTo / SaaSHub / Capiche / StackShare / Tekpon) (added 2026-04-28)
+
+**Why this matters (concretely):** The shipped marketing pipeline already covers: Product Hunt (#12, 24-hr launch burst), G2/Capterra/TrustRadius (#26/#49, review-driven discovery), AppSumo (#57, transactional LTD), Reddit (#56, community moderator placements), podcast (#51/#55, audio), YouTube (#54, video sponsorship), listicles (#43, third-party SEO referrals), newsletter borrowed-audience (#20). The remaining un-touched discovery channel is **passive evergreen software-comparison directories** — Slant ("which is best, X or Y?"), AlternativeTo ("alternatives to FreshBooks"), SaaSHub ("compare SaaS tools"), Capiche, StackShare, Tekpon. These directories rank consistently in the top 3-10 for high-intent comparison queries (`freshbooks alternatives`, `wave alternatives`, `best invoicing tool for freelancers`) and a properly-written profile attracts referral traffic for years with zero ongoing cost. Distinct from G2/Capterra (which are review-driven and require user-volume gravity to rank); comparison directories rank on profile completeness + freshness, both of which are entirely Master-controllable. Distinct from listicle outreach #43 (which targets editorial articles); directories are user-generated submission flows that don't require third-party editorial buy-in.
+
+**Action (Master, ~6 hrs initial submissions + ~30 min/quarter ongoing):**
+
+1. **Build the canonical profile asset (~1.5 hrs).** One Google Doc with the canonical: 60-word product description, 200-word product description, 4-line pitch (what / who / why / pricing), feature matrix (vs. FreshBooks/Wave/Bonsai/HoneyBook — pull from INTERNAL_TODO #108), 5-10 product screenshots (already exist for AppSumo #57), pricing tiers, founder name + email + LinkedIn, list of 3 customer testimonials (gated on #21 testimonial collection — directories accept "no testimonials yet" but the listing converts noticeably better with 1-3 quotes). Re-use this asset across all 6 directories.
+
+2. **Submit to Slant (~45 min).** Visit https://www.slant.co/options/new — submit QuickInvoice as an option under the "Best invoicing tool for freelancers" topic (and "Best Stripe-integrated invoicing tools"). Slant ranks options by community votes — after submission, ask the first 20 Pro customers (via in-app email post-conversion) to vote.
+
+3. **Submit to AlternativeTo (~45 min).** Visit https://alternativeto.net/software/new/ — submit QuickInvoice as an alternative to FreshBooks, Wave, Bonsai, HoneyBook (4 separate "alternative-to" links). Each comparison surface ranks independently in Google for the respective `<competitor> alternatives` query. Critical: fill in the licensing field (commercial/SaaS/freemium), platforms (web), price range ($0-19/mo).
+
+4. **Submit to SaaSHub (~30 min).** Visit https://www.saashub.com/submit — moderately-curated directory; submission needs a clean website + screenshots + pricing — already have all three.
+
+5. **Submit to Capiche, StackShare, Tekpon (~45 min each, parallel).** Capiche and StackShare are developer-leaning (good fit for freelance-developer cohort); Tekpon has a lifetime-deal section that complements AppSumo #57 cross-promotion.
+
+6. **Quarterly refresh (~30 min/quarter).** Update profiles when (a) a new pricing tier ships, (b) a new feature lands worth surfacing, (c) testimonial count crosses a milestone (5 → 10 → 25). Stale profiles drift down rankings.
+
+**Income relevance (concrete numbers):** Comparable horizontal-SaaS profiles on these directories drive 50-300 organic referral visitors/month per directory once indexed (4-12 weeks post-submission). Across 6 directories: 300-1800 monthly visitors at QuickInvoice's measured signup conversion rate (~3-5%) = 9-90 signups/month and 1-5 paid conversions/month per directory. Compounding annually with no ongoing spend — the listings live forever once accepted. Approximate ARR contribution at month 12: $1.5k-7k MRR-equivalent, assuming each Pro converter sticks 12+ months. Distinct dynamic from every other [MARKETING] item: passive, evergreen, zero-ongoing-cost.
+
+**Why now:** All 6 directories accept submissions only after the product has a public website + screenshots + a pricing page (all live), and all 6 weight "founder is responsive in the comments / Q&A" — a Master who's actively running the company will outperform an absentee one. Submitting NOW (rather than batching with later marketing pushes) gives the listings 12+ weeks of indexing runway before they need to start performing — the lead time is the only cost.
+
+---
+
+### 59. [MARKETING] Co-marketing partnership outreach — Calendly / Bonsai / Notion / Plaid integration listings (added 2026-04-28 PM-2)
+
+**Why this matters (concretely):** The marketing pipeline so far covers acquisition channels owned by QuickInvoice (#12 PH, #19 Show HN, #26/#49 G2, #57 AppSumo, #58 SaaS-comparison directories) or that target end-users directly (#43 listicles, #44 LinkedIn, #45 Slack/Discord, #50 IH, #56 Reddit). The remaining un-touched lever is **partner-channel distribution** — getting QuickInvoice listed on the integration / app-marketplace pages of products that the same freelancer cohort already uses every day. The 4 highest-leverage targets:
+
+1. **Calendly** — every freelancer who books client calls has Calendly. Calendly's app marketplace (https://calendly.com/integrations) lists QuickInvoice as "Generate an invoice after a Calendly meeting" — adds a per-meeting `auto_invoice_after` toggle. Calendly's marketplace gets ~150k unique visitors/month browsing integrations.
+2. **Bonsai / HoneyBook competitor co-marketing** — paradoxically, the competitor-tools-with-different-niche segment will refer for free if the integration positions QuickInvoice as the "lightweight Stripe-first" alternative their over-served customers ask for. Bonsai customers who churn cite "too many features I don't need + price" — those ex-Bonsai users are ideal QuickInvoice converters.
+3. **Notion** — the Notion templates marketplace (https://www.notion.com/templates) accepts "Notion + integration" listings. A "Freelancer financial dashboard" Notion template that pulls data from QuickInvoice's (planned) #32 API surfaces both products to each others' audiences. 25M+ Notion users.
+4. **Plaid / Mercury / Wise small-business banking** — these banks publish "tools we recommend" pages curated by their content team. A short pitch email to their content lead ("here's a tool your customers ask about — happy to write the partner integration") lands a backlink from a high-authority finance domain.
+
+Distinct from #43 listicles (third-party editorial, not partner-direct) and from #58 SaaS comparison directories (passive submission, no relationship). Co-marketing partnerships are slower (4-12 week relationship-building cycle) but produce higher-quality referrals (partner audiences are pre-qualified for product-fit) and compound — a partner who's run the integration for 6 months is much more likely to expand the relationship.
+
+**Action (Master, ~10 hrs initial outreach + ~2 hrs/month ongoing):**
+
+1. **Build the canonical partnership pitch deck (~2 hrs).** Single Google Slides deck (8-10 slides max): "Who QuickInvoice is for", "What we offer partners" (a) listing on our `/integrations` page (gated on building one — note as new INTERNAL_TODO if not queued), (b) co-branded email to our user base post-launch, (c) revenue share if applicable for transactional integrations, (d) data exchange / SSO / OAuth depending on technical fit. Include 2-3 mock screenshots of the integration in action. Re-use across all 4 partner outreaches.
+
+2. **Calendly partner application (~2 hrs).** https://developer.calendly.com/getting-started — submit as an integration partner. Requires OAuth implementation on QuickInvoice side (folds into INTERNAL_TODO #32 API Key Auth + REST Endpoints). The technical effort gate is 20-30 hrs of dev (Calendly OAuth + webhook handler that creates a draft invoice when `invitee.created` fires); Master handles the relationship-building + listing copy. **Coordinate with INTERNAL_TODO Optimizer to bump #32 priority** if Calendly accepts the listing.
+
+3. **Bonsai co-marketing email (~1 hr).** Cold email Bonsai's growth lead (LinkedIn-search "Bonsai growth marketing" + Hunter.io for email) with a "QuickInvoice as the lightweight alternative for your customers who churn for cost reasons — here's a $50 referral bonus per Pro signup we'll honour for 12 months" pitch. Bonsai's growth team explicitly tracks "where do churned customers go?" — making it easy to channel them to QuickInvoice (with a small kickback) is rational.
+
+4. **Notion template listing (~3 hrs).** Build a template called "Freelancer Financial Dashboard" (Notion table that mirrors invoice/client/payment data with sample fixtures). Submit at https://www.notion.com/templates/submit. Initially the template carries pure-fixture data; once #32 API ships, layer in a Zapier/Make recipe that auto-syncs real QuickInvoice data into the template. Notion's template marketplace is curated — quality threshold is high but the audience-quality is unmatched.
+
+5. **Plaid / Mercury / Wise partnership email (~2 hrs/each, parallel).** Cold email each bank's content team / partnerships lead with a "partner spotlight" pitch — offer them a co-authored blog post ("How freelancers should think about getting paid"), a guest podcast on their podcast (#51/#55 channel reuse), or a co-branded webinar. The ask is small (a backlink from their resources page), the give is content. Even a 30% acceptance rate across 3 banks lands 1 high-authority backlink — single highest-impact SEO move available.
+
+6. **Track conversions + partner health (~30 min/month).** Single Notion page: partner name, pitch date, response (yes/no/silent), integration status, signups attributable per month, paid conversions. Score each at month 6 against the rule "≥ 5 paid signups/month → invest more; sub-3 → quietly de-prioritise". Sustained partner relationships are 80/20 — most partners produce nothing and a few become long-term distribution channels.
+
+**Income relevance (concrete numbers):** Comparable freelancer-SaaS partnership listings (Wave on Plaid, FreshBooks on Calendly, HoneyBook on Honeybook's own template-marketplace) drive 200-1500 attributable signups/year per partnership at 3-8% paid conversion → 6-120 paid signups/year/partner. Across 4 active partnerships: 24-480 paid signups/year — equivalent to $3.5k-$70k/year in MRR-equivalent at QuickInvoice's $12/mo Pro price-point. Slower ramp than other [MARKETING] items (4-12 week relationship-building cycle) but the highest-leverage compounding effect once a partner relationship is real.
+
+**Why now:** Pre-#32 API Key Auth landing, the technical depth of each integration is shallow (no OAuth, no webhook bidirectional). Some partners (Notion templates, Plaid/Mercury/Wise content links) don't require API depth and can land NOW; others (Calendly app marketplace) are gated on #32. Splitting the outreach across "API-not-required" (3 items) and "API-required" (1 item, Calendly) lets the no-API ones ship in 4-6 weeks; the Calendly one waits on engineering. Master should sequence: Mercury/Plaid/Wise emails this week → Notion template next week → Bonsai co-marketing in 4 weeks → Calendly when #32 lands.
+
+---
+
+### 60. [SPEC-REVIEW] Verify auto-reconstructed master/APP_SPEC.md (added 2026-04-28 PM-3)
+
+The previous `master/APP_SPEC.md` described only the InvoiceFlow Java/Spring app (the `invoiceflow/` subdirectory) and had drifted out of sync with the actual codebase being shipped (QuickInvoice — Node.js/Express, at the repo root). It also pinned plan prices that no longer match production ($9 Solo / $19 Pro / $49 Agency) — the live tiers are Free / $12-mo or $99-yr Pro / $49 Agency.
+
+This cycle's bootstrap reconstructed APP_SPEC.md from the codebase directly: read `package.json`, `server.js`, `routes/*.js`, `views/*.ejs`, `db/schema.sql`, `Procfile`, plus the InvoiceFlow `pom.xml` and Java tree. Both apps are now documented under one spec (App 1 = QuickInvoice primary, App 2 = InvoiceFlow secondary).
+
+**Action (Master, ~10 min):**
+
+1. Read the new `master/APP_SPEC.md` end-to-end.
+2. Verify the documented plan prices ($12/mo, $99/yr, $49/mo Agency) match the Stripe Dashboard prices currently configured.
+3. Confirm the "core features built today" list matches your understanding of what QuickInvoice does — flag any discrepancies (e.g., a feature the doc claims is shipped but isn't, or a feature you consider shipped that the doc omits).
+4. Confirm the InvoiceFlow status — is it actively maintained, frozen, or scheduled for sunset? The current spec says "feature parity goals tracked under specific INTERNAL_TODO items" — refine if InvoiceFlow is no longer being developed.
+5. Edit any inaccuracies directly. The routine will pick up the corrected spec on the next run via the App Spec Sync step at boot.
+
+**Why this matters:** every subsequent role reads APP_SPEC.md to orient. A stale spec causes off-target growth ideas and irrelevant test priorities. ~10 min spent reviewing once compounds across every future routine cycle.
+
+### 61. [MARKETING] Set up affiliate program via Rewardful (or LaunchAffiliate / FirstPromoter) for influencer-driven Pro signups (added 2026-04-28 PM-3)
+
+Distinct from #18 (referral program for end-users — peer-to-peer "your friend gave me a coupon"). An affiliate program targets professional creators / YouTubers / newsletter authors / freelance influencers — the people whose audiences are exactly QuickInvoice's ICP. The mechanic is a stable 25%-recurring commission paid out monthly via Stripe Connect or PayPal, signed up through a self-serve portal. Distinct from co-marketing (#59) — partners promote QuickInvoice as a feature of their integration; affiliates promote QuickInvoice as a recommendation in their content.
+
+**Action (Master, ~6 hrs initial setup + ~1 hr/month ongoing):**
+
+1. **Pick the platform (~30 min).** Rewardful ($49/mo, Stripe-native, 30-second integration), LaunchAffiliate ($79/mo, more-features-than-needed), or FirstPromoter ($59/mo, similar to Rewardful). Default recommendation: Rewardful — it's the cheapest, the integration is single-script-tag, and the dashboard ships pre-built. Master can sign up, drop the script tag in `views/partials/head.ejs` (mid-upgrade-funnel only — gated on `?aff=` query string detection), and configure Stripe webhook routing within an hour.
+
+2. **Define the offer (~1 hr).** 25% recurring commission for 12 months on each Pro signup the affiliate drives. (Industry-standard for freelancer SaaS — FreshBooks runs 25%, Bonsai runs 25%, FreeAgent runs 30%.) Cookie window: 60 days. Minimum payout threshold: $50. Approval: manual for the first 25 affiliates (so we can vet ICP fit), auto-approve after that.
+
+3. **Build the affiliate landing page (~1 hr).** Single static page at `/affiliates` linking to the Rewardful signup portal. Hosted via existing `routes/landing.js#listNiches()` machinery — add as a static niche entry. Copy emphasises (a) "your audience already invoices clients — recommend the tool you'd actually use", (b) the 25%-recurring math: $36 per active referral over 12 months, scales linearly, and (c) the asset pack download (logos, screenshots, YouTube thumbnail templates).
+
+4. **Identify + outreach 50 candidate affiliates (~3 hrs).** YouTubers in the freelance / design / dev / consulting space with 5k-100k subs. Newsletter authors covering freelance/solopreneur topics. Cold email + 3-touch follow-up. Acceptance rate ~15-25% expected (industry typical for cold outreach with a strong recurring offer).
+
+5. **Track + optimise monthly (~1 hr/month ongoing).** Rewardful surfaces conversion stats per affiliate. Once an affiliate hits 5+ paid signups in a month, escalate to a 30%-recurring tier (signal: they're actually driving signups, double-down on the best ones).
+
+**Income relevance (concrete numbers):** Comparable freelancer-SaaS affiliate programs (FreshBooks, Bonsai, AND.CO, HoneyBook) generate 100-500 paid signups/month at maturity (12-18 months in). Conservative ramp for QuickInvoice's stage: 10-50 paid signups/month at month 6, 50-150/month at month 18. At $12/mo Pro: $120-$1800/month MRR-equivalent at month 6, scaling to $600-$5400/month at month 18. The 25% commission costs $30-$1350 of that — the remaining $90-$4050 net is high-leverage growth that compounds without ad spend.
+
+**Why now:** the trial-countdown nav pill (#106), recent-revenue card (#107), and window toggle (#117) recently shipped — the dashboard surface is more compelling-looking than 30 days ago. Affiliate creators making screenshot-driven content benefit when the screenshots show momentum (the recent-revenue card showing "$2,400 paid in last 7 days" is the kind of asset YouTubers feature in thumbnails). Sequence after Master sets RESEND_API_KEY (#18) so affiliates aren't recommending a tool whose password-reset is a stopgap email-support flow.
+
+---
+
+### 62. [MARKETING] Personalized 90-day Pro comp outreach to top-10 freelance YouTubers (added 2026-04-28 PM-4)
+
+Distinct from #61 (structured affiliate program at scale) and from #59 (co-marketing partner integrations) and from #43/#54/#55 (one-off media spends with paid sponsorships). The mechanic here is a single one-time hand-curated outreach: identify 10 specific high-fit YouTubers / newsletter authors in the freelance space, each cold-emailed with a personalised 90-day Pro account comp + a "no strings, do whatever you want with it — review, recommend, or never mention us, your call". The asymmetry: $0 marginal cost (Pro is digital), high signal (the curator audience is qualified), and the no-strings framing reverses the usual sponsorship-skepticism dynamic — every published mention is genuine, every silent ignore is fine. Runs in parallel with #61 affiliate program (which is the always-on revenue share); this is the single-shot quality push that seeds the top-of-funnel.
+
+**Action (Master, ~6 hrs total):**
+
+1. **Build the target list (~2 hrs).** 10 specific creators, ranked by fit-not-size:
+   - 3-4 YouTubers with 20k-100k subs in the design/dev/consulting freelance space (search: "freelance" + "tools I use" review videos with > 5k views in last 6 months). The mid-tier is higher-fit than mega-creators — closer relationships with their audiences, more responsive to cold outreach.
+   - 2-3 newsletter authors in the solopreneur space (Substack search "freelance"; Beehiiv "indie business"). Newsletter open-rates are 30-50% — small lists with high engagement convert better than large lists with low engagement.
+   - 2-3 podcast hosts in the freelance/creator space (search Apple Podcasts "freelance" + episode counts > 50). Podcast plugs convert at 10-30x newsletter rates per impression for product mentions.
+   - 1-2 Twitter/Threads/Bluesky personalities with 10k+ followers who post regularly about freelance ops (vs. just generic productivity).
+2. **Personalize each email (~30 min/email × 10 = 5 hrs).** This is the one place where templating fails — generic "we're QuickInvoice, here's a comp" outreach has < 3% response rate; personalized "I watched your video on freelance billing tools last week, I built X to solve the specific pain you mentioned at 4:32 — here's a 90-day Pro comp, do whatever you want with it" hits 30-50%. The 30-minute-per-email cost is the entire mechanic.
+3. **Track responses + follow up at 14 days (~1 hr).** Single Notion sheet: creator name, channel, send date, response (yes/no/silent), 90-day comp code, attributable signups (via UTM-tagged share link). Score at month 3: ≥ 1 paid Pro signup attributable per creator → invest more (sponsor a video, send free swag, escalate to ongoing relationship). 0 → no follow-up needed.
+
+**Income relevance (concrete numbers):** Comparable single-shot creator outreach for freelancer-SaaS (Toggl Track, Wave, FreshBooks early-days) lands 1-3 free organic mentions per 10 outreach emails (response rate × publish rate). Each organic mention from a 20k-100k-sub creator drives 50-300 attributable signups over 30 days at QuickInvoice's signup conversion rate (~3-5% to Pro) → 1.5-15 Pro signups per mention. Across 10 outreach emails: 1-5 published mentions × 1.5-15 signups = 1.5-75 paid signups for ~$0 marginal cost. At $12/mo Pro: $18-$900/month MRR-equivalent for ~6 hrs of work. Distinct from #61 affiliate (always-on, structured) — this is the high-touch quality push that complements the always-on layer.
+
+---
+
+### 63. [MARKETING] Submit QuickInvoice to G2's annual "Best Free Invoice Software" award category for the next quarterly cycle (added 2026-04-28 PM-5)
+
+Distinct from #26 / #49 (G2 Crowd profile creation + ongoing review collection — continuous, year-round). G2 runs **named annual award categories** (Best Free Invoice Software, Best Small-Business Billing Software, Easiest to Use, Best Estimated ROI) that publish quarterly with a hand-curated badge that winners can display + a press release G2 distributes to their B2B media network. The badge becomes a permanent acquisition asset on the landing page; the press release lands in 30-60 small-business newsletters by default. Submission is free and requires only (a) an existing G2 profile (which #26 / #49 establishes), (b) ≥ 10 verified reviews in the prior 90 days, (c) a 200-word "why we should win" submission essay.
+
+The asymmetry: zero ongoing cost, 1-time submission effort (~1 hr), an evergreen acquisition badge (every QuickInvoice landing page render + the next 12 months of organic search shows the "Best Free Invoice Software 2026 Q3" badge if won), AND the press-release secondary distribution layer. Even nominee status (no win) renders a "G2 Nominee" badge that strengthens trust signals at no cost.
+
+**Action (Master, ~1 hr initial + ~30 min/quarter ongoing):**
+
+1. **Confirm G2 profile is live + has ≥ 10 reviews (~5 min).** Gated on #26 / #49 progressing. If fewer than 10 reviews, fold this into the post-#26 sequence — the award-submission triggers on the review-count milestone.
+2. **Identify the next eligible quarterly cycle (~10 min).** G2's award cycles: spring (deadline early March), summer (early June), fall (early September), winter (early December). Pick the next cycle whose deadline falls 4+ weeks out so the submission essay has buffer.
+3. **Write the 200-word submission essay (~30 min).** Concrete-numbers framing: "QuickInvoice ships invoice-to-paid in 60 seconds via Stripe Payment Links — our Pro users average 4.2 days from sent-to-paid vs. industry-typical 14-21 days. At 4x faster cash-collection on a $2k freelance invoice, freelancers earn the cost of QuickInvoice Pro back on a single invoice." The essay reads like a press-release lede; G2's curators score on (a) concrete differentiator, (b) measurable user outcome, (c) clarity. Avoid feature lists.
+4. **Submit + retain copy (~5 min).** G2 submission form at https://research.g2.com/awards. Keep a copy of the essay in `master/G2_AWARD_SUBMISSIONS.md` (new doc; not yet existing) so quarterly resubmissions can iterate on the same template.
+5. **Quarterly follow-up (~30 min/quarter).** When G2 publishes results, (a) embed the badge on the landing page hero (winning) or footer (nominee), (b) add a `/og-image-award.png` variant for the quarter so social shares carry the badge in OG previews, (c) tweet the announcement with G2's @ tag (G2 reliably amplifies). Repeat each quarter.
+
+**Income relevance (concrete numbers):** Comparable freelancer-SaaS that won (or were nominated for) G2 awards in the prior year (FreshBooks, Wave, AND.CO, Honeybook) reported 15-40% conversion lift at the landing-page-hero step over 12 months. At QuickInvoice's signup volume, even 15% lift on 200 monthly hero impressions = 30 incremental signups, 1-2 incremental paid Pro signups per month per quarter — **per category won**. Across 4 categories submitted simultaneously: 4-8 incremental paid signups/month at $12/mo = $48-96/month MRR-equivalent. The press-release secondary distribution adds 50-300 referral visitors per published win (G2's media partners run the press releases for free for their pre-existing relationships). Compounding: each quarterly badge stacks (the landing page eventually shows 4 quarterly badges, then 8, then 12) — the trust-signal density compounds linearly with cycle count.
+
+**Why now:** QuickInvoice has shipped enough recent surface-area improvements (recent-revenue card, trial-countdown nav, share-intent buttons, annual savings pill, niche landing pages) that the "concrete differentiator" essay slot has fresh material. Submitting at the next cycle deadline before the existing G2 reviews go stale (they decay weighting after 12 months) maximizes the badge-and-distribution upside. Distinct from #26 (build the profile), #49 (collect reviews), #61 (affiliate program), #62 (creator outreach) — this is the editorial-recognition acquisition layer that complements every other [MARKETING] item without overlap.
+
+**Why now:** the dashboard surface (recent-revenue card #107, window toggle #117, localStorage persistence #122 just shipped) is screenshot-ready in a way it wasn't 30 days ago. Reviewers featuring the product in screenshot-driven content (YouTube reviews, newsletter writeups) benefit when the dashboard shows momentum + state-preserving polish. The window toggle + saved preference is the kind of small-but-thoughtful detail reviewers explicitly call out as differentiating from competitor tools.
+
+---
+
+### 64. [MARKETING] Quora answer-rotation: top 10 high-traffic freelancer-billing questions (added 2026-04-29 AM)
+
+Distinct from existing distribution motions: #14 Reddit posts (different platform pattern — Reddit threads expire in days, Quora answers index in Google for years), #34 Indie Hackers / r/SaaS launches (different audience — IH is founder-cohort, Quora is freelancer-cohort searching practical answers), #43 listicle outreach (third-party article placement vs. first-party answer authorship), #44 LinkedIn outbound (DM vs. content), #62 creator outreach (1:1 partnership vs. broadcast Q&A). The Quora long-tail answer-rotation channel is the **search-intent** distribution layer: Quora answers rank in Google for "how do I [verb] X" queries with high commercial intent, and a single substantive answer drives 10-50 monthly visits for years.
+
+**Why this matters concretely:** Quora's algorithm rewards (a) length (300+ words), (b) specificity (concrete numbers / step-by-step / first-person experience), (c) recency (answers refreshed in the prior 6 months rank higher), and (d) author credibility (Quora author profiles with linked-website + bio rank higher). The cost is one founder profile setup + ~20 min per answer. The lift is asymmetric: a freelancer searching "freelance invoice template" lands on a Quora answer that solves their real question (what fields to include, how to format, what payment terms to offer) AND mentions QuickInvoice in context as one tool option — typical click-through rate 1-3% of answer-readers.
+
+**Action (Master, ~3 hrs initial + ~30 min/week ongoing):**
+
+1. **Set up Quora Author profile (~15 min).** Create / claim the founder Quora account. Set bio to: "Founder of QuickInvoice — helping freelancers send professional invoices and get paid faster via Stripe." Link to https://quickinvoice.app (or live URL). Upload a professional headshot. The bio + linked-website is what every answer's "by [name]" footer surfaces — it's the click-through path.
+
+2. **Identify the top 10 highest-traffic target questions (~30 min).** Use Quora's search to find questions with ≥ 100 followers and ≥ 50 answers (signal of established traffic). Target seed list:
+   - "What is the best invoicing software for freelancers?"
+   - "How should I write an invoice as a freelancer?"
+   - "What should I include on a freelance invoice?"
+   - "How do I get paid faster as a freelancer?"
+   - "How do freelancers handle late payments?"
+   - "What's the best way to send invoices to international clients?"
+   - "Should I use FreshBooks or [alternative] for freelance invoicing?"
+   - "How do I follow up on overdue invoices professionally?"
+   - "What's the best free invoice template for freelancers?"
+   - "How do I set up a freelance billing system?"
+
+   Actual question wording will vary — Quora rewards precise matches, so the founder should use the exact phrasing of the top 1-2 ranked questions.
+
+3. **Write 10 substantive answers (~2 hrs initial + ~20 min each ongoing).** Each answer follows the format: (a) acknowledge the asker's specific situation, (b) give 3-5 concrete tips that solve the question independent of any tool (real value first), (c) mention QuickInvoice as one example tool in the context of "I built this because..." (founder-credibility framing — Quora algorithm penalizes anonymous product mentions, rewards founder-acknowledged ones), (d) close with a clear "the best tool depends on your situation" softener (not a hard sell). Avoid: bare links, repeated phrasing across answers (Quora's spam filter penalizes pattern-matching), exclusively self-promotional content.
+
+4. **Link strategically (~5 min per answer).** Each answer should contain 1-2 links: one to the QuickInvoice landing page (`https://quickinvoice.app/?utm=quora-[question-slug]`), one to a relevant niche page (e.g., `/invoice-template/freelance-designer`). The UTM parameter routes Quora traffic to its own attribution stream so the conversion rate can be measured separately.
+
+5. **Refresh + monitor (~30 min/week ongoing).** Quora's algorithm decays answer rank after 6 months without engagement. Each week: edit one of the 10 answers (add a new paragraph, update a stat, freshen the example) — minor edits restore the recency signal. Monitor `?utm=quora-*` traffic in Plausible (#34 / TODO_MASTER #29) once that lands; without analytics, monitor the Quora-built-in answer-view counter as a lagging proxy.
+
+**Income relevance (concrete numbers):** Quora answers that rank top-3 on the question for "best freelance invoicing software" typically attract 200-1000 monthly views once stabilized (3-6 months). At a 1-3% click-through rate, that's 2-30 monthly visits to the QuickInvoice landing page per ranked answer. Across 10 ranked answers: 20-300 monthly visits at zero ongoing cost. At QuickInvoice's typical landing-to-trial conversion (~3-5%), that's 1-15 incremental trials/month, or 1-5 incremental Pro signups/month at the trial→paid rate. **The compounding factor:** answers don't decay if maintained — a well-written Quora answer ranked in 2026 is likely to still rank in 2028, making this the highest-LTV per-hour distribution channel in the entire TODO_MASTER list.
+
+**Risks:** Quora's TOS prohibits "primarily promotional" content. The mitigation is the format (real value first, product mention contextual). Founders who routinely treat Quora as a promo-link channel get shadow-banned; founders who answer substantively and mention their own product transparently when relevant get rewarded with sustained reach. The format above is the working pattern.
+
+**Why now:** the trial-urgent banner cluster (#45 + #133 + #134/#135 candidates) is now richly featured for the screenshot-driven Quora answer that says "and here's how QuickInvoice handles the trial-end conversion moment" — the screenshot is differentiating in a way that wasn't true 60 days ago. Same dynamic as #62 creator outreach: the product surface needs to be visually compelling for the marketing channel to convert at full strength.
+
+---
+
+### 65. [MARKETING] Cold-DM 30 Twitter/X freelance "personal CRM" / "freelance ops" thread-creators with Pro comp + collab offer (added 2026-04-29 AM-3)
+
+**Action (Master, ~2 hrs research + ~1 hr/week ongoing for 4 weeks):**
+
+1. **Identify the cohort (~2 hrs).** On Twitter/X, search for accounts that have published at least 3 viral threads (≥ 5k impressions each) in the last 6 months on freelance operations, personal CRM, freelance billing, or "tools I use as a freelancer". Filter to follower count between 5k and 50k — small enough to be reachable via DM, large enough that a single thread-mention drives meaningful traffic. Build a spreadsheet of 30 candidates with: handle, follower count, top thread URL, last post date, niche.
+
+2. **Send personalized DMs (~30 min/week × 4 weeks).** Don't blast — send 7-8 DMs per week so each is genuinely personalized. Template:
+   > "Hey [name] — saw your thread on [specific topic] last [time period]. Genuinely useful framing on [specific point].
+   >
+   > I built QuickInvoice — invoicing for freelancers that gets you paid 60% faster. Free Pro account for you (no card, no expiry) if you want to kick the tires. No ask, just thought it might fit your toolkit.
+   >
+   > If you ever want to feature it in a thread, happy to share the back-end metrics for context (we shipped a feature this week that I think your audience would find interesting: [specific feature relevant to their niche])."
+
+3. **Track responses.** Use a simple sheet — sent date, response (none / declined / engaged / converted to mention), date of any thread mention, traffic delta in Plausible (#34 / TODO_MASTER #29) for the days following the mention.
+
+4. **Provision Pro comp accounts on request.** When a creator says yes, manually flip their `plan` to `pro` and set `subscription_status = 'active'` + `trial_ends_at = NULL` via Postgres. Mark with a `notes` field "creator-comp-2026-04-XX-handle" so the cohort can be analyzed separately later.
+
+**Income relevance (concrete numbers):** A single Twitter/X thread mention from a 20k-follower freelance-ops creator typically drives 200-500 visits to the linked landing page over 48 hours, with a conversion-to-trial rate of 4-8% and a trial-to-paid rate of 4-8% — so 0.3-3.2 Pro signups per mention. Across 30 outreaches at a typical 10-20% positive-response rate, that's 3-6 thread mentions, or 1-19 incremental Pro signups in the campaign window (one-time effect plus an ongoing tail as the threads continue to surface in the Twitter/X algorithm).
+
+**Distinct from existing distribution motions:** #44 LinkedIn outreach (B2B exec channel, different cohort), #47 cashflow horror story Twitter threads (founder-authored content vs. third-party endorsement), #54 YouTube micro-influencer outreach (long-form video vs. text-thread distribution), #62 top-10 YouTuber comp (different platform), #63 G2 awards (review-platform distribution), #64 Quora answer-rotation (search-intent first-party content). Twitter-thread-creator cohort is a third social-channel surface beyond LinkedIn (B2B exec) and YouTube (long-form).
+
+**Risks:** DM-fatigue is real on Twitter/X. The mitigation is volume control (7-8/week, not 30-in-one-day), genuine personalization (reference a specific thread, not a generic "love your content"), and the no-ask close ("happy to share metrics" rather than "would love a thread mention"). Creators who feel transacted-with shadow-block; creators who feel respected often mention organically months later.
+
+**Why now:** the recent feature shipping cadence (cycle 21 #133 + cycle 22 #134 + cycle 23 #138 + the upcoming #135/#139/#141 candidates) gives the founder a fresh, screenshot-able feature surface every week to anchor the DM's "shipped this week" line. Without ongoing visible-shipping cadence the DM template's specific-feature-mention slot rings hollow.

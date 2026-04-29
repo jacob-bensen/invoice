@@ -47,25 +47,54 @@
   <% } %>
 
   <% if (locals.days_left_in_trial && days_left_in_trial > 0) { %>
+    <% const trialLastDay = days_left_in_trial === 1; %>
+    <% const trialEndsIso = (user && user.trial_ends_at) ? new Date(user.trial_ends_at).toISOString() : ''; %>
     <div
-      x-data="{ dismissed: false }"
+      x-data="{ dismissed: false, hoursRemaining: '', tickHoursRemaining() { const ends = this.$el.dataset.trialEndsAt; if (!ends) { this.hoursRemaining = ''; return; } const ms = new Date(ends).getTime() - Date.now(); if (!isFinite(ms) || ms <= 0) { this.hoursRemaining = ''; return; } const totalMinutes = Math.floor(ms / 60000); const h = Math.floor(totalMinutes / 60); const m = totalMinutes % 60; this.hoursRemaining = h > 0 ? (h + 'h ' + m + 'm') : (m + 'm'); } }"
+      x-init="tickHoursRemaining(); setInterval(() => tickHoursRemaining(), 60000)"
+      data-trial-ends-at="<%= trialEndsIso %>"
       x-show="!dismissed"
       x-cloak
       data-testid="trial-banner"
-      class="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 flex items-start gap-3"
-      role="status"
+      data-trial-urgent="<%= trialLastDay ? 'true' : 'false' %>"
+      class="mb-6 rounded-xl border <%= trialLastDay ? 'border-red-200 bg-red-50' : 'border-blue-200 bg-blue-50' %> px-5 py-4 flex items-start gap-3"
+      role="<%= trialLastDay ? 'alert' : 'status' %>"
     >
-      <div class="text-blue-500 text-xl leading-none mt-0.5">&#127881;</div>
+      <div class="<%= trialLastDay ? 'text-red-500' : 'text-blue-500' %> text-xl leading-none mt-0.5">
+        <% if (trialLastDay) { %>&#9200;<% } else { %>&#127881;<% } %>
+      </div>
       <div class="flex-1 text-sm">
-        <p class="font-semibold text-blue-800">
-          You're on a Pro trial — <%= days_left_in_trial %> day<%= days_left_in_trial === 1 ? '' : 's' %> left.
+        <p class="font-semibold <%= trialLastDay ? 'text-red-800' : 'text-blue-800' %>">
+          <% if (trialLastDay) { %>
+            Last day of your Pro trial — add a card before midnight to keep Pro features.
+          <% } else { %>
+            You're on a Pro trial — <%= days_left_in_trial %> days left.
+          <% } %>
         </p>
-        <p class="text-blue-700 mt-0.5">
-          Add a payment method to keep Pro features when your trial ends. No charge today.
+        <p class="<%= trialLastDay ? 'text-red-700' : 'text-blue-700' %> mt-0.5">
+          <% if (trialLastDay) { %>
+            Without a card on file, payment links and reminders pause when your trial ends.
+          <% } else { %>
+            Add a payment method to keep Pro features when your trial ends. No charge today.
+          <% } %>
         </p>
+        <% if (trialLastDay) { %>
+          <p class="mt-2" data-testid="trial-urgent-hours-remaining" x-show="hoursRemaining" x-cloak>
+            <span class="inline-flex items-center gap-1.5 text-red-800 text-xs font-semibold">
+              <span aria-hidden="true">&#9203;</span>
+              Trial ends in <span data-testid="trial-urgent-hours-remaining-value" x-text="hoursRemaining"></span>
+            </span>
+          </p>
+          <p class="mt-2" data-testid="trial-urgent-annual-pill">
+            <span class="inline-flex items-center gap-1.5 bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full">
+              <span aria-hidden="true">&#128176;</span>
+              Lock in $99/year &mdash; 3 months free
+            </span>
+          </p>
+        <% } %>
         <form action="/billing/portal" method="POST" class="mt-3">
           <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
-          <button type="submit" class="inline-flex items-center gap-1.5 bg-blue-600 text-white font-semibold text-xs px-3 py-2 rounded-lg hover:bg-blue-700 transition">
+          <button type="submit" class="inline-flex items-center gap-1.5 <%= trialLastDay ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700' %> text-white font-semibold text-xs px-3 py-2 rounded-lg transition">
             Add payment method &rarr;
           </button>
         </form>
@@ -73,7 +102,7 @@
       <button
         type="button"
         @click="dismissed = true"
-        class="text-blue-400 hover:text-blue-600 text-2xl leading-none"
+        class="<%= trialLastDay ? 'text-red-400 hover:text-red-600' : 'text-blue-400 hover:text-blue-600' %> text-2xl leading-none"
         aria-label="Dismiss"
       >&times;</button>
     </div>
@@ -116,16 +145,52 @@
     </div>
   <% } %>
 
+  <% if (locals.invoiceLimitProgress) { %>
+    <div
+      data-testid="invoice-limit-progress"
+      data-used="<%= invoiceLimitProgress.used %>"
+      data-max="<%= invoiceLimitProgress.max %>"
+      class="mb-6 rounded-xl border <%= invoiceLimitProgress.atLimit || invoiceLimitProgress.nearLimit ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-white' %> px-5 py-4 print:hidden"
+      role="region"
+      aria-label="Free plan invoice usage"
+    >
+      <div class="flex items-center justify-between gap-3 mb-2">
+        <p class="text-sm <%= invoiceLimitProgress.atLimit || invoiceLimitProgress.nearLimit ? 'text-amber-900' : 'text-gray-700' %>">
+          <strong><%= invoiceLimitProgress.used %> of <%= invoiceLimitProgress.max %></strong> free invoices used
+          <% if (invoiceLimitProgress.atLimit) { %>
+            &mdash; you've hit the limit.
+          <% } else if (invoiceLimitProgress.nearLimit) { %>
+            &mdash; <%= invoiceLimitProgress.remaining %> left this plan.
+          <% } %>
+        </p>
+        <a
+          href="/billing/upgrade"
+          class="text-xs font-semibold <%= invoiceLimitProgress.atLimit || invoiceLimitProgress.nearLimit ? 'text-amber-700 hover:text-amber-900' : 'text-brand-600 hover:text-brand-700' %> whitespace-nowrap"
+        >Upgrade &rarr;</a>
+      </div>
+      <div class="bg-gray-100 rounded-full h-2 overflow-hidden" aria-hidden="true">
+        <div
+          class="<%= invoiceLimitProgress.atLimit || invoiceLimitProgress.nearLimit ? 'bg-amber-500' : 'bg-brand-600' %> h-2 rounded-full transition-all"
+          style="width: <%= invoiceLimitProgress.percent %>%"
+        ></div>
+      </div>
+    </div>
+  <% } %>
+
   <!-- Header -->
   <div class="flex items-center justify-between mb-8">
     <div>
       <h1 class="text-2xl font-bold text-gray-900">My Invoices</h1>
       <p class="text-gray-500 text-sm mt-1">
         <% if (user && user.plan === 'free') { %>
-          Free plan · <%= user.invoice_count || 0 %>/3 invoices used ·
-          <a href="/billing/upgrade" class="text-brand-600 hover:underline font-medium">Upgrade for unlimited</a>
+          <% if (locals.invoiceLimitProgress) { %>
+            Free plan · <a href="/billing/upgrade" class="text-brand-600 hover:underline font-medium">Upgrade for unlimited</a>
+          <% } else { %>
+            Free plan · <%= user.invoice_count || 0 %> of 3 invoices used ·
+            <a href="/billing/upgrade" class="text-brand-600 hover:underline font-medium">Upgrade for unlimited</a>
+          <% } %>
         <% } else { %>
-          Pro plan · Unlimited invoices
+          Pro plan · Unlimited invoices &amp; payment links
         <% } %>
       </p>
     </div>
@@ -144,8 +209,8 @@
     <!-- Empty state -->
     <div class="bg-white rounded-2xl border border-gray-200 p-16 text-center print:hidden">
       <div class="text-5xl mb-4">📄</div>
-      <h2 class="text-lg font-semibold text-gray-700 mb-2">No invoices yet</h2>
-      <p class="text-gray-400 mb-6 text-sm">Create your first invoice and start getting paid.</p>
+      <h2 class="text-lg font-semibold text-gray-700 mb-2">Send your first invoice today</h2>
+      <p class="text-gray-400 mb-6 text-sm">A professional invoice in under 60 seconds. Email it, print it as a PDF, or share a Stripe pay link — all from one screen.</p>
       <a href="/invoices/new" class="bg-brand-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-brand-700 transition inline-block">
         Create your first invoice &rarr;
       </a>
@@ -163,6 +228,201 @@
       const paid = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + parseFloat(i.total), 0);
       const outstanding = invoices.filter(i => i.status !== 'paid').reduce((s, i) => s + parseFloat(i.total), 0);
     %>
+    <% if (locals.recentRevenue && recentRevenue) { %>
+      <div
+        x-data='recentRevenueCard(<%- JSON.stringify({ days: recentRevenue.days, totalPaid: recentRevenue.totalPaid, invoiceCount: recentRevenue.invoiceCount, clientCount: recentRevenue.clientCount, unpaidCount: recentRevenue.unpaidCount }).replace(/</g, "\\u003c") %>)'
+        data-testid="recent-revenue"
+        :data-days="days"
+        data-days="<%= recentRevenue.days %>"
+        class="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 print:hidden"
+        role="region"
+        aria-label="Recent paid revenue"
+      >
+        <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
+          <div>
+            <h2 class="text-sm font-semibold text-emerald-900 flex items-center gap-2">
+              <span aria-hidden="true">💸</span>
+              You've been getting paid
+            </h2>
+            <p class="text-xs text-emerald-700 mt-0.5">Last <span x-text="days"><%= recentRevenue.days %></span> days</p>
+          </div>
+          <div
+            class="inline-flex items-center bg-white rounded-lg border border-emerald-200 p-0.5 text-xs font-medium"
+            role="group"
+            aria-label="Choose revenue window"
+            data-testid="recent-revenue-toggle"
+          >
+            <template x-for="opt in [7, 30, 90]" :key="opt">
+              <button
+                type="button"
+                @click="select(opt)"
+                :disabled="loading"
+                :class="days === opt ? 'bg-emerald-600 text-white' : 'text-emerald-700 hover:bg-emerald-50'"
+                class="px-3 py-1 rounded-md transition-colors disabled:opacity-60 disabled:cursor-wait"
+                :aria-pressed="days === opt ? 'true' : 'false'"
+                x-text="opt + 'd'"
+              ></button>
+            </template>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-3" :class="loading ? 'opacity-60 transition-opacity' : ''">
+          <div class="bg-white rounded-xl border border-emerald-100 p-4">
+            <p class="text-xs font-medium text-emerald-700 uppercase tracking-wide mb-1">Revenue</p>
+            <p class="text-xl font-bold text-emerald-700" data-testid="recent-revenue-total" x-text="formatMoney(totalPaid)">
+              $<%= recentRevenue.totalPaid.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) %>
+            </p>
+          </div>
+          <div class="bg-white rounded-xl border border-emerald-100 p-4">
+            <p class="text-xs font-medium text-emerald-700 uppercase tracking-wide mb-1">Clients paid you</p>
+            <p class="text-xl font-bold text-gray-900" data-testid="recent-revenue-clients" x-text="clientCount">
+              <%= recentRevenue.clientCount %>
+            </p>
+          </div>
+          <div class="bg-white rounded-xl border border-emerald-100 p-4">
+            <p class="text-xs font-medium text-emerald-700 uppercase tracking-wide mb-1">Invoices paid</p>
+            <p class="text-xl font-bold text-gray-900" data-testid="recent-revenue-invoices" x-text="invoiceCount">
+              <%= recentRevenue.invoiceCount %>
+            </p>
+          </div>
+        </div>
+        <p
+          x-show="errored"
+          x-cloak
+          class="text-xs text-red-700 mt-2"
+          role="status"
+          data-testid="recent-revenue-error"
+        >Couldn't load that window — showing the previous one.</p>
+        <p
+          x-show="totalPaid === 0 && unpaidCount > 0"
+          x-cloak
+          class="text-xs text-emerald-800 mt-2"
+          role="status"
+          aria-live="polite"
+          data-testid="recent-revenue-quiet-cta"
+        >
+          <a
+            href="#invoices-table"
+            class="inline-flex items-center gap-1 font-medium underline decoration-dotted hover:decoration-solid"
+            data-testid="recent-revenue-quiet-cta-link"
+          >
+            <span aria-hidden="true">📨</span>
+            Send <span x-text="unpaidCount"><%= recentRevenue.unpaidCount %></span> follow-up<span x-show="unpaidCount !== 1">s</span> now
+            <span aria-hidden="true">→</span>
+          </a>
+        </p>
+      </div>
+      <script>
+        // Backs the recent-revenue card window toggle (#117). Initial state
+        // comes from the server-rendered card so the page is meaningful
+        // before Alpine boots; subsequent toggles fetch JSON and re-render.
+        // The fetch is a same-origin authenticated GET; on failure we keep
+        // the previous values + flag the small error line.
+        //
+        // Per-device window preference (#122) is persisted to localStorage
+        // under 'qi.recentRevenueDays'. On init we restore the saved window
+        // if (a) it parses as a whitelist member [7,30,90] and (b) it
+        // differs from the SSR-rendered default — otherwise the SSR render
+        // already shows the right thing and we make zero network calls.
+        function recentRevenueCard(initial) {
+          var STORAGE_KEY = 'qi.recentRevenueDays';
+          var ALLOWED = [7, 30, 90];
+          function readSavedWindow() {
+            try {
+              if (typeof localStorage === 'undefined') return null;
+              var raw = localStorage.getItem(STORAGE_KEY);
+              if (raw == null) return null;
+              var n = parseInt(raw, 10);
+              return ALLOWED.indexOf(n) !== -1 ? n : null;
+            } catch (e) {
+              return null;
+            }
+          }
+          function writeSavedWindow(n) {
+            try {
+              if (typeof localStorage === 'undefined') return;
+              localStorage.setItem(STORAGE_KEY, String(n));
+            } catch (e) { /* private mode / quota — ignore */ }
+          }
+          return {
+            days: initial.days,
+            totalPaid: initial.totalPaid,
+            invoiceCount: initial.invoiceCount,
+            clientCount: initial.clientCount,
+            // unpaidCount drives the #127 quiet-window recovery CTA.
+            // Not windowed — counts all currently open invoices
+            // (status IN ('sent','overdue')) so the "send follow-ups"
+            // prompt reflects every invoice that could use a nudge.
+            unpaidCount: Number(initial.unpaidCount) || 0,
+            loading: false,
+            errored: false,
+            init() {
+              var saved = readSavedWindow();
+              if (saved !== null && saved !== this.days) {
+                // Init-driven restoration is silent on failure — the user
+                // didn't click anything, surfacing a red error line for a
+                // background restoration would be confusing. Falling back
+                // to the SSR-rendered window with no message is the right
+                // graceful-degrade.
+                this.select(saved, { silent: true });
+              }
+            },
+            formatMoney(n) {
+              const v = Number(n) || 0;
+              return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            },
+            async select(window, opts) {
+              if (window === this.days || this.loading) return;
+              var silent = opts && opts.silent === true;
+              this.loading = true;
+              this.errored = false;
+              try {
+                const r = await fetch('/invoices/api/recent-revenue?days=' + encodeURIComponent(window), {
+                  headers: { 'Accept': 'application/json' },
+                  credentials: 'same-origin'
+                });
+                if (!r.ok) throw new Error('http_' + r.status);
+                const data = await r.json();
+                // card === null means "no paid invoices in this window" — that's
+                // valid data, not an error. Show zeros honestly so the user
+                // gets the truthful "no, you weren't paid this week" answer.
+                this.days = data.days || window;
+                if (data.card) {
+                  this.totalPaid = data.card.totalPaid;
+                  this.invoiceCount = data.card.invoiceCount;
+                  this.clientCount = data.card.clientCount;
+                  // unpaidCount may be absent on legacy API shapes —
+                  // preserve the existing value rather than zeroing it,
+                  // so the CTA stays accurate during a partial deploy.
+                  if (typeof data.card.unpaidCount === 'number') {
+                    this.unpaidCount = data.card.unpaidCount;
+                  }
+                } else {
+                  this.totalPaid = 0;
+                  this.invoiceCount = 0;
+                  this.clientCount = 0;
+                  // card === null means no paid invoices in the window;
+                  // the unpaidCount field is still useful so the CTA
+                  // can fire. Read from the top-level response if present.
+                  if (typeof data.unpaidCount === 'number') {
+                    this.unpaidCount = data.unpaidCount;
+                  }
+                }
+                // Only persist after a successful fetch — never persist
+                // a window the server couldn't honour.
+                writeSavedWindow(this.days);
+              } catch (e) {
+                if (!silent) this.errored = true;
+              } finally {
+                this.loading = false;
+              }
+            }
+          };
+        }
+      </script>
+    <% } %>
+    <% if (locals.recentRevenue && recentRevenue) { %>
+      <p class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">All-time totals</p>
+    <% } %>
     <div class="grid grid-cols-3 gap-4 mb-8">
       <div class="bg-white rounded-xl border border-gray-200 p-5">
         <p class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Total Invoiced</p>
@@ -179,7 +439,8 @@
     </div>
 
     <!-- Invoice table -->
-    <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+    <% const isProUser = user && (user.plan === 'pro' || user.plan === 'agency'); %>
+    <div id="invoices-table" class="bg-white rounded-2xl border border-gray-200 overflow-hidden scroll-mt-6">
       <table class="w-full text-sm">
         <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
@@ -188,6 +449,9 @@
             <th class="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
             <th class="text-right px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
             <th class="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+            <% if (isProUser) { %>
+              <th class="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide print:hidden">Pay link</th>
+            <% } %>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
@@ -210,6 +474,32 @@
                   <%= inv.status.charAt(0).toUpperCase() + inv.status.slice(1) %>
                 </span>
               </td>
+              <% if (isProUser) { %>
+                <td class="px-4 py-4 text-right print:hidden" onclick="event.stopPropagation()">
+                  <% if (inv.payment_link_url) { %>
+                    <span x-data="{ copied: false }" class="inline-flex">
+                      <button
+                        type="button"
+                        data-pay-link-url="<%= inv.payment_link_url %>"
+                        @click.stop="navigator.clipboard.writeText($event.currentTarget.dataset.payLinkUrl).then(() => { copied = true; setTimeout(() => copied = false, 2000); })"
+                        data-testid="copy-pay-link-<%= inv.id %>"
+                        :title="copied ? 'Copied to clipboard' : 'Copy payment link'"
+                        :aria-label="copied ? 'Payment link copied' : 'Copy payment link to clipboard'"
+                        class="inline-flex items-center gap-1.5 border border-gray-200 text-gray-600 hover:text-brand-700 hover:border-brand-300 hover:bg-brand-50 px-2.5 py-1.5 rounded-lg transition text-xs font-medium"
+                      >
+                        <svg x-show="!copied" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        <span x-show="!copied">Copy link</span>
+                        <svg x-show="copied" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span x-show="copied" class="text-green-600">Copied</span>
+                      </button>
+                    </span>
+                  <% } %>
+                </td>
+              <% } %>
             </tr>
           <% }) %>
         </tbody>

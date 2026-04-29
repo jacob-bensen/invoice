@@ -37,12 +37,20 @@
     <div class="bg-white rounded-2xl border border-gray-200 p-8">
       <h3 class="text-xl font-bold mb-1">Free</h3>
       <div class="text-4xl font-extrabold text-gray-900 mb-1">$0</div>
-      <p class="text-gray-400 text-sm mb-6">Your current plan</p>
+      <p class="text-gray-400 text-sm mb-6">
+        <% if (locals.user && user.plan === 'pro') { %>
+          For occasional invoicing
+        <% } else { %>
+          Your current plan
+        <% } %>
+      </p>
       <ul class="space-y-3 text-sm text-gray-600">
-        <li class="flex items-center gap-2"><span class="text-green-500">✓</span> 3 invoices total</li>
+        <li class="flex items-center gap-2"><span class="text-green-500">✓</span> Up to 3 invoices</li>
         <li class="flex items-center gap-2"><span class="text-green-500">✓</span> PDF download</li>
         <li class="flex items-center gap-2"><span class="text-green-500">✓</span> Payment tracking</li>
         <li class="flex items-center gap-2 text-gray-300"><span>×</span> Unlimited invoices</li>
+        <li class="flex items-center gap-2 text-gray-300"><span>×</span> Stripe payment links</li>
+        <li class="flex items-center gap-2 text-gray-300"><span>×</span> Auto reminder emails</li>
         <li class="flex items-center gap-2 text-gray-300"><span>×</span> Business branding</li>
         <li class="flex items-center gap-2 text-gray-300"><span>×</span> Priority support</li>
       </ul>
@@ -54,15 +62,20 @@
       <div class="text-4xl font-extrabold mb-1" x-show="cycle === 'monthly'">
         $12<span class="text-xl font-normal text-brand-200">/mo</span>
       </div>
-      <div class="text-4xl font-extrabold mb-1" x-show="cycle === 'annual'" x-cloak>
-        $99<span class="text-xl font-normal text-brand-200">/yr</span>
+      <div class="flex items-center gap-2 mb-1" x-show="cycle === 'annual'" x-cloak>
+        <div class="text-4xl font-extrabold">
+          $99<span class="text-xl font-normal text-brand-200">/yr</span>
+        </div>
+        <span class="bg-emerald-400 text-emerald-900 text-xs font-extrabold px-2 py-1 rounded-full shadow-sm whitespace-nowrap">
+          Save $45/year
+        </span>
       </div>
       <p class="text-brand-200 text-sm mb-1">
         <span x-show="cycle === 'monthly'">Billed monthly · Cancel anytime</span>
         <span x-show="cycle === 'annual'" x-cloak>Just $8.25/mo · billed yearly · cancel anytime</span>
       </p>
       <p class="text-emerald-200 text-xs font-semibold mb-6" x-show="cycle === 'annual'" x-cloak>
-        Save $45/year vs. monthly
+        That's 3 months free vs. paying monthly.
       </p>
       <p class="text-brand-200 text-sm mb-6" x-show="cycle === 'monthly'">&nbsp;</p>
       <ul class="space-y-3 text-sm text-brand-100 mb-8">
@@ -70,6 +83,7 @@
         <li class="flex items-center gap-2"><span class="text-white">✓</span> PDF download</li>
         <li class="flex items-center gap-2"><span class="text-white">✓</span> Payment tracking</li>
         <li class="flex items-center gap-2"><span class="text-white">✓</span> Stripe payment links</li>
+        <li class="flex items-center gap-2"><span class="text-white">✓</span> Auto reminder emails</li>
         <li class="flex items-center gap-2"><span class="text-white">✓</span> Business branding</li>
         <li class="flex items-center gap-2"><span class="text-white">✓</span> Priority support</li>
       </ul>

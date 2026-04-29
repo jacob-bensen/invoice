@@ -9,6 +9,10 @@
  *  - POST /billing/portal:  valid customer → 303 to Stripe portal URL
  *  - GET  /billing/settings: renders 200 for authenticated user
  *  - POST /billing/settings: calls db.updateUser with correct fields, redirects to /billing/settings
+ *  - POST /billing/settings: reply_to_email valid → persisted via updateUser
+ *  - POST /billing/settings: reply_to_email blank → persisted as NULL (clearing path)
+ *  - POST /billing/settings: reply_to_email malformed → error flash, no DB write
+ *  - POST /billing/settings: reply_to_email > 255 chars → error flash, no DB write
  *
  * Stripe SDK and ../db are stubbed — no network calls.
  *
@@ -226,6 +230,109 @@ async function testSettingsPostPersistsBusinessInfo() {
     'business_address must be persisted');
 }
 
+// reply_to_email validation paths — gates Pro outbound email Reply-To header.
+// A bug here (accepting malformed values) would surface as Resend rejecting
+// the send, breaking the Pro feature silently. A bug in the inverse direction
+// (rejecting valid values) blocks the user from configuring the feature.
+
+async function testSettingsPostReplyToValid() {
+  reset();
+  userStore = {
+    6: {
+      id: 6, email: 'carol@x.com', name: 'Carol', plan: 'pro',
+      business_name: 'Carol Co', reply_to_email: null
+    }
+  };
+  const app = buildApp({ id: 6, plan: 'pro', name: 'Carol', email: 'carol@x.com' });
+
+  const res = await request(app, 'POST', '/billing/settings', {
+    name: 'Carol',
+    business_name: 'Carol Co',
+    reply_to_email: 'invoices@carol.studio'
+  });
+
+  assert.strictEqual(res.status, 302, 'valid reply_to_email must redirect on success');
+  assert.ok(res.headers.location.includes('/billing/settings'),
+    'must redirect back to /billing/settings after saving');
+  assert.strictEqual(updateUserCalls.length, 1, 'db.updateUser must be called exactly once');
+  assert.strictEqual(updateUserCalls[0].fields.reply_to_email, 'invoices@carol.studio',
+    'valid reply_to_email must be persisted verbatim');
+}
+
+async function testSettingsPostReplyToBlankClearsField() {
+  reset();
+  userStore = {
+    7: {
+      id: 7, email: 'dan@x.com', name: 'Dan', plan: 'pro',
+      reply_to_email: 'old@dan.io'
+    }
+  };
+  const app = buildApp({ id: 7, plan: 'pro', name: 'Dan', email: 'dan@x.com' });
+
+  const res = await request(app, 'POST', '/billing/settings', {
+    name: 'Dan',
+    business_name: '',
+    reply_to_email: '   '   // whitespace-only must trim to empty → null
+  });
+
+  assert.strictEqual(res.status, 302, 'blank reply_to_email must succeed (clearing path)');
+  assert.strictEqual(updateUserCalls.length, 1, 'db.updateUser must be called');
+  assert.strictEqual(updateUserCalls[0].fields.reply_to_email, null,
+    'whitespace-only reply_to_email must be persisted as NULL (lets Pro user clear the field)');
+}
+
+async function testSettingsPostReplyToMalformedRejected() {
+  reset();
+  userStore = {
+    8: {
+      id: 8, email: 'eve@x.com', name: 'Eve', plan: 'pro',
+      reply_to_email: 'safe@eve.com'
+    }
+  };
+  const app = buildApp({ id: 8, plan: 'pro', name: 'Eve', email: 'eve@x.com' });
+
+  const res = await request(app, 'POST', '/billing/settings', {
+    name: 'Eve',
+    business_name: 'Eve LLC',
+    reply_to_email: 'not-an-email'
+  });
+
+  assert.strictEqual(res.status, 302, 'malformed reply_to_email must redirect (with error flash)');
+  assert.ok(res.headers.location.includes('/billing/settings'),
+    'must redirect back to settings page so the user sees the error flash');
+  assert.strictEqual(updateUserCalls.length, 0,
+    'malformed reply_to_email must NOT trigger a db.updateUser call ' +
+    '(prevents corrupt Reply-To header from landing on outbound mail)');
+}
+
+async function testSettingsPostReplyToTooLongRejected() {
+  reset();
+  userStore = {
+    9: {
+      id: 9, email: 'frank@x.com', name: 'Frank', plan: 'pro',
+      reply_to_email: null
+    }
+  };
+  const app = buildApp({ id: 9, plan: 'pro', name: 'Frank', email: 'frank@x.com' });
+
+  // Construct a >255-char address that still passes the regex shape check
+  // (local@host.tld) so the test isolates the length guard.
+  const longLocal = 'a'.repeat(260);
+  const longEmail = `${longLocal}@x.io`; // 260 + "@x.io" = 265 chars
+  assert.ok(longEmail.length > 255, 'fixture must be > 255 chars to trigger length guard');
+
+  const res = await request(app, 'POST', '/billing/settings', {
+    name: 'Frank',
+    business_name: 'Frank Co',
+    reply_to_email: longEmail
+  });
+
+  assert.strictEqual(res.status, 302, 'over-length reply_to_email must redirect (with error flash)');
+  assert.strictEqual(updateUserCalls.length, 0,
+    'over-length reply_to_email must NOT trigger a db.updateUser call ' +
+    '(DB column is VARCHAR(255); writing > 255 chars would crash the Postgres insert)');
+}
+
 // ---------- Runner ------------------------------------------------------
 
 async function run() {
@@ -234,7 +341,11 @@ async function run() {
     ['POST /billing/portal: no stripe_customer_id → 302 to /billing/upgrade', testPortalNoCustomerIdRedirectsToUpgrade],
     ['POST /billing/portal: valid customer → 303 to Stripe billing portal', testPortalWithCustomerRedirectsToStripe],
     ['GET /billing/settings: renders 200 for authenticated user', testSettingsPageRendersFor200],
-    ['POST /billing/settings: saves business info + redirects to /billing/settings', testSettingsPostPersistsBusinessInfo]
+    ['POST /billing/settings: saves business info + redirects to /billing/settings', testSettingsPostPersistsBusinessInfo],
+    ['POST /billing/settings: valid reply_to_email is persisted verbatim', testSettingsPostReplyToValid],
+    ['POST /billing/settings: blank/whitespace reply_to_email persists as NULL', testSettingsPostReplyToBlankClearsField],
+    ['POST /billing/settings: malformed reply_to_email is rejected (no DB write)', testSettingsPostReplyToMalformedRejected],
+    ['POST /billing/settings: > 255-char reply_to_email is rejected (length guard)', testSettingsPostReplyToTooLongRejected]
   ];
 
   let pass = 0, fail = 0;

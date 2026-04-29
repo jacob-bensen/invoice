@@ -216,6 +216,45 @@ const db = {
   },
 
   /*
+   * Recent paid-revenue stats for the dashboard "what you collected lately"
+   * row (INTERNAL_TODO #107). Returns SUM(total), COUNT(*) and a count of
+   * distinct paying clients (deduped on lowercased email-or-name) over a
+   * trailing window. We use `updated_at` as the paid-time proxy because
+   * `status` only flips to 'paid' once and the same UPDATE bumps
+   * `updated_at`; the column drifts only if a paid invoice is later edited
+   * (rare: the typical workflow ends at paid). DECIMAL columns come back
+   * from pg as strings — we cast to numbers in JS so the template can
+   * format and toLocaleString without re-parsing.
+   */
+  async getRecentRevenueStats(userId, days = 30) {
+    const window = Math.max(1, Math.min(365, parseInt(days, 10) || 30));
+    // Single round-trip: paid-window aggregates + a NOT-windowed
+    // count of currently-unpaid invoices (status IN ('sent','overdue'))
+    // used by the quiet-window recovery CTA (#127). The unpaid count is
+    // not bounded by the trailing window because the CTA is about
+    // follow-ups on all open invoices, not invoices opened in the last N days.
+    const { rows } = await pool.query(
+      `SELECT
+         COALESCE(SUM(total) FILTER (WHERE status = 'paid' AND updated_at >= NOW() - ($2 * INTERVAL '1 day')), 0)::text AS total_paid,
+         COUNT(*) FILTER (WHERE status = 'paid' AND updated_at >= NOW() - ($2 * INTERVAL '1 day'))::int                AS invoice_count,
+         COUNT(DISTINCT LOWER(COALESCE(NULLIF(client_email, ''), client_name)))
+           FILTER (WHERE status = 'paid' AND updated_at >= NOW() - ($2 * INTERVAL '1 day'))::int                       AS client_count,
+         COUNT(*) FILTER (WHERE status IN ('sent', 'overdue'))::int                                                    AS unpaid_count
+         FROM invoices
+        WHERE user_id = $1`,
+      [userId, window]
+    );
+    const row = rows[0] || { total_paid: '0', invoice_count: 0, client_count: 0, unpaid_count: 0 };
+    return {
+      days: window,
+      totalPaid: parseFloat(row.total_paid) || 0,
+      invoiceCount: parseInt(row.invoice_count, 10) || 0,
+      clientCount: parseInt(row.client_count, 10) || 0,
+      unpaidCount: parseInt(row.unpaid_count, 10) || 0
+    };
+  },
+
+  /*
    * Returns up to `limit` most-recent unique clients for a user, deduplicated
    * by email-then-name. Powers the "quick-pick recent clients" dropdown on
    * the invoice form (INTERNAL_TODO #63). DISTINCT ON groups by the

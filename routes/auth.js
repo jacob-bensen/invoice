@@ -50,7 +50,9 @@ router.post('/register', redirectIfAuth, authLimiter, [
 
     req.session.user = {
       id: user.id, email: user.email, name: user.name,
-      plan: user.plan, invoice_count: user.invoice_count
+      plan: user.plan, invoice_count: user.invoice_count,
+      subscription_status: user.subscription_status || null,
+      trial_ends_at: user.trial_ends_at || null
     };
     res.redirect('/dashboard');
   } catch (err) {
@@ -81,7 +83,9 @@ router.post('/login', redirectIfAuth, authLimiter, [
 
     req.session.user = {
       id: user.id, email: user.email, name: user.name,
-      plan: user.plan, invoice_count: user.invoice_count
+      plan: user.plan, invoice_count: user.invoice_count,
+      subscription_status: user.subscription_status || null,
+      trial_ends_at: user.trial_ends_at || null
     };
     res.redirect('/dashboard');
   } catch (err) {

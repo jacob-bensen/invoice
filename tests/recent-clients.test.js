@@ -197,6 +197,27 @@ async function testNewInvoiceRouteSurvivesRecentClientsDbFailure() {
   }
 }
 
+async function testNewInvoiceRouteSurvivesRecentClientsNonArrayResult() {
+  // Defensive regression — `loadRecentClients` falls back to [] when the
+  // helper returns a non-array (null, undefined, object, scalar). Without
+  // this guard a future helper bug would make `.length`/`.forEach` throw
+  // inside the EJS template and 500 the new-invoice form. Covers the
+  // `Array.isArray(rows) ? rows : []` branch in routes/invoices.js.
+  const original = dbStub.db.getRecentClientsForUser;
+  for (const badResult of [null, undefined, { rows: [] }, 'oops', 42, true]) {
+    dbStub.db.getRecentClientsForUser = async () => badResult;
+    const app = buildApp({ id: 1, plan: 'pro', invoice_count: 2 });
+    const res = await request(app, 'GET', '/invoices/new');
+    assert.strictEqual(res.status, 200,
+      `non-array helper result (${typeof badResult}: ${JSON.stringify(badResult)}) must NOT 500 the new-invoice form`);
+    assert.ok(!/data-recent-clients/.test(res.body),
+      `non-array helper result (${typeof badResult}) must coerce to [] and hide the dropdown wrapper`);
+    assert.ok(/name="client_name"/.test(res.body),
+      `non-array helper result (${typeof badResult}) must still render the client_name input`);
+  }
+  dbStub.db.getRecentClientsForUser = original;
+}
+
 // ---------- (4) Template hides dropdown when recentClients is empty -----
 
 async function renderForm(locals) {
@@ -270,6 +291,8 @@ async function testTemplateRendersDropdownWhenPopulated() {
       testNewInvoiceRouteExposesRecentClients],
     ['GET /invoices/new survives recent-clients DB failure (renders empty)',
       testNewInvoiceRouteSurvivesRecentClientsDbFailure],
+    ['GET /invoices/new coerces non-array helper result to [] (defensive)',
+      testNewInvoiceRouteSurvivesRecentClientsNonArrayResult],
     ['Template hides dropdown when recentClients is empty',
       testTemplateHidesDropdownWhenEmpty],
     ['Template renders dropdown + Alpine wiring when populated',

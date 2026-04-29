@@ -1,0 +1,22 @@
+<%- include('partials/head') %>
+<%- include('partials/nav') %>
+
+<main class="min-h-[60vh] flex items-center justify-center px-4 py-16">
+  <div class="max-w-md text-center">
+    <p class="text-6xl mb-4" aria-hidden="true">🔍</p>
+    <h1 class="text-2xl font-bold text-gray-900 mb-2">We couldn't find that page</h1>
+    <p class="text-gray-500 mb-8 text-sm">
+      The link may be out of date, or the page may have moved. Either way, you didn't break anything.
+    </p>
+    <a href="<%= homeHref %>"
+      class="inline-block bg-brand-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-brand-700 transition">
+      <%= homeLabel %> &rarr;
+    </a>
+    <p class="text-xs text-gray-400 mt-6">
+      Need help? Email <a href="mailto:support@quickinvoice.io?subject=Help%20with%20a%20broken%20link" class="underline hover:text-gray-600">support@quickinvoice.io</a>.
+    </p>
+  </div>
+</main>
+
+</body>
+</html>
