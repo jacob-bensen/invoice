@@ -16,10 +16,10 @@
             data-testid="nav-trial-countdown"
             data-trial-urgent="<%= trialCountdown.urgent ? 'true' : 'false' %>"
             class="hidden sm:inline-flex items-center gap-1.5 <%= trialCountdown.urgent ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100' : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100' %> border text-xs font-semibold px-2.5 py-1 rounded-full transition"
-            title="Add a card to keep Pro features when your trial ends"
+            title="<%= trialCountdown.urgent ? 'Trial ends today — add a card to keep Pro features.' : 'Add a card to keep Pro features when your trial ends.' %>"
           >
             <span aria-hidden="true"><%= trialCountdown.urgent ? '⏱' : '⏳' %></span>
-            <span><%= trialCountdown.label %> in trial</span>
+            <span><%= (trialCountdown.urgent && trialCountdown.urgentLabel) ? trialCountdown.urgentLabel : trialCountdown.label %> in trial</span>
             <span class="hidden md:inline opacity-70">· Add card</span>
           </a>
         <% } %>

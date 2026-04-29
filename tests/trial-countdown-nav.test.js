@@ -70,7 +70,12 @@ run('returns null when trial ends exactly now (boundary)', () => {
 run('6d 5h remaining → "6d 5h left", not urgent', () => {
   const ends = new Date(NOW + 6 * ONE_DAY + 5 * ONE_HOUR);
   const out = formatTrialCountdown(ends, NOW);
-  assert.deepStrictEqual(out, { days: 6, hours: 5, label: '6d 5h left', urgent: false });
+  // urgentLabel is null on the non-urgent branch (>=24h remaining); the
+  // calm-branch nav-pill keeps using the existing `label` field.
+  assert.deepStrictEqual(out, {
+    days: 6, hours: 5, minutes: 0,
+    label: '6d 5h left', urgentLabel: null, urgent: false
+  });
 });
 
 run('exactly 1 day → "1d left" (no hours suffix), not urgent', () => {
@@ -98,6 +103,36 @@ run('30m remaining → "<1h left", urgent', () => {
   assert.strictEqual(out.hours, 0);
   assert.strictEqual(out.label, '<1h left');
   assert.strictEqual(out.urgent, true);
+});
+
+// ---------- #138: H:M precision urgentLabel for day-1 nav-pill -----------
+
+run('#138: 5h 23m remaining → urgentLabel = "5h 23m left", urgent', () => {
+  const ends = new Date(NOW + 5 * ONE_HOUR + 23 * 60 * 1000);
+  const out = formatTrialCountdown(ends, NOW);
+  assert.strictEqual(out.urgent, true);
+  assert.strictEqual(out.hours, 5);
+  assert.strictEqual(out.minutes, 23);
+  assert.strictEqual(out.urgentLabel, '5h 23m left',
+    'urgent branch must expose H:M precision in urgentLabel for the nav-pill swap');
+});
+
+run('#138: 23m remaining (final hour) → urgentLabel = "23m left" (no leading "0h ")', () => {
+  const ends = new Date(NOW + 23 * 60 * 1000);
+  const out = formatTrialCountdown(ends, NOW);
+  assert.strictEqual(out.urgent, true);
+  assert.strictEqual(out.hours, 0);
+  assert.strictEqual(out.minutes, 23);
+  assert.strictEqual(out.urgentLabel, '23m left',
+    'final-hour branch must drop the "0h " prefix — cleaner copy on the most-urgent moment');
+});
+
+run('#138: urgentLabel is null on the calm branch (>=24h)', () => {
+  const ends = new Date(NOW + 3 * ONE_DAY + 5 * ONE_HOUR);
+  const out = formatTrialCountdown(ends, NOW);
+  assert.strictEqual(out.urgent, false);
+  assert.strictEqual(out.urgentLabel, null,
+    'non-urgent shape must explicitly null out urgentLabel so callers can rely on a single conditional');
 });
 
 run('accepts ISO string input', () => {
@@ -241,6 +276,50 @@ run('nav pill carries an accessible title attribute', () => {
   });
   assert.ok(/title=".*card.*Pro/.test(html),
     'pill must have an explanatory title (call-to-action for sighted hover + AT)');
+});
+
+run('#138: nav-pill renders urgentLabel on the urgent branch (not the abstract "5h left")', () => {
+  // The full upgrade-pillar of #138: when urgentLabel is present, the
+  // nav-pill swaps it in for the existing label. The pill copy on day-1
+  // changes from "5h left in trial" to "5h 23m left in trial".
+  const html = renderNav({
+    user: TRIAL_USER,
+    trialCountdown: { days: 0, hours: 5, minutes: 23, label: '5h left', urgentLabel: '5h 23m left', urgent: true },
+    csrfToken: 't'
+  });
+  assert.ok(html.includes('5h 23m left in trial'),
+    'urgent nav-pill must render the H:M-precision urgentLabel');
+  assert.ok(!/(?<![0-9hm])5h left in trial/.test(html),
+    'urgent nav-pill must NOT fall back to the abstract "5h left" label when urgentLabel is present');
+});
+
+run('#138: nav-pill keeps using `label` on the calm branch (urgentLabel = null path)', () => {
+  // Regression guard: the calm branch (>=24h) must continue to render the
+  // existing `label` ("5d 3h left") — not an empty string from a missing
+  // urgentLabel, and not silently swapping in a calm-branch urgentLabel
+  // that the helper now nulls out.
+  const html = renderNav({
+    user: TRIAL_USER,
+    trialCountdown: { days: 5, hours: 3, minutes: 12, label: '5d 3h left', urgentLabel: null, urgent: false },
+    csrfToken: 't'
+  });
+  assert.ok(html.includes('5d 3h left in trial'),
+    'calm nav-pill must keep using the days-precision `label`');
+});
+
+run('#138: nav-pill falls back to label when urgent but urgentLabel is missing (defence-in-depth)', () => {
+  // Defensive contract: a stale-shape countdown object (e.g. from an older
+  // server-side computation, an external test fixture, or a cache hit
+  // before the deploy lands) that is missing urgentLabel must still render
+  // the existing label rather than an empty pill. The nav.ejs guard
+  // checks both `urgent` AND `urgentLabel` so this works correctly.
+  const html = renderNav({
+    user: TRIAL_USER,
+    trialCountdown: { days: 0, hours: 5, label: '5h left', urgent: true },
+    csrfToken: 't'
+  });
+  assert.ok(html.includes('5h left in trial'),
+    'urgent nav-pill must fall back to label when urgentLabel is missing — never render empty');
 });
 
 run('nav pill render is HTML-escape-safe (label only contains expected literals)', () => {

@@ -1649,3 +1649,30 @@ Distinct from existing distribution motions: #14 Reddit posts (different platfor
 **Risks:** Quora's TOS prohibits "primarily promotional" content. The mitigation is the format (real value first, product mention contextual). Founders who routinely treat Quora as a promo-link channel get shadow-banned; founders who answer substantively and mention their own product transparently when relevant get rewarded with sustained reach. The format above is the working pattern.
 
 **Why now:** the trial-urgent banner cluster (#45 + #133 + #134/#135 candidates) is now richly featured for the screenshot-driven Quora answer that says "and here's how QuickInvoice handles the trial-end conversion moment" — the screenshot is differentiating in a way that wasn't true 60 days ago. Same dynamic as #62 creator outreach: the product surface needs to be visually compelling for the marketing channel to convert at full strength.
+
+---
+
+### 65. [MARKETING] Cold-DM 30 Twitter/X freelance "personal CRM" / "freelance ops" thread-creators with Pro comp + collab offer (added 2026-04-29 AM-3)
+
+**Action (Master, ~2 hrs research + ~1 hr/week ongoing for 4 weeks):**
+
+1. **Identify the cohort (~2 hrs).** On Twitter/X, search for accounts that have published at least 3 viral threads (≥ 5k impressions each) in the last 6 months on freelance operations, personal CRM, freelance billing, or "tools I use as a freelancer". Filter to follower count between 5k and 50k — small enough to be reachable via DM, large enough that a single thread-mention drives meaningful traffic. Build a spreadsheet of 30 candidates with: handle, follower count, top thread URL, last post date, niche.
+
+2. **Send personalized DMs (~30 min/week × 4 weeks).** Don't blast — send 7-8 DMs per week so each is genuinely personalized. Template:
+   > "Hey [name] — saw your thread on [specific topic] last [time period]. Genuinely useful framing on [specific point].
+   >
+   > I built QuickInvoice — invoicing for freelancers that gets you paid 60% faster. Free Pro account for you (no card, no expiry) if you want to kick the tires. No ask, just thought it might fit your toolkit.
+   >
+   > If you ever want to feature it in a thread, happy to share the back-end metrics for context (we shipped a feature this week that I think your audience would find interesting: [specific feature relevant to their niche])."
+
+3. **Track responses.** Use a simple sheet — sent date, response (none / declined / engaged / converted to mention), date of any thread mention, traffic delta in Plausible (#34 / TODO_MASTER #29) for the days following the mention.
+
+4. **Provision Pro comp accounts on request.** When a creator says yes, manually flip their `plan` to `pro` and set `subscription_status = 'active'` + `trial_ends_at = NULL` via Postgres. Mark with a `notes` field "creator-comp-2026-04-XX-handle" so the cohort can be analyzed separately later.
+
+**Income relevance (concrete numbers):** A single Twitter/X thread mention from a 20k-follower freelance-ops creator typically drives 200-500 visits to the linked landing page over 48 hours, with a conversion-to-trial rate of 4-8% and a trial-to-paid rate of 4-8% — so 0.3-3.2 Pro signups per mention. Across 30 outreaches at a typical 10-20% positive-response rate, that's 3-6 thread mentions, or 1-19 incremental Pro signups in the campaign window (one-time effect plus an ongoing tail as the threads continue to surface in the Twitter/X algorithm).
+
+**Distinct from existing distribution motions:** #44 LinkedIn outreach (B2B exec channel, different cohort), #47 cashflow horror story Twitter threads (founder-authored content vs. third-party endorsement), #54 YouTube micro-influencer outreach (long-form video vs. text-thread distribution), #62 top-10 YouTuber comp (different platform), #63 G2 awards (review-platform distribution), #64 Quora answer-rotation (search-intent first-party content). Twitter-thread-creator cohort is a third social-channel surface beyond LinkedIn (B2B exec) and YouTube (long-form).
+
+**Risks:** DM-fatigue is real on Twitter/X. The mitigation is volume control (7-8/week, not 30-in-one-day), genuine personalization (reference a specific thread, not a generic "love your content"), and the no-ask close ("happy to share metrics" rather than "would love a thread mention"). Creators who feel transacted-with shadow-block; creators who feel respected often mention organically months later.
+
+**Why now:** the recent feature shipping cadence (cycle 21 #133 + cycle 22 #134 + cycle 23 #138 + the upcoming #135/#139/#141 candidates) gives the founder a fresh, screenshot-able feature surface every week to anchor the DM's "shipped this week" line. Without ongoing visible-shipping cadence the DM template's specific-feature-mention slot rings hollow.
