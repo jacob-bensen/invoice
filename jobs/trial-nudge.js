@@ -90,7 +90,7 @@ function buildTrialNudgeHtml(user, now = new Date()) {
     </ul>
     <p style="color:#444;margin:8px 0;font-size:15px;">If you don't add a card, your account will revert to the Free plan when the trial ends — your invoices stay, but Pro features turn off.</p>
     ${ctaButton}
-    <p style="color:#999;font-size:12px;margin-top:24px;">Sent automatically by QuickInvoice. Reply to this email if you have any questions.</p>
+    <p style="color:#999;font-size:12px;margin-top:24px;">Sent automatically by DecentInvoice. Reply to this email if you have any questions.</p>
   </td></tr>
 </table>
 </body></html>`;

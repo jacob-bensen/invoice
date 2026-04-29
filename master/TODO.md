@@ -1,8 +1,8 @@
-# QuickInvoice — Master TODO
+# DecentInvoice — Master TODO
 
 > **Audited:** 2026-04-22 — Code build v1.0.0 is complete (see CHANGELOG). All deployment steps below are pending human action. No optional improvements have been implemented yet; none are tagged [LIKELY DONE].
 
-This file tracks what YOU need to do to get QuickInvoice live and earning money.
+This file tracks what YOU need to do to get DecentInvoice live and earning money.
 
 ---
 
@@ -23,7 +23,7 @@ heroku pg:psql < db/schema.sql
 ### 3. Create Stripe Account
 - Sign up at https://stripe.com
 - Go to **Products** → **Create Product**
-  - Name: "QuickInvoice Pro"
+  - Name: "DecentInvoice Pro"
   - Price: $12.00 / month (recurring)
   - Copy the **Price ID** (starts with `price_...`)
 - Go to **Developers** → **API Keys**
@@ -69,9 +69,9 @@ Once verified in test mode, switch to live keys:
 
 ### Optional: Custom Domain
 ```bash
-heroku domains:add quickinvoice.io
+heroku domains:add decentinvoice.com
 # Then update DNS at your registrar
-heroku config:set APP_URL="https://quickinvoice.io"
+heroku config:set APP_URL="https://decentinvoice.com"
 ```
 
 ---

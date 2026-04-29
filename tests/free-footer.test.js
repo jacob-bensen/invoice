@@ -1,7 +1,7 @@
 'use strict';
 
 /*
- * Tests for the "Invoiced with QuickInvoice" free-plan attribution footer
+ * Tests for the "Invoiced with DecentInvoice" free-plan attribution footer
  * rendered on the print/PDF view (INTERNAL_TODO #5). The footer:
  *   - must render for plan === 'free' users (passive acquisition touchpoint)
  *   - must NOT render for paid plans (solo/pro/agency) — tangible Pro benefit
@@ -50,8 +50,8 @@ async function render(userPlan, overrides = {}) {
 async function testFooterRendersForFreeUser() {
   const html = await render('free');
   assert.ok(html.includes('Invoiced with'), 'free plan must show "Invoiced with" attribution');
-  assert.ok(html.includes('QuickInvoice'), 'free plan must name the product');
-  assert.ok(html.includes('quickinvoice.io/pricing?ref=pdf-footer'),
+  assert.ok(html.includes('DecentInvoice'), 'free plan must name the product');
+  assert.ok(html.includes('decentinvoice.com/pricing?ref=pdf-footer'),
     'free plan must carry the ref=pdf-footer attribution URL');
   assert.ok(html.includes('class="free-footer"'),
     'footer wrapper uses the free-footer class for styling');
@@ -60,7 +60,7 @@ async function testFooterRendersForFreeUser() {
 async function testFooterHiddenForProUser() {
   const html = await render('pro');
   assert.ok(!html.includes('Invoiced with'),
-    'Pro plan must NOT show the QuickInvoice attribution (paid benefit)');
+    'Pro plan must NOT show the DecentInvoice attribution (paid benefit)');
   assert.ok(!html.includes('ref=pdf-footer'),
     'Pro plan must NOT carry the ref=pdf-footer attribution link');
   assert.ok(!html.includes('class="free-footer"'),
@@ -101,7 +101,7 @@ async function testFooterIsAttributionLinkNotButton() {
   // The footer must include a real anchor to the pricing page so click-through
   // works from any PDF viewer that preserves hyperlinks.
   const html = await render('free');
-  assert.ok(html.includes('<a href="https://quickinvoice.io/pricing?ref=pdf-footer"'),
+  assert.ok(html.includes('<a href="https://decentinvoice.com/pricing?ref=pdf-footer"'),
     'footer must include a clickable anchor to the pricing page');
 }
 

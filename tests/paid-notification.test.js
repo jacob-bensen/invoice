@@ -71,7 +71,7 @@ async function testBuildHtmlOmitsButtonWhenAppUrlUnset() {
 async function testBuildTextIncludesAllFactsAndUrl() {
   clearReq('../lib/email');
   const prev = process.env.APP_URL;
-  process.env.APP_URL = 'https://quickinvoice.io/';   // trailing slash on purpose — must be normalised
+  process.env.APP_URL = 'https://decentinvoice.com/';   // trailing slash on purpose — must be normalised
   const email = require('../lib/email');
   const text = email.buildPaidNotificationText({
     id: 33,
@@ -86,9 +86,9 @@ async function testBuildTextIncludesAllFactsAndUrl() {
   assert.ok(text.includes('$99.99'), 'plain-text body includes formatted total');
   assert.ok(text.includes('Globex'), 'plain-text body names the client');
   // Trailing slash on APP_URL must be stripped — no double slash before /invoices.
-  assert.ok(text.includes('https://quickinvoice.io/invoices/33'),
+  assert.ok(text.includes('https://decentinvoice.com/invoices/33'),
     'plain-text body includes canonical view URL with single slash');
-  assert.ok(!text.includes('quickinvoice.io//invoices'),
+  assert.ok(!text.includes('decentinvoice.com//invoices'),
     'trailing slash on APP_URL must be normalised away');
 }
 
@@ -111,7 +111,7 @@ async function testBuildHtmlEscapesAndRendersButton() {
   clearReq('../lib/email');
   // Set APP_URL so the View-invoice button renders.
   const prev = process.env.APP_URL;
-  process.env.APP_URL = 'https://quickinvoice.io';
+  process.env.APP_URL = 'https://decentinvoice.com';
   const email = require('../lib/email');
   const html = email.buildPaidNotificationHtml(
     {
@@ -132,7 +132,7 @@ async function testBuildHtmlEscapesAndRendersButton() {
     'client_name must appear HTML-escaped');
   assert.ok(html.includes('$500.00'),
     'total must be rendered with currency symbol');
-  assert.ok(html.includes('https://quickinvoice.io/invoices/99'),
+  assert.ok(html.includes('https://decentinvoice.com/invoices/99'),
     'View-invoice button must point to the owner-facing invoice URL');
   assert.ok(html.includes('INV-2026-0008'),
     'invoice number must appear in the body');

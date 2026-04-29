@@ -60,7 +60,7 @@ function formatDate(d) {
 }
 
 function ownerSenderName(row) {
-  return row.owner_business_name || row.owner_name || row.owner_email || 'QuickInvoice';
+  return row.owner_business_name || row.owner_name || row.owner_email || 'DecentInvoice';
 }
 
 function ownerReplyTo(row) {
@@ -102,7 +102,7 @@ function buildReminderHtml(row, now = new Date()) {
     ${overdueLine}
     <p style="color:#555;margin:4px 0;">If you've already sent payment, please ignore this message — and thank you. Otherwise, you can settle up using the link below.</p>
     ${payButton}
-    <p style="color:#999;font-size:12px;margin-top:24px;">Sent automatically by QuickInvoice on behalf of ${escapeHtml(sender)}. Reply to this email to reach them directly.</p>
+    <p style="color:#999;font-size:12px;margin-top:24px;">Sent automatically by DecentInvoice on behalf of ${escapeHtml(sender)}. Reply to this email to reach them directly.</p>
   </td></tr>
 </table>
 </body></html>`;

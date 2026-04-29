@@ -13,7 +13,7 @@ router.get('/upgrade', requireAuth, (req, res) => {
   res.render('pricing', {
     title: 'Upgrade to Pro',
     flash,
-    ogTitle: 'QuickInvoice Pro — Unlimited invoices, payment links, $12/mo',
+    ogTitle: 'DecentInvoice Pro — Unlimited invoices, payment links, $12/mo',
     ogDescription: 'Upgrade to Pro for unlimited invoices, Stripe payment links, automated reminders, and custom branding. 7-day free trial, no credit card.',
     ogPath: '/billing/upgrade'
   });

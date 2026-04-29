@@ -53,8 +53,8 @@ app.use(csrfProtection);
 app.get('/', (req, res) => {
   if (req.session.user) return res.redirect('/dashboard');
   res.render('index', {
-    title: 'QuickInvoice — Get Paid Faster',
-    ogTitle: 'QuickInvoice — Professional invoices in 60 seconds',
+    title: 'DecentInvoice — Get Paid Faster',
+    ogTitle: 'DecentInvoice — Professional invoices in 60 seconds',
     ogDescription: 'Send invoices freelancers can pay in one click. Free to start, $12/mo for Pro. 7-day free trial, no credit card.',
     ogPath: '/'
   });
@@ -113,7 +113,7 @@ app.use((req, res) => res.status(404).redirect('/'));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`QuickInvoice running on port ${PORT}`);
+  console.log(`DecentInvoice running on port ${PORT}`);
   // Daily payment-reminder cron. Runs only outside the test env so the test
   // suite can require server.js without spinning up a background scheduler.
   // Failures are logged and swallowed inside startReminderJob — a broken

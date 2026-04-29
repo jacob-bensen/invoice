@@ -47,7 +47,7 @@ function testSubjectSingularDay() {
 
 function testHtmlEscapesNameAndIncludesCta() {
   delete process.env.APP_URL;
-  process.env.APP_URL = 'https://quickinvoice.io';
+  process.env.APP_URL = 'https://decentinvoice.com';
 
   const html = trialNudge.buildTrialNudgeHtml({
     name: '<script>alert(1)</script>',
@@ -61,7 +61,7 @@ function testHtmlEscapesNameAndIncludesCta() {
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.match(html, /Your Pro trial ends in 3 days/);
   assert.match(html, /4 invoices/, 'must show pluralised invoice count');
-  assert.match(html, /https:\/\/quickinvoice\.io\/dashboard/, 'CTA must link to /dashboard');
+  assert.match(html, /https:\/\/decentinvoice\.io\/dashboard/, 'CTA must link to /dashboard');
   assert.match(html, /Keep Pro/);
   assert.match(html, /Add payment method/);
   assert.match(html, /Stripe Payment Links/);
@@ -70,7 +70,7 @@ function testHtmlEscapesNameAndIncludesCta() {
 }
 
 function testHtmlSingularInvoiceAndZeroInvoiceCases() {
-  process.env.APP_URL = 'https://quickinvoice.io';
+  process.env.APP_URL = 'https://decentinvoice.com';
   const oneInvoice = trialNudge.buildTrialNudgeHtml({
     name: 'Sam', trial_ends_at: new Date('2026-04-29T00:00:00Z'), invoice_count: 1
   }, new Date('2026-04-26T00:00:00Z'));
@@ -95,7 +95,7 @@ function testHtmlOmitsCtaWhenAppUrlMissing() {
 }
 
 function testTextFallback() {
-  process.env.APP_URL = 'https://quickinvoice.io/';
+  process.env.APP_URL = 'https://decentinvoice.com/';
   const text = trialNudge.buildTrialNudgeText({
     name: 'Sam',
     trial_ends_at: new Date('2026-04-29T00:00:00Z'),
@@ -105,7 +105,7 @@ function testTextFallback() {
   assert.match(text, /trial ends in 3 days/);
   assert.match(text, /7 invoices/);
   assert.match(text, /Stripe Payment Links/);
-  assert.match(text, /https:\/\/quickinvoice\.io\/dashboard/, 'must trim trailing slash from APP_URL');
+  assert.match(text, /https:\/\/decentinvoice\.io\/dashboard/, 'must trim trailing slash from APP_URL');
 }
 
 function testDaysLeftArithmetic() {
@@ -146,7 +146,7 @@ function fakeDb(users = []) {
 }
 
 async function testHappyPathSendsAndStamps() {
-  process.env.APP_URL = 'https://quickinvoice.io';
+  process.env.APP_URL = 'https://decentinvoice.com';
   const sends = [];
   const db = fakeDb([
     {

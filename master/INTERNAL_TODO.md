@@ -1,4 +1,4 @@
-# QuickInvoice + InvoiceFlow — Internal Growth TODO
+# DecentInvoice + InvoiceFlow — Internal Growth TODO
 
 > **Audited:** 2026-04-27 PM-2 (Task Optimizer cycle, 7th pass). This cycle's deltas: (a) **#63 closed** — quick-pick recent clients dropdown on the invoice form shipped end-to-end. New `db.getRecentClientsForUser(userId, limit=10)` (DISTINCT ON dedupe by lowercased email-then-name, recency-first, limit clamped to [1,50]); new `loadRecentClients` adapter in `routes/invoices.js` (returns [] on DB failure — defence-in-depth so a Postgres outage in the secondary lookup never blocks the form); `views/invoice-form.ejs` renders an Alpine `<select>` only when `recentClients.length > 0`, picker fills client name/email/address via `x-model` with no server round-trip; new `tests/recent-clients.test.js` (6 assertions including a regression guard for the DB-failure fallback). (b) **5 new [GROWTH] items (#66-#70)** from this cycle's Growth Strategist pass: #66 auto-CC accountant on every invoice email [XS, MED-HIGH retention/switching-cost — gated on Resend key], #67 tip-on-pay toggle for Pay links [S, MED revenue lift on creator/individual-client segment], #68 customisable invoice email template [S, MED retention; pairs with #15 branding], #69 embeddable Pay-this-invoice JS widget [M, MED-HIGH virality; gated on #43], #70 receipt PDF for paid invoices [S, MED professionalism signal; complements #61]. (c) **2 new [MARKETING] items in TODO_MASTER (#45-#46)** — indie/freelancer Slack + Discord community presence, 60-second YouTube product walkthrough video (evergreen SEO + landing). (d) **UX direct fixes** — `views/index.ejs` pricing card free tier "3 invoices total" → "Up to 3 invoices" (clearer cap copy); `views/dashboard.ejs` empty-state Pro callout reworded from "auto-generates a Stripe Pay button" technical phrasing to "Pro adds a 'Pay now' button to every invoice — clients pay in one click via Stripe"; `views/invoice-view.ejs` "Mark as Paid" promoted to a solid green primary CTA when invoice status is `sent` or `overdue` (was a low-prominence bordered green-text button; restores visual hierarchy at the highest-leverage conversion moment for the freelancer). Test updated to match new dashboard copy (`tests/onboarding.test.js`). Full suite now **34 files, 0 failures** (was 33 last cycle).
 >
@@ -22,7 +22,7 @@ Do not duplicate items already in `TODO.md`. App labels indicate which codebase 
 - **#45** [XS] — Last-day urgency dashboard banner for trial users (HIGH; pairs with #29)
 - **#52** [XS] — JSON-LD `SoftwareApplication` schema on landing + niche pages (MED-HIGH SEO; pairs with #36)
 - **#55** [XS] — Auto thank-you email to client on paid (compounds with #30; effortless professionalism)
-- **#48** [XS] — "Powered by QuickInvoice" badge on public invoice URLs (compounds with invoice volume; gated on #43)
+- **#48** [XS] — "Powered by DecentInvoice" badge on public invoice URLs (compounds with invoice volume; gated on #43)
 - **#31** [XS] — Free-Plan Invoice Limit Progress Bar on Dashboard
 - **#34** [XS] — Plausible Analytics Integration (gated on Master providing PLAUSIBLE_DOMAIN per TODO_MASTER #29)
   *(#36 closed 2026-04-27 — OG/Twitter Card metadata shipped end-to-end + 10 new tests; TODO_MASTER #38/#39 added for Master to drop in branded image + APP_URL. #56 closed 2026-04-27 PM — robots.txt + canonical link tag + meta robots noindex on authed pages + 17 new tests in `tests/robots-and-canonical.test.js`. Pairs with #36 — every shared link now carries a canonical pointer to the canonical domain in addition to the rich OG preview.)*
@@ -37,7 +37,7 @@ Do not duplicate items already in `TODO.md`. App labels indicate which codebase 
 - **#64** [S] — Aging receivables report widget on dashboard (0-30/30-60/60-90+ buckets)
 - **#57** [S] — 30-day NPS micro-survey for Pro users (HIGH retention; surfaces churn before cancel)
 - **#58** [S] — Public coupon-redemption page `/redeem/:code` (MED-HIGH; pairs with #35 + TODO_MASTER #41)
-- **#59** [S] — "Invoiced via QuickInvoice" footer in invoice emails (MED-HIGH virality; Calendly-style passive distribution)
+- **#59** [S] — "Invoiced via DecentInvoice" footer in invoice emails (MED-HIGH virality; Calendly-style passive distribution)
 - **#28** [S] — Legal Pages Scaffolding (Terms / Privacy / Refund) — blocks L1/L2/L3 in TODO_MASTER + Stripe ToS + U3
 - **#46** [S] — Pricing page exit-intent modal (MED-HIGH; 5-15% bounce-cohort recovery)
 - **#47** [S] — Monthly→Annual upgrade prompt on dashboard (HIGH retention/LTV)
@@ -63,7 +63,7 @@ Do not duplicate items already in `TODO.md`. App labels indicate which codebase 
 - **#60** [M] — Demo-mode dashboard at `/demo` (HIGH; removes #1 conversion blocker — no signup required)
 - **#50** [M] — Quote/Estimate flow with one-click "Convert to invoice" (HIGH; B2B switching-cost lift)
 - **#53** [M] — Resend webhook integration: surface "client opened invoice" on dashboard (HIGH; behavioural signal)
-- **#40** [M] — Recurring Invoice Auto-Generation for QuickInvoice (parity with InvoiceFlow; HIGH retention)
+- **#40** [M] — Recurring Invoice Auto-Generation for DecentInvoice (parity with InvoiceFlow; HIGH retention)
 - **#21** [M] — Client-Facing Invoice Portal
 - **#18** [M] — Referral Program with Stripe Coupon Rewards
 - **#24** [M] — Multi-Currency Invoice Support
@@ -92,7 +92,7 @@ Do not duplicate items already in `TODO.md`. App labels indicate which codebase 
 
 ### 1. [DONE 2026-04-23] [GROWTH] Upgrade Modal at Free-Plan Invoice Limit [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** HIGH — highest-intent conversion moment in the funnel
 **Effort:** Low
 **Prerequisites:** None
@@ -109,7 +109,7 @@ Replace the dead-end at the 3-invoice limit with a full-screen Alpine.js modal i
 
 ### 2. [DONE 2026-04-23] [GROWTH] Stripe Payment Links on Invoices (Pro Feature) [M]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** HIGH — turns product into a payment collection tool; dramatically raises switching cost
 **Effort:** Medium
 **Prerequisites:** Stripe account (already required)
@@ -125,7 +125,7 @@ Replace the dead-end at the 3-invoice limit with a full-screen Alpine.js modal i
 
 ### 3. [DONE 2026-04-23] [GROWTH] Annual Billing Plan at $99/year [M]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** HIGH — annual subscribers churn at roughly half the rate of monthly; provides immediate cash
 **Effort:** Low–Medium
 **Prerequisites:** None (Stripe already integrated); one human action to create the Stripe price
@@ -143,7 +143,7 @@ Replace the dead-end at the 3-invoice limit with a full-screen Alpine.js modal i
 
 ### H1. [DONE 2026-04-24] [HEALTH] SSRF hardening on outbound webhook URL (added 2026-04-23 audit) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — authenticated Pro user can currently point `webhook_url` at a private / metadata / loopback IP. Any error response body is not returned to the user (fire-and-forget, `.on('data', () => {})`), which limits exfiltration, but the probe still reaches internal services. On a Heroku / Render / AWS host, `http://169.254.169.254/...` hits the cloud metadata endpoint; `http://10.x.x.x` and `http://localhost:<port>` reach sibling services.
 **Effort:** Very Low
 **Location:** `lib/outbound-webhook.js` — `isValidWebhookUrl()` + `firePaidWebhook()`.
@@ -157,8 +157,8 @@ Replace the dead-end at the 3-invoice limit with a full-screen Alpine.js modal i
 
 ### H2. [DONE 2026-04-24] [HEALTH] No CSRF protection on state-changing POST routes (added 2026-04-23 audit) [S]
 
-**App:** QuickInvoice (Node.js)
-**Impact:** MEDIUM — every mutating form (login, register, invoice create/edit/delete, status change, billing settings, webhook URL, Stripe checkout) is a cookie-authenticated POST with no CSRF token. An attacker page the user visits while logged in can, e.g., `<form action=https://quickinvoice.io/invoices/123/status method=POST><input name=status value=paid></form>` submit silently. SameSite=Lax on the session cookie (the default in recent `express-session`) blunts cross-site GET-triggered CSRF but not top-level POST navigation.
+**App:** DecentInvoice (Node.js)
+**Impact:** MEDIUM — every mutating form (login, register, invoice create/edit/delete, status change, billing settings, webhook URL, Stripe checkout) is a cookie-authenticated POST with no CSRF token. An attacker page the user visits while logged in can, e.g., `<form action=https://decentinvoice.com/invoices/123/status method=POST><input name=status value=paid></form>` submit silently. SameSite=Lax on the session cookie (the default in recent `express-session`) blunts cross-site GET-triggered CSRF but not top-level POST navigation.
 **Effort:** Very Low
 **Location:** `server.js` (mount middleware) + every EJS form that POSTs.
 
@@ -171,7 +171,7 @@ Replace the dead-end at the 3-invoice limit with a full-screen Alpine.js modal i
 
 ### H3. [DONE 2026-04-25] [HEALTH] No rate limiting on auth endpoints (added 2026-04-23 audit) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — `POST /auth/login` and `POST /auth/register` are unthrottled. Bcrypt cost 12 (~200ms per check) is some natural throttle, but a botnet can still grind credentials / enumerate emails via the "account exists" error.
 **Effort:** Very Low
 **Sub-tasks:** `npm i express-rate-limit`; 10 req/min per IP on `/auth/login` + `/auth/register`; return the same generic "invalid email or password" on both not-found and wrong-password to kill the enumeration oracle.
@@ -181,7 +181,7 @@ Replace the dead-end at the 3-invoice limit with a full-screen Alpine.js modal i
 
 ### H4. [DONE 2026-04-25] [HEALTH] No security headers (helmet) (added 2026-04-23 audit) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** LOW–MEDIUM — missing `X-Frame-Options: DENY` (clickjacking), `X-Content-Type-Options: nosniff`, `Strict-Transport-Security`, `Content-Security-Policy`, and the rest of the helmet defaults. Every modern web audit (SOC2, PCI, Google Search Console security warnings) flags this.
 **Effort:** Very Low
 **Sub-tasks:** `npm i helmet`; `app.use(helmet())` right after `const app = express()`. Start with defaults; relax the CSP one directive at a time if a view breaks (inline Alpine.js / Tailwind CDN may need `script-src 'self' 'unsafe-inline' cdn.tailwindcss.com` etc.).
@@ -199,7 +199,7 @@ HSTS (`max-age=15552000; includeSubDomains`) is enabled only when `NODE_ENV === 
 
 ### H5. [DONE 2026-04-25] [HEALTH] Inconsistent `plan` CHECK constraint vs. application code (added 2026-04-23 audit) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** LOW (latent) — `db/schema.sql` line 12 pins `plan IN ('free', 'pro')`, but `routes/invoices.js:175,189` and `routes/billing.js:123,170` branch on `plan === 'agency'`. Any path that attempts to persist `plan = 'agency'` will fail the CHECK constraint with a 23514 error. No current route actually writes `'agency'`, so this is latent — but it is a trip wire when INTERNAL_TODO #9 (team seats / Agency tier) or #10 (Business tier) lands.
 **Effort:** Very Low
 **Sub-tasks:** Add idempotent migration to `db/schema.sql`: `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_plan_check; ALTER TABLE users ADD CONSTRAINT users_plan_check CHECK (plan IN ('free','pro','business','agency'));`. Coordinate with INTERNAL_TODO #10's schema change so both land in one migration.
@@ -221,7 +221,7 @@ New `tests/plan-check-constraint.test.js` adds 7 static-lint assertions: (1) the
 
 ### H6. [DONE 2026-04-25 — superseded by H12] [HEALTH] `POST /:id/status` accepts any string (added 2026-04-23 audit) [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** LOW — the DB CHECK constraint (`status IN ('draft','sent','paid','overdue')`) will reject bad values, but the 500 surfaces as `console.error('Status update error:', err)` and a redirect, creating noisy logs and a confusing UX. Whitelist in Node and return a flash on invalid.
 **Location:** `routes/invoices.js:168-203`.
 **Resolution (2026-04-25):** Closed alongside H12 — see H12 for the full implementation note.
@@ -230,7 +230,7 @@ New `tests/plan-check-constraint.test.js` adds 7 static-lint assertions: (1) the
 
 ### H7. [DONE 2026-04-24] [HEALTH] Null user dereference in billing.js authenticated routes (added 2026-04-24) [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** LOW (latent) — `routes/billing.js` calls `db.getUserById(req.session.user.id)` in `POST /create-checkout`, `GET /success`, `POST /portal`, `GET /settings`, `POST /settings`, and `POST /webhook-url`, then immediately dereferences fields (`user.stripe_customer_id`, `user.plan`, etc.) without a null guard. If a session references a deleted account, all six of these routes produce an unhandled 500 instead of a graceful redirect. The same bug existed in `routes/invoices.js` for `GET /new` and `POST /new` and was fixed on 2026-04-24 with `if (!user) return res.redirect('/auth/login')`. The billing routes need the same treatment.
 **Effort:** Very Low
 **Resolution (2026-04-24 PM audit):** Added `if (!user) return res.redirect('/auth/login');` in `POST /create-checkout`, `GET /success`, `POST /portal`, and `GET /settings`. `POST /webhook-url` already had the guard. `POST /settings` was patched to `if (!updated) return res.redirect('/auth/login');` after `db.updateUser` (it does not pre-fetch). All 16 test suites still pass; no test changes required for this commit since the existing edge-cases.test.js fixtures only exercise the invoices.js variants — adding billing-side regression tests is folded into H11 below.
@@ -239,7 +239,7 @@ New `tests/plan-check-constraint.test.js` adds 7 static-lint assertions: (1) the
 
 ### H8. [HEALTH] Composite index `(user_id, status)` on `invoices` (added 2026-04-24 PM audit) [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** LOW — `db/schema.sql` already creates `idx_invoices_user_id` and `idx_invoices_status` separately. Once the planned reminder job (#16) and any "outstanding invoices for user" dashboard query land, a composite `(user_id, status)` index will let Postgres serve those queries from one index lookup instead of bitmap-anding two. Single-tenant scale (a few hundred invoices per user) makes this a non-issue today; flagged because it costs nothing to add alongside the next migration.
 **Effort:** Very Low
 **Sub-tasks:** Add `CREATE INDEX IF NOT EXISTS idx_invoices_user_status ON invoices(user_id, status);` to `db/schema.sql`. Idempotent, safe to run on production. Bundle with the next schema change (recurring invoices, late fee, currency, or trial_ends_at — whichever ships first) so the deploy includes only one `psql -f db/schema.sql` step.
@@ -248,7 +248,7 @@ New `tests/plan-check-constraint.test.js` adds 7 static-lint assertions: (1) the
 
 ### H9. [HEALTH] `bcrypt` 5.1.1 — 3 high-severity transitive `tar`/`@mapbox/node-pre-gyp` advisories (added 2026-04-24 PM audit) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** LOW (install-time only) — `npm audit` reports `tar < 7.5.10` (3 GHSAs: `34x7-hfp2-rc4v`, `8qq5-rm4j-mr97`, `83g3-92jg-28cx`, `qffp-2rhf-9h96`, `9ppj-qmqm-q256`) and the upstream `@mapbox/node-pre-gyp <= 1.0.11`, both reachable only through `bcrypt@5.1.1`'s prebuild downloader. Every advisory is a path-traversal / symlink class issue exploitable **only when extracting an attacker-controlled tarball during `npm install`**. The runtime auth path (`bcrypt.hash` / `bcrypt.compare`) is not affected. The vulnerabilities also can't fire in a normal `npm ci` against the lockfile (registry tarballs are signed). Risk profile: the build is run on Heroku/Render dynos with no attacker-controlled inputs.
 **Fix:** `npm i bcrypt@^6` (semver major). bcrypt 6.0 keeps the same `hash`/`compare`/`compareSync` API surface but drops Node 16 support and reworks the prebuild loader. Requires a follow-up smoke test of `POST /auth/register` (creates user with a fresh hash) and `POST /auth/login` (verifies the existing hash) on a staging deploy.
 **Effort:** Very Low (bump + run full `npm test` + manual login smoke).
@@ -258,7 +258,7 @@ New `tests/plan-check-constraint.test.js` adds 7 static-lint assertions: (1) the
 
 ### H10. [HEALTH] `parseInt(userId)` without explicit radix in webhook handler (added 2026-04-24 PM audit) [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** TRIVIAL — `routes/billing.js:110` reads `customer.metadata.user_id` (a string the app itself wrote when creating the Stripe customer) and converts it via `parseInt(userId)` with no radix arg. ES5+ defaults to base 10 for strings without `0x`/`0o` prefixes, so behaviour is correct in practice. Fixing it removes the lint warning surface and matches the convention used elsewhere (`parseInt(x, 10)`). Pure cosmetic.
 **Effort:** Very Low
 **Sub-tasks:** `parseInt(userId)` → `parseInt(userId, 10)` at `routes/billing.js:110`. No tests need updating.
@@ -267,7 +267,7 @@ New `tests/plan-check-constraint.test.js` adds 7 static-lint assertions: (1) the
 
 ### H11. [HEALTH] Pagination on `getInvoicesByUser` to bound dashboard memory (R14 awareness) (added 2026-04-24 PM audit) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** LOW (today) — `db.getInvoicesByUser(userId)` returns the entire result set unbounded; the dashboard view `views/dashboard.ejs` renders every row. A long-tenured Pro/Agency user with several thousand invoices would pull every JSONB `items` blob and serialise it into memory on every dashboard load, increasing Heroku dyno RSS proportionally to invoice history. At today's scale (free-plan = 3 invoices, normal Pro = tens to low hundreds) this is fine; the `R14 — Memory quota exceeded` risk surfaces only after the user base grows or someone with thousands of invoices logs in.
 **Effort:** Very Low
 **Sub-tasks:**
@@ -280,7 +280,7 @@ New `tests/plan-check-constraint.test.js` adds 7 static-lint assertions: (1) the
 
 ### H13. [DONE 2026-04-25 PM] [HEALTH] Apply `ALLOWED_INVOICE_STATUSES` whitelist to `POST /:id/edit` (added 2026-04-25 PM audit) [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** LOW (latent) — H12 closed the whitelist gap on `POST /:id/status` but missed `POST /:id/edit` (`routes/invoices.js:174-199`), which still passes `req.body.status || 'draft'` straight into `db.updateInvoice`. The DB CHECK constraint still rejects junk values with 23514, but the catch block logs `console.error('Update invoice error:', err)` and redirects to `/edit`, producing the same noisy log + opaque UX that H12 fixed for the `/status` route. The form template only emits the four valid options so well-behaved clients never trip this; an attacker submitting a hand-crafted form (or a corrupted browser autofill) can still POST any string.
 **Effort:** Very Low
 **Resolution (2026-04-25 PM, in this audit):** Added the same `ALLOWED_INVOICE_STATUSES.includes(...)` short-circuit at the top of `POST /:id/edit` that `POST /:id/status` already uses. Invalid status flashes `'Invalid invoice status.'` and redirects to `/invoices/:id/edit` (back to the form so the user can correct it). Re-uses the existing module-level `ALLOWED_INVOICE_STATUSES` constant — single source of truth across both routes. No test added in this commit (the existing `tests/status-whitelist.test.js` already covers the constant export contract that both routes depend on, and a regression in the edit-route whitelist would surface immediately as a 23514 in the DB CHECK constraint just as before — defence in depth, not new functionality).
@@ -289,7 +289,7 @@ New `tests/plan-check-constraint.test.js` adds 7 static-lint assertions: (1) the
 
 ### H14. [HEALTH] `escapeHtml` / `formatMoney` duplication between `lib/email.js` and `jobs/reminders.js` (added 2026-04-25 PM audit) [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** TRIVIAL (maintenance) — both modules implement byte-identical `escapeHtml(value)` (5-char replace chain: `&` → `&amp;`, `<` → `&lt;`, `>` → `&gt;`, `"` → `&quot;`, `'` → `&#39;`) and very-similar `formatMoney(amount[, currency])` helpers. A future change to either (e.g. adding the Unicode left-single-quote codepoint, or fixing a currency symbol) has to be made in two places or the email template and reminder template silently drift. No security risk because both implementations are correct today.
 **Effort:** Very Low
 **Sub-tasks:** Promote both helpers to a `lib/html.js` (or `lib/format.js`) module: `module.exports = { escapeHtml, formatMoney }`. Update `lib/email.js` and `jobs/reminders.js` to `const { escapeHtml, formatMoney } = require('./html')` (paths adjusted). Verify the existing `lib/email.js` `_internal` test export and `jobs/reminders.js` `_internal` test export still work. Run `npm test` to confirm no test that asserts against the email or reminder HTML breaks.
@@ -299,7 +299,7 @@ New `tests/plan-check-constraint.test.js` adds 7 static-lint assertions: (1) the
 
 ### H15. [HEALTH] Sequential `db.getInvoiceById` + `db.getUserById` in `routes/invoices.js` GET handlers (added 2026-04-25 PM audit) [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** TRIVIAL (latency) — three handlers (`GET /:id`, `GET /:id/edit`, `GET /:id/print`) `await db.getInvoiceById(...)` then `await db.getUserById(...)` sequentially. Both queries are independent (the user lookup doesn't depend on the invoice row) so they could be a single `Promise.all([...])`, halving the per-page DB-roundtrip count from 2 to effectively 1. The dashboard handler (`GET /`) already does this correctly (`Promise.all([getInvoicesByUser, getUserById])` at line 15-18); the per-invoice handlers are out of pattern. With local-network Postgres each round trip is sub-millisecond, so user-visible latency impact is sub-10ms on a Heroku dyno; matters only as the app's RPS rises.
 **Effort:** Very Low
 **Sub-tasks:** Replace the two sequential `await`s in `GET /:id`, `GET /:id/edit`, `GET /:id/print` with `const [invoice, user] = await Promise.all([db.getInvoiceById(req.params.id, req.session.user.id), db.getUserById(req.session.user.id)]);` then keep the existing `if (!invoice) return res.redirect('/dashboard');` guard. Existing tests for these routes continue to pass because the resolved-value semantics are identical.
@@ -308,8 +308,8 @@ New `tests/plan-check-constraint.test.js` adds 7 static-lint assertions: (1) the
 
 ### H16. [HEALTH] `resend@^6.12.2` — moderate-severity transitive `svix → uuid` advisory (added 2026-04-25 PM audit) [XS]
 
-**App:** QuickInvoice (Node.js)
-**Impact:** LOW — `npm audit --production` reports `uuid <14.0.0` (`GHSA-w5hq-g745-h8pq` — "Missing buffer bounds check in v3/v5/v6 when buf is provided"), reachable through `resend@6.12.2 → svix → uuid`. The advisory is a moderate-severity bounds check on a *user-supplied* buffer to specific UUID generation paths (v3/v5/v6 with a custom buffer). QuickInvoice never calls `uuid` directly; the only consumer in our dependency tree is `svix` (Resend's webhook signature library), which we don't use the verifier of — we only call `resend.emails.send()`. The advisory's exploit requires attacker control of the `buf` argument to `uuid.v3/v5/v6`, which is not reachable through any of our call paths.
+**App:** DecentInvoice (Node.js)
+**Impact:** LOW — `npm audit --production` reports `uuid <14.0.0` (`GHSA-w5hq-g745-h8pq` — "Missing buffer bounds check in v3/v5/v6 when buf is provided"), reachable through `resend@6.12.2 → svix → uuid`. The advisory is a moderate-severity bounds check on a *user-supplied* buffer to specific UUID generation paths (v3/v5/v6 with a custom buffer). DecentInvoice never calls `uuid` directly; the only consumer in our dependency tree is `svix` (Resend's webhook signature library), which we don't use the verifier of — we only call `resend.emails.send()`. The advisory's exploit requires attacker control of the `buf` argument to `uuid.v3/v5/v6`, which is not reachable through any of our call paths.
 **Fix:** `npm i resend@^6.1.3` (semver downgrade — note the audit fix's recommended version is *lower* than current because resend `6.2.0+` pulled in the affected svix range). Confirm `lib/email.js` `sendEmail` happy path still works against the downgraded SDK (the public `Resend(...).emails.send({...})` API has been stable across the 6.x line). Or: wait for `resend@^6.13` which is expected to pin the patched `svix@>=1.92`.
 **Effort:** Very Low (bump + run full `npm test` + manual mark-sent smoke).
 **Why not auto-fixed in this audit:** Same reasoning as H9 (bcrypt) — Resend is the email transport for invoice send + reminder emails (the Pro feature). A regression in the SDK's send API is income-relevant. Worth a dedicated commit so any rate-limit or payload-shape change can be cleanly attributed. Runtime exposure is nil; this is install-time/library-hygiene only.
@@ -318,7 +318,7 @@ New `tests/plan-check-constraint.test.js` adds 7 static-lint assertions: (1) the
 
 ### H18. [HEALTH] Expression index to back recent-clients dropdown query (added 2026-04-27 PM-2 audit) [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** TRIVIAL (today) / LOW (future) — `db.getRecentClientsForUser(userId, limit)` (added in #63) runs once per `GET /invoices/new` and `GET /:id/edit`. The query filters `WHERE user_id = $1 AND client_name IS NOT NULL AND client_name <> ''` then sorts a `DISTINCT ON (LOWER(COALESCE(NULLIF(client_email, ''), client_name)))`. The existing `idx_invoices_user_id` covers the WHERE clause but not the dedupe expression — Postgres still has to sort the user's filtered rows by the lowercase expression to apply DISTINCT ON. At today's scale (Pro users have tens to low hundreds of invoices) this is sub-millisecond; once a single user grows past ~5k invoices the sort cost becomes noticeable on every form load (still single-digit ms — not user-visible).
 **Effort:** Very Low
 **Sub-tasks:**
@@ -332,7 +332,7 @@ New `tests/plan-check-constraint.test.js` adds 7 static-lint assertions: (1) the
 
 ### H19. [DONE 2026-04-27 PM-2] [HEALTH] XSS hardening on invoice-form Alpine init (added 2026-04-27 PM-2 audit) [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** LOW (caught at code-review time, never shipped). When wiring up the recent-clients dropdown (#63), the initial `clientName` / `clientEmail` / `clientAddress` Alpine state was emitted via `<%- JSON.stringify(...) %>` (raw, unescaped) inside an inline `<script>` tag. JSON.stringify escapes JSON delimiters but does NOT escape the literal byte sequence `</script>` — so an attacker-controlled invoice field containing `</script><script>alert(1)</script>` would close the inline script tag and inject a fresh `<script>` block. The risk surface is low because the only way to set `client_name`/`client_email`/`client_address` on the invoice-form input is via the same authenticated user's POST (so the attacker needs to be the user themselves to inject into their OWN form render), but the code pattern is unsafe and would compound poorly if any future change rendered another user's input on the same page (e.g. a team-seats / shared-client view in #9 or #21).
 **Effort:** Trivial
 **Resolution (2026-04-27 PM-2):** Restructured `views/invoice-form.ejs` to pass the initial client fields as a third argument to `invoiceEditor(...)` via the `x-data` HTML attribute (where `<%= JSON.stringify(...) %>` HTML-escaping is correct — the browser un-escapes the attribute value back to canonical JSON before Alpine reads it). The inline `<script>` tag now only contains JS code with no user-data substitution; all user-controlled values reach Alpine through the safe attribute path. Defence-in-depth: the `invoiceEditor()` initialiser also `typeof === 'string'` checks each field before assignment, so even a malformed `initialClient` object can't crash the editor. `taxRate` was already in script context but is `Number()`-coerced server-side — the `<%= Number(invoice.tax_rate) %>` makes the safety explicit.
@@ -345,7 +345,7 @@ Tests: `tests/recent-clients.test.js` continues to assert the recentClients data
 
 ### H17. [HEALTH] Partial index for trial-nudge query (added 2026-04-26 PM audit) [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** TRIVIAL (today) / LOW (future) — the new `db.getTrialUsersNeedingNudge()` runs once per day via the trial-nudge cron tick. Its predicate `(plan='pro' AND trial_ends_at BETWEEN NOW()+2d AND NOW()+4d AND trial_nudge_sent_at IS NULL AND (subscription_status IS NULL OR ='trialing'))` currently runs as a sequential scan on `users`. At today's user-table scale the scan is sub-millisecond; once the user table grows past ~5k rows the scan cost becomes noticeable on the daily cron (still single-digit ms — not a user-visible problem until ~50k rows or a multi-tenant table-bloat scenario).
 **Effort:** Very Low
 **Sub-tasks:**
@@ -359,7 +359,7 @@ Tests: `tests/recent-clients.test.js` continues to assert the recentClients data
 
 ### H12. [DONE 2026-04-25] [HEALTH] Whitelist `status` in `POST /:id/status` before hitting Postgres CHECK constraint (added 2026-04-24 PM audit, supersedes earlier H6) [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** LOW (latent) — `routes/invoices.js:170-205` reads `req.body.status` and passes it straight to `db.updateInvoiceStatus`. Postgres' CHECK constraint (`status IN ('draft','sent','paid','overdue')`) rejects bad values with error code `23514`, the catch block logs `console.error('Status update error:', err)` and redirects. Effect: a junk `status` POST yields a noisy log line and an opaque redirect rather than a flash. Low impact (CHECK protects DB integrity), but the noise complicates incident triage and obscures real DB errors.
 **Effort:** Very Low
 **Sub-tasks:** In `routes/invoices.js` `POST /:id/status`, add `const ALLOWED = ['draft','sent','paid','overdue']; if (!ALLOWED.includes(req.body.status)) { req.session.flash = { type: 'error', message: 'Invalid status.' }; return res.redirect('/invoices/' + req.params.id); }` immediately after extracting `newStatus`. Add a test in `tests/edge-cases.test.js` (junk status → flash + redirect, no DB write).
@@ -371,7 +371,7 @@ New `tests/status-whitelist.test.js` adds 8 assertions: (1) valid `'sent'` → D
 
 ### H13. [DONE 2026-04-25] [HEALTH] QA audit — 8 new tests for untested income-critical paths [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — prevents silent regressions on the first-time subscriber checkout, the post-checkout plan refresh, the webhook-URL CRUD, and invoice delete. Any regression on those paths would either block revenue collection or expose a Pro feature gap without a visible error.
 **Effort:** Very Low
 **Resolution (2026-04-25T23:55Z):** Systematic audit of every route handler in `routes/billing.js` and `routes/invoices.js` against every test file in `tests/`. Three untested clusters identified; all closed in a single commit.
@@ -389,7 +389,7 @@ New file: `tests/checkout-and-webhook-url.test.js` (8 assertions). Full suite: 2
 
 ### 4. [DONE 2026-04-23] [HEALTH] Stripe Dunning + Smart Retries — Code Portion [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — recovers an estimated 20–30% of failed payments with zero ongoing effort
 **Effort:** Very Low (code portion only)
 **Prerequisites:** None for code; Stripe Dashboard configuration requires a live Stripe account
@@ -404,16 +404,16 @@ New file: `tests/checkout-and-webhook-url.test.js` (8 assertions). Full suite: 2
 
 ## [GROWTH]
 
-### 5. [DONE 2026-04-23] [GROWTH] "Created with QuickInvoice" Footer on Free Plan PDFs [S]
+### 5. [DONE 2026-04-23] [GROWTH] "Created with DecentInvoice" Footer on Free Plan PDFs [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — every invoice a free user sends becomes a passive acquisition touchpoint; footer removal is a tangible Pro benefit
 **Effort:** Very Low
 **Prerequisites:** None
 
 **Sub-tasks:**
 1. In `views/invoice-print.ejs`, wrap a footer element in `<% if (user.plan === 'free') { %>`.
-2. Render: `Invoiced with QuickInvoice · quickinvoice.io/pricing?ref=pdf-footer`
+2. Render: `Invoiced with DecentInvoice · decentinvoice.com/pricing?ref=pdf-footer`
 3. Style subtly (small gray text, print-safe); verify it appears in browser print preview.
 
 ---
@@ -436,7 +436,7 @@ New file: `tests/checkout-and-webhook-url.test.js` (8 assertions). Full suite: 2
 
 ### 7. [DONE 2026-04-23] [GROWTH] Zapier Outbound Webhook on Invoice Paid (Pro Feature) [M]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — high switching cost once a user has integrated with Zapier or Make
 **Effort:** Low
 **Prerequisites:** None
@@ -451,7 +451,7 @@ New file: `tests/checkout-and-webhook-url.test.js` (8 assertions). Full suite: 2
 
 ### 8. [DONE 2026-04-23] [GROWTH] SEO Niche Landing Pages for Freelancer Verticals [M]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM–HIGH (long-term; compounds monthly with zero ad spend)
 **Effort:** Medium
 **Prerequisites:** Custom domain (in `TODO.md`) recommended for SEO authority; implementable without it
@@ -490,9 +490,9 @@ New file: `tests/checkout-and-webhook-url.test.js` (8 assertions). Full suite: 2
 
 ---
 
-### 10. [GROWTH] "Business" Tier at $29/month / $249/year (QuickInvoice) [L]
+### 10. [GROWTH] "Business" Tier at $29/month / $249/year (DecentInvoice) [L]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** HIGH — raises ARPU ceiling from $12 to $29/month per power user
 **Effort:** Medium–Large
 **Prerequisites:** Annual Billing (#3 above) should be live first; team invite emails require email delivery
@@ -509,10 +509,10 @@ New file: `tests/checkout-and-webhook-url.test.js` (8 assertions). Full suite: 2
 
 ---
 
-### 13. [DONE 2026-04-25] [GROWTH] Email Delivery for QuickInvoice (Resend) [M]
+### 13. [DONE 2026-04-25] [GROWTH] Email Delivery for DecentInvoice (Resend) [M]
 
-**App:** QuickInvoice (Node.js)
-**Impact:** HIGH — prerequisite for invoice email sending, automated reminders, churn win-back (#11), and monthly summaries (#12); currently the single largest capability gap between QuickInvoice and InvoiceFlow
+**App:** DecentInvoice (Node.js)
+**Impact:** HIGH — prerequisite for invoice email sending, automated reminders, churn win-back (#11), and monthly summaries (#12); currently the single largest capability gap between DecentInvoice and InvoiceFlow
 **Effort:** Medium
 **Prerequisites:** None (Resend free tier is sufficient to start)
 
@@ -532,7 +532,7 @@ New file: `tests/checkout-and-webhook-url.test.js` (8 assertions). Full suite: 2
 
 New `tests/email.test.js` adds 15 assertions: not-configured graceful no-op, invalid-args rejection, happy-path payload (from/to/subject/html/text/reply_to keys), throw-swallowing, subject formatter, HTML escaping + pay-button rendering, reply-to precedence, missing-client-email short-circuit, Pro send invocation with full payload, Free-plan skip, Pro-without-client_email skip, fire-and-forget redirect-doesn't-await proof (timing assertion: redirect lands in <50ms while the send hangs for 30ms then rejects), reply-to validation accept and reject paths, and an EJS render assertion that the new input field appears with its value attribute pre-filled. Wired into `package.json` `test` script. Full suite: 178 tests, 0 failures (was 163 before this commit).
 
-**[Master action]** required to actually deliver email: provision a Resend API key (https://resend.com/api-keys), set `RESEND_API_KEY=re_...` and `EMAIL_FROM="QuickInvoice <invoices@yourdomain.com>"` in production env, and verify the sending domain in the Resend dashboard. Until those are set, `sendInvoiceEmail` is a no-op — see TODO_MASTER.md.
+**[Master action]** required to actually deliver email: provision a Resend API key (https://resend.com/api-keys), set `RESEND_API_KEY=re_...` and `EMAIL_FROM="DecentInvoice <invoices@yourdomain.com>"` in production env, and verify the sending domain in the Resend dashboard. Until those are set, `sendInvoiceEmail` is a no-op — see TODO_MASTER.md.
 
 **Unblocks:** #11 (churn win-back), #12 (monthly summary), #16 (automated reminders), #18 (referral invites), #22 (late-fee notifications). All five tasks can now layer on top of `lib/email.js#sendEmail` without re-doing the transport.
 
@@ -540,7 +540,7 @@ New `tests/email.test.js` adds 15 assertions: not-configured graceful no-op, inv
 
 ### 14. [DONE 2026-04-25] [GROWTH] In-App Onboarding Checklist (Activation Flow) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** HIGH — users who reach "first invoice sent" have 5–10× lower churn; the dashboard currently drops new users with no guidance
 **Effort:** Very Low
 **Prerequisites:** None
@@ -572,7 +572,7 @@ New `tests/onboarding.test.js` adds 17 assertions: 9 for `buildOnboardingState` 
 
 ### 15. [GROWTH] Contextual Pro Upsell Prompts on Locked Features [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM-HIGH — the upgrade modal only fires at the invoice limit; free users who discover Pro features organically (branding page, invoice view) have high purchase intent but currently see no CTA at that moment
 **Effort:** Very Low
 **Prerequisites:** None
@@ -585,10 +585,10 @@ New `tests/onboarding.test.js` adds 17 assertions: 9 for `buildOnboardingState` 
 
 ---
 
-### 16. [DONE 2026-04-25] [GROWTH] Automated Payment Reminders for QuickInvoice (Pro Feature) [M]
+### 16. [DONE 2026-04-25] [GROWTH] Automated Payment Reminders for DecentInvoice (Pro Feature) [M]
 
-**App:** QuickInvoice (Node.js)
-**Impact:** MEDIUM-HIGH — InvoiceFlow already has this; QuickInvoice Pro users currently have to manually follow up on overdue invoices, which is the #1 pain point the product is supposed to solve
+**App:** DecentInvoice (Node.js)
+**Impact:** MEDIUM-HIGH — InvoiceFlow already has this; DecentInvoice Pro users currently have to manually follow up on overdue invoices, which is the #1 pain point the product is supposed to solve
 **Effort:** Low-Medium
 **Prerequisites:** Email delivery (#13 above) must be live first — **unblocked 2026-04-25 PM** when #13 landed.
 
@@ -629,7 +629,7 @@ New `tests/reminders.test.js` adds 15 assertions covering: (1) subject formatter
 
 ### 17. [GROWTH] Google OAuth One-Click Signup [M]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — every extra form field at registration costs ~5–10% of signups; Google OAuth removes 4 fields and eliminates password anxiety; most freelancer SaaS tools see 30–50% of registrations switch to OAuth within 30 days of adding it
 **Effort:** Medium
 **Prerequisites:** Custom domain live (OAuth redirect URI must be a real domain); Google Cloud project with OAuth 2.0 credentials
@@ -646,7 +646,7 @@ New `tests/reminders.test.js` adds 15 assertions covering: (1) subject formatter
 
 ### 19. [DONE 2026-04-25] [GROWTH] 7-Day Pro Free Trial (No Credit Card Required) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** HIGH — removes purchase anxiety at the highest-friction conversion moment; industry benchmarks show 25–40% lift in free→paid conversion when a no-card trial is offered; Stripe supports `trial_period_days` natively so no billing logic changes are needed
 **Effort:** Very Low
 **Prerequisites:** None (Stripe already integrated; annual billing #3 already live)
@@ -683,7 +683,7 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
 
 ### 20. [GROWTH] Social Proof Section on Landing + Pricing Pages [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM-HIGH — cold visitors have no trust signal today; a testimonial grid + "X freelancers" counter is the single fastest static conversion lift, adding ~10–20% to landing page conversion with zero backend work
 **Effort:** Very Low
 **Prerequisites:** None; Master provides final testimonial text (see TODO_MASTER.md)
@@ -704,7 +704,7 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
 
 ### 21. [GROWTH] Client-Facing Invoice Portal (Public Pay Page per Client) [M]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM-HIGH — clients get a bookmarkable URL showing all outstanding invoices from a specific freelancer; they can pay any invoice without the freelancer sending a new email; dramatically increases stickiness (freelancers who activate this feature are very unlikely to switch tools because their clients are trained on the portal URL)
 **Effort:** Medium
 **Prerequisites:** Stripe Payment Links (#2, done); Email Delivery (#13) recommended but not required (portal URL can be shared manually or via email)
@@ -713,7 +713,7 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
 1. `db/schema.sql`: `ALTER TABLE clients ADD COLUMN IF NOT EXISTS portal_token VARCHAR(32) UNIQUE;` Backfill via: `UPDATE clients SET portal_token = encode(gen_random_bytes(16), 'hex') WHERE portal_token IS NULL;` (include both statements — `ADD COLUMN IF NOT EXISTS` + `UPDATE` — so the migration is idempotent).
 2. `db.js`: add `getClientByPortalToken(token)` (returns client row + `owner_user_id`); add `getOutstandingInvoicesByClient(clientId)` (returns invoices where `status IN ('sent', 'overdue')` with `payment_link_url`); add `generatePortalTokenForClient(clientId)` called on client create if `portal_token` is null.
 3. `routes/invoices.js` or new `routes/portal.js`: `GET /pay/:token` — public (no `requireAuth`): look up client by token; 404 if not found; render `views/client-portal.ejs` with client name, freelancer business name, and the list of outstanding invoices. Each invoice row: invoice number, amount, due date, status badge, and a prominent "Pay Now →" button linking to `payment_link_url` (or "No payment link — contact [business_name]" fallback).
-4. `views/client-portal.ejs`: clean, unbranded invoice list page. Header: `"Invoices from [business_name]"`. Tailwind card per invoice. Footer: `"Powered by QuickInvoice"` (passive acquisition; links to `/`). No nav, no login required.
+4. `views/client-portal.ejs`: clean, unbranded invoice list page. Header: `"Invoices from [business_name]"`. Tailwind card per invoice. Footer: `"Powered by DecentInvoice"` (passive acquisition; links to `/`). No nav, no login required.
 5. `views/invoice-view.ejs` (Pro users only): add a "Client Portal" card showing the client's portal URL (`APP_URL/pay/:token`) with a copy button (Alpine.js clipboard, same pattern as the payment link copy UI). Add tooltip: "Share this link with [client_name] — they can pay any outstanding invoice here."
 6. `routes/invoices.js` `POST /clients` (client creation): call `generatePortalTokenForClient` for new clients. For existing clients, add a one-time lazy-generation: if `portal_token` is null when the portal card is rendered in the invoice view, generate and persist it then.
 7. Plan gate: portal card in `invoice-view.ejs` is Pro-only (free users see a locked placeholder with "Upgrade to Pro →" CTA). The public `/pay/:token` route itself is plan-ungated (the client should always be able to pay even if the freelancer downgrades — this protects payment integrity).
@@ -723,7 +723,7 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
 
 ### 22. [GROWTH] Late Fee Automation (Pro Feature) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — "auto late fee" is a top-3 requested invoicing feature on freelancer forums; removes the awkward manual negotiation; forces clients to act sooner; adds a concrete, visible Pro retention driver beyond payment links
 **Effort:** Low
 **Prerequisites:** Automated payment reminders (#16) is a natural companion but not required; this feature is self-contained
@@ -743,7 +743,7 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
 
 ### 23. [GROWTH] PWA Manifest for Mobile Installability [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — freelancers frequently check invoice status on mobile; an installable PWA appears on the home screen alongside native apps, dramatically increasing session frequency and reducing passive churn from users who forget the tool exists between billing cycles
 **Effort:** Very Low
 **Prerequisites:** None
@@ -752,8 +752,8 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
 1. Create `public/manifest.json`:
    ```json
    {
-     "name": "QuickInvoice",
-     "short_name": "QuickInvoice",
+     "name": "DecentInvoice",
+     "short_name": "DecentInvoice",
      "start_url": "/dashboard",
      "display": "standalone",
      "background_color": "#ffffff",
@@ -771,7 +771,7 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
    <meta name="theme-color" content="#4f46e5">
    <meta name="apple-mobile-web-app-capable" content="yes">
    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-   <meta name="apple-mobile-web-app-title" content="QuickInvoice">
+   <meta name="apple-mobile-web-app-title" content="DecentInvoice">
    <link rel="apple-touch-icon" href="/icons/icon-192.png">
    ```
 4. `server.js`: add a minimal service worker registration snippet (inline `<script>` in `head.ejs`, not a separate file) that registers a no-op SW only if `'serviceWorker' in navigator` — this satisfies Chrome's "installable" check without adding offline complexity. Alternatively, serve `public/sw.js` with a cache-first strategy for static assets only.
@@ -781,7 +781,7 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
 
 ### 18. [GROWTH] Referral Program with Stripe Coupon Rewards [M]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — referred users convert at 3–5× the rate of cold traffic and churn at half the rate; a one-month-free reward for the referrer costs $12 and acquires a user with estimated $60–$120 LTV
 **Effort:** Medium
 **Prerequisites:** Email delivery (#13) recommended so referral invite links can be emailed; Stripe already integrated
@@ -799,7 +799,7 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
 
 ### 24. [GROWTH] Multi-Currency Invoice Support [M]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** HIGH — USD-only design locks out the ~40% of global freelancers who invoice in EUR, GBP, CAD, AUD, or other currencies; adding currency selection directly unlocks a new market segment at zero CAC
 **Effort:** Medium
 **Prerequisites:** None (Stripe natively supports multi-currency Payment Links and Checkout)
@@ -817,7 +817,7 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
 
 ### 25. [GROWTH] Expand SEO Niche Landing Pages (6 → 15) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM-HIGH — each additional niche page targets a distinct long-tail query ("freelance videographer invoice template", "social media manager invoice", etc.) with near-zero competition and direct audience match; the entire landing-page system is already built in `routes/landing.js`; adding 9 pages is ~135 lines of config with no new infrastructure
 **Effort:** Very Low
 **Prerequisites:** INTERNAL_TODO #8 (done — SEO niche landing pages are live)
@@ -841,8 +841,8 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
 
 ### 26. [GROWTH] AI-Powered Line Item Suggestions (Claude API, Pro Feature) [S]
 
-**App:** QuickInvoice (Node.js)
-**Impact:** MEDIUM-HIGH — reduces time-to-first-invoice for new users (the #1 activation friction point); differentiates QuickInvoice from every competing indie invoicing tool; turns "suggest items" into a visible Pro feature that free users see and want; one-time call to Claude per invoice creation means cost is negligible ($0.001–0.005 per suggestion)
+**App:** DecentInvoice (Node.js)
+**Impact:** MEDIUM-HIGH — reduces time-to-first-invoice for new users (the #1 activation friction point); differentiates DecentInvoice from every competing indie invoicing tool; turns "suggest items" into a visible Pro feature that free users see and want; one-time call to Claude per invoice creation means cost is negligible ($0.001–0.005 per suggestion)
 **Effort:** Low
 **Prerequisites:** None (Claude API key from console.anthropic.com, ~2 min to provision)
 
@@ -865,8 +865,8 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
 
 ### 27. [GROWTH] One-Click Invoice Duplication [S]
 
-**App:** QuickInvoice (Node.js)
-**Impact:** MEDIUM — reduces time-to-invoice for repeat clients (the most common workflow for retainer freelancers); removes the 5-step "create invoice, fill in client, re-enter same line items" friction loop; particularly valuable for users who haven't enabled recurring invoices (InvoiceFlow #6 equivalent doesn't exist in QuickInvoice)
+**App:** DecentInvoice (Node.js)
+**Impact:** MEDIUM — reduces time-to-invoice for repeat clients (the most common workflow for retainer freelancers); removes the 5-step "create invoice, fill in client, re-enter same line items" friction loop; particularly valuable for users who haven't enabled recurring invoices (InvoiceFlow #6 equivalent doesn't exist in DecentInvoice)
 **Effort:** Very Low
 **Prerequisites:** None
 
@@ -881,7 +881,7 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
 
 ### 28. [GROWTH] Legal Pages Code Scaffolding (Terms, Privacy, Refund) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — without these routes, all three legal pages (L1-L3 in TODO_MASTER.md) remain blocked even after Master writes the actual legal text; these routes are the only thing preventing compliance; directory listings on G2, Capterra, and Product Hunt require a live Terms URL; Stripe's Checkout page requires a refund policy URL in the "Business details" settings
 **Effort:** Very Low
 **Prerequisites:** None (Master provides legal text separately via TODO_MASTER.md L1-L3; code can ship with placeholder content that gets swapped)
@@ -899,7 +899,7 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
 
 ### 29. [DONE 2026-04-26 PM] [GROWTH] Trial End Day-3 Nudge Email [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** HIGH — the single highest-leverage conversion action available for trial users; industry benchmarks show a day-3/4 nudge email is responsible for 30–50% of trial-to-paid conversions; without it, users who signed up but never added a card silently lapse on day 7
 **Effort:** Very Low
 **Prerequisites:** Email delivery (#13, done) + node-cron (#16, done) + `trial_ends_at` column (#19, done) — all prerequisites are live
@@ -937,7 +937,7 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
 
 ### 30. [DONE 2026-04-26] [GROWTH] "Invoice Paid" Instant Notification Email to Freelancer [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** HIGH — the "cha-ching" magic moment that drives word-of-mouth ("this app texts me the second I get paid"); the emotional resonance of an instant paid-notification converts casual users into vocal advocates; costs ~5 lines of code in the existing Stripe webhook handler; no new infrastructure
 **Effort:** Very Low
 **Prerequisites:** Email delivery (#13, done); Payment Links (#2, done)
@@ -951,7 +951,7 @@ New `tests/trial.test.js` adds 10 assertions (exceeds the original 3-test spec):
 
 `routes/billing.js` `checkout.session.completed` handler: inside the existing `session.mode === 'payment' && session.payment_link` branch, after `db.markInvoicePaidByPaymentLinkId(...)` returns the freshly-marked invoice and after the existing outbound-webhook fire, the new code reads the owner via `db.getUserById(updated.user_id)` (one round trip — the outbound-webhook block already needed the owner row, so this is the same lookup, not a duplicated query), then `sendPaidNotificationEmail(updated, owner).then(...).catch(...)` fires the email. The `.then()` only logs failures whose `reason !== 'not_configured'` — same hygiene pattern as `routes/invoices.js`'s mark-sent email, so the cron-style "until Master provisions Resend, every send is a clean no-op" property holds. The webhook returns 200 immediately regardless of the email outcome — proven by test #6 below (sendPaidNotificationEmail rejects with `Error('Resend exploded')`, webhook still returns 200). Subscription-mode checkouts (Pro upgrades) do NOT trip the paid-notification — the new code lives inside the `session.mode === 'payment'` branch, so subscription completions fall through unchanged.
 
-New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; we added 4 more for coverage parity with `tests/email.test.js`): (1) subject formatter contract — invoice number + formatted total + "just paid" copy; (2) HTML escaping + APP_URL deep-link button render — `<script>alert(1)</script>` becomes `&lt;script&gt;`, `https://quickinvoice.io/invoices/99` is the button href; (3) `sendPaidNotificationEmail({email:null})` short-circuits with `no_owner_email` — defence-in-depth guard against a deleted-account corner case; (4) happy-path Resend payload — recipient is `owner.email` (NOT `invoice.client_email`!), reply_to follows the `business_email` fallback when `reply_to_email` is null; (5) Stripe webhook payment-link path → `sendPaidNotificationEmail` is called exactly once with the marked-paid invoice + owner; (6) `sendPaidNotificationEmail` rejecting does NOT change the webhook 200 — fire-and-forget guarantee; (7) subscription-mode checkout (Pro upgrade) does NOT fire the paid-notification — guard on `session.mode === 'payment'`. Wired into `package.json` `test` script. Full suite passes (26 test files, 0 failures).
+New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; we added 4 more for coverage parity with `tests/email.test.js`): (1) subject formatter contract — invoice number + formatted total + "just paid" copy; (2) HTML escaping + APP_URL deep-link button render — `<script>alert(1)</script>` becomes `&lt;script&gt;`, `https://decentinvoice.com/invoices/99` is the button href; (3) `sendPaidNotificationEmail({email:null})` short-circuits with `no_owner_email` — defence-in-depth guard against a deleted-account corner case; (4) happy-path Resend payload — recipient is `owner.email` (NOT `invoice.client_email`!), reply_to follows the `business_email` fallback when `reply_to_email` is null; (5) Stripe webhook payment-link path → `sendPaidNotificationEmail` is called exactly once with the marked-paid invoice + owner; (6) `sendPaidNotificationEmail` rejecting does NOT change the webhook 200 — fire-and-forget guarantee; (7) subscription-mode checkout (Pro upgrade) does NOT fire the paid-notification — guard on `session.mode === 'payment'`. Wired into `package.json` `test` script. Full suite passes (26 test files, 0 failures).
 
 **[Master action]** none required *for this feature on its own* — once the Resend API key from TODO_MASTER #18 is provisioned, paid-notification emails start flowing on the next payment-link payment. Until then, every send returns `{ ok:false, reason:'not_configured' }` and is logged-and-discarded with no side effects.
 
@@ -961,7 +961,7 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 
 ### 31. [GROWTH] Free-Plan Invoice Limit Progress Bar on Dashboard [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — the upgrade modal (#1) fires only at the hard wall (5th invoice); this adds a visible, non-pushy "X of 5 free invoices used this month" progress bar that creates conversion pressure before the wall; users who see they're at 3/5 or 4/5 are highly likely to upgrade rather than wait for the hard stop; different from #15 (contextual upsell) which targets specific feature interactions rather than the usage-limit dimension
 **Effort:** Very Low
 **Prerequisites:** None
@@ -975,8 +975,8 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 
 ### 32. [GROWTH] API Key Authentication + REST Endpoints (Zapier Marketplace Prerequisite) [S]
 
-**App:** QuickInvoice (Node.js)
-**Impact:** MEDIUM-HIGH — required prerequisite for TODO_MASTER #24 (native Zapier app listing, which exposes QuickInvoice to Zapier's 3M+ users); also enables power users to build their own automations and unlocks the "developer market" segment; the API key model is the simplest auth pattern (no OAuth server needed) and is the standard for indie SaaS Zapier integrations
+**App:** DecentInvoice (Node.js)
+**Impact:** MEDIUM-HIGH — required prerequisite for TODO_MASTER #24 (native Zapier app listing, which exposes DecentInvoice to Zapier's 3M+ users); also enables power users to build their own automations and unlocks the "developer market" segment; the API key model is the simplest auth pattern (no OAuth server needed) and is the standard for indie SaaS Zapier integrations
 **Effort:** Low
 **Prerequisites:** None
 
@@ -994,7 +994,7 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 
 ### 33. [GROWTH] Invoice Bulk CSV Export [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — tax season is the #1 churn-risk event for freelancers (they switch tools when they realise they can't easily pull their invoicing data for their accountant); a one-click CSV export of all invoices eliminates this churn vector and is a concrete Pro feature that differentiates from free-tier invoicing tools; GDPR Art. 15 data portability also makes this a compliance requirement for EU users
 **Effort:** Low
 **Prerequisites:** None
@@ -1009,13 +1009,13 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 
 ### 34. [GROWTH] Plausible Analytics Integration [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — without analytics there is no way to measure which niche landing pages drive registrations, whether the upgrade modal converts, what the landing-page → signup funnel looks like, or whether any of the distribution actions (Product Hunt, Show HN, newsletter mentions) are sending traffic; Plausible is cookie-less (no GDPR consent banner needed per TODO_MASTER L6), privacy-friendly, and costs $9/mo; this is operational infrastructure for every future growth decision
 **Effort:** Very Low
 **Prerequisites:** Master must sign up at plausible.io and provide the domain name (see TODO_MASTER #29 below); the code integration is a 2-line change
 
 **Sub-tasks:**
-1. Add `PLAUSIBLE_DOMAIN` to `.env.example` (e.g. `quickinvoice.io`). When unset, skip injection entirely — graceful degradation, no 500s.
+1. Add `PLAUSIBLE_DOMAIN` to `.env.example` (e.g. `decentinvoice.com`). When unset, skip injection entirely — graceful degradation, no 500s.
 2. `views/partials/head.ejs`: inside `<head>`, inject conditionally:
    ```html
    <% if (process.env.PLAUSIBLE_DOMAIN) { %>
@@ -1031,7 +1031,7 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 
 ### 35. [DONE 2026-04-26] [GROWTH] Stripe Checkout: enable promotion codes + automatic tax (added 2026-04-26 audit) [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** HIGH — two adjacent wins from one ~3-line change in `routes/billing.js`. (1) `allow_promotion_codes: true` adds a "Add promotion code" link to every Stripe Checkout page, which is the prerequisite for Product Hunt launch coupons (`PH50`), AppSumo redemption, freelancer-newsletter sponsorships ("DESIGNERS20"), and the 100%-off-first-month coupon already mentioned in TODO_MASTER #25 (Agency cold email). Without it, every coupon Master creates in the Stripe Dashboard is unreachable. (2) `automatic_tax: { enabled: true }` switches on Stripe Tax for every subscription — Stripe automatically calculates and collects VAT/GST/sales tax for EU/UK/AU/CA customers based on their billing address. EU and UK freelancers are ~30% of the global freelancer market and are currently unable to upgrade because the price displayed at checkout doesn't match the post-tax invoice they need for their books.
 **Effort:** Very Low
 **Prerequisites:** None for `allow_promotion_codes`. Stripe Tax requires Master to enable Stripe Tax in the Stripe Dashboard once (Stripe Settings → Tax → Activate; takes 5 minutes). Until activated, `automatic_tax: { enabled: true }` returns a Stripe error and breaks checkout — wrap in a feature flag `STRIPE_AUTOMATIC_TAX_ENABLED=true` env so the deploy is reversible.
@@ -1056,15 +1056,15 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 
 ### 36. [DONE 2026-04-26 PM-3] [GROWTH] Open Graph + Twitter Card metadata on landing/pricing/niche pages (added 2026-04-26 audit) [XS]
 
-**App:** QuickInvoice (Node.js)
-**Impact:** MEDIUM-HIGH — every share of `quickinvoice.io`, `/pricing`, or any of the 6 niche landing pages currently renders as a bare URL in Slack/iMessage/Twitter/LinkedIn/Discord previews. Adding `og:title`, `og:description`, `og:image`, `og:url`, `twitter:card`, `twitter:image` makes every shared link render a rich preview card with the QuickInvoice screenshot — typically 30–50% higher click-through vs. a bare URL. This compounds across every Reddit post (TODO_MASTER #14), every Tweet (#17, #30), every newsletter mention (#20), every Slack/Discord drop (#28), every Show HN (#19).
+**App:** DecentInvoice (Node.js)
+**Impact:** MEDIUM-HIGH — every share of `decentinvoice.com`, `/pricing`, or any of the 6 niche landing pages currently renders as a bare URL in Slack/iMessage/Twitter/LinkedIn/Discord previews. Adding `og:title`, `og:description`, `og:image`, `og:url`, `twitter:card`, `twitter:image` makes every shared link render a rich preview card with the DecentInvoice screenshot — typically 30–50% higher click-through vs. a bare URL. This compounds across every Reddit post (TODO_MASTER #14), every Tweet (#17, #30), every newsletter mention (#20), every Slack/Discord drop (#28), every Show HN (#19).
 **Effort:** Very Low
-**Prerequisites:** A static `public/og-image.png` (1200×630 PNG with the QuickInvoice logo + tagline). Master provides the image asset; the code can ship with a placeholder reference and the file gets dropped in.
+**Prerequisites:** A static `public/og-image.png` (1200×630 PNG with the DecentInvoice logo + tagline). Master provides the image asset; the code can ship with a placeholder reference and the file gets dropped in.
 
 **Sub-tasks:**
 1. `views/partials/head.ejs`: add inside `<head>` (use template locals so each page can override defaults):
    ```html
-   <meta property="og:title" content="<%= ogTitle || 'QuickInvoice — Professional invoices with Stripe Payment Links' %>">
+   <meta property="og:title" content="<%= ogTitle || 'DecentInvoice — Professional invoices with Stripe Payment Links' %>">
    <meta property="og:description" content="<%= ogDescription || 'Send invoices freelancers can pay in one click. Free to start, $12/mo for Pro.' %>">
    <meta property="og:image" content="<%= APP_URL %>/og-image.png">
    <meta property="og:url" content="<%= APP_URL %><%= ogPath || '/' %>">
@@ -1082,14 +1082,14 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 
 **Resolution (2026-04-26 PM-3):** Implemented end-to-end as the highest-priority `[XS]` income-critical task in this cycle.
 
-1. **`views/partials/head.ejs`** — added an EJS preamble that resolves five locals (`ogTitle`, `ogDescription`, `ogPath`, `ogType`, `ogImage`) with conservative defaults, then renders 9 meta tags: `description` (standard SEO), `og:title`, `og:description`, `og:image`, `og:url`, `og:type`, `og:site_name`, `twitter:card="summary_large_image"`, `twitter:title`, `twitter:description`, `twitter:image`. APP_URL handling normalises trailing slashes (no `https://x.io//path` artefacts) and lets `ogImage` pass through unchanged when it is already an absolute URL (so a future CDN cutover doesn't require a code change). Defaults are safe: title "QuickInvoice — Professional invoices for freelancers", description carries the 7-day-trial / no-card hook, og:type = website. Per-page locals override every default so landing and niche pages emit niche-specific previews.
-2. **`server.js GET /`** — now passes `ogTitle: 'QuickInvoice — Professional invoices in 60 seconds'`, `ogDescription` (one-click pay copy + trial hook), `ogPath: '/'`. The 60-seconds framing matches the existing landing-page H1.
-3. **`routes/billing.js GET /upgrade`** — passes `ogTitle: 'QuickInvoice Pro — Unlimited invoices, payment links, $12/mo'`, `ogDescription` listing the 4 Pro features + trial, `ogPath: '/billing/upgrade'`.
+1. **`views/partials/head.ejs`** — added an EJS preamble that resolves five locals (`ogTitle`, `ogDescription`, `ogPath`, `ogType`, `ogImage`) with conservative defaults, then renders 9 meta tags: `description` (standard SEO), `og:title`, `og:description`, `og:image`, `og:url`, `og:type`, `og:site_name`, `twitter:card="summary_large_image"`, `twitter:title`, `twitter:description`, `twitter:image`. APP_URL handling normalises trailing slashes (no `https://x.io//path` artefacts) and lets `ogImage` pass through unchanged when it is already an absolute URL (so a future CDN cutover doesn't require a code change). Defaults are safe: title "DecentInvoice — Professional invoices for freelancers", description carries the 7-day-trial / no-card hook, og:type = website. Per-page locals override every default so landing and niche pages emit niche-specific previews.
+2. **`server.js GET /`** — now passes `ogTitle: 'DecentInvoice — Professional invoices in 60 seconds'`, `ogDescription` (one-click pay copy + trial hook), `ogPath: '/'`. The 60-seconds framing matches the existing landing-page H1.
+3. **`routes/billing.js GET /upgrade`** — passes `ogTitle: 'DecentInvoice Pro — Unlimited invoices, payment links, $12/mo'`, `ogDescription` listing the 4 Pro features + trial, `ogPath: '/billing/upgrade'`.
 4. **`routes/landing.js buildLocals(slug)`** — now sets `ogTitle: niche.headline`, `ogDescription: niche.description`, `ogPath: publicUrls(slug)`, `ogType: 'article'`. All 6 existing niche landing pages (designer, developer, writer, photographer, consultant, invoice-generator) get vertical-specific previews automatically — no per-niche config needed.
 5. **`public/og-image.png`** — generated a valid 1200×630 brand-indigo (#4f46e5) PNG (3.5 KB) as a placeholder. Master replaces this with a branded asset (logo + tagline) per TODO_MASTER. The placeholder is a real PNG with valid magic bytes so social-card validators still accept it pre-replacement; the share preview just shows a solid-color card until Master uploads the branded image.
 6. **`tests/og-metadata.test.js`** (new file, 10 assertions): default tags render with safe defaults; standard meta description renders for SEO; per-page locals override every default; APP_URL is correctly prefixed onto og:url + og:image; trailing-slash APP_URL is normalised (regression guard against `//path` URLs); absolute ogImage URLs pass through unchanged (CDN-future-proofing); all 6 niche pages emit niche-specific og:title + og:description + og:type=article + og:url ending in their public path; public/og-image.png exists with valid PNG magic bytes (regression guard against an empty placeholder); index.ejs and pricing.ejs render with the locals their routes pass. Wired into `package.json test` script after `tests/billing-deleted-account.test.js`. Full suite: **31 test files, 0 failures.**
 
-**[Master action]** required to complete the polish: replace `public/og-image.png` with the branded 1200×630 image (QuickInvoice logo + tagline + brand-indigo background). Optional but recommended: also set `APP_URL=https://quickinvoice.io` in production env so og:url and og:image render as absolute URLs (most social card validators require this). Both items added to TODO_MASTER.
+**[Master action]** required to complete the polish: replace `public/og-image.png` with the branded 1200×630 image (DecentInvoice logo + tagline + brand-indigo background). Optional but recommended: also set `APP_URL=https://decentinvoice.com` in production env so og:url and og:image render as absolute URLs (most social card validators require this). Both items added to TODO_MASTER.
 
 **Income relevance:** Indirect but compounding — every distribution action in TODO_MASTER (`/launchposts/`, social, communities) now generates 30–50% higher click-through from the same effort because the link preview renders as a branded card instead of a bare URL.
 
@@ -1097,7 +1097,7 @@ New `tests/paid-notification.test.js` adds 7 assertions (the spec called for 3; 
 
 ### 37. [DONE 2026-04-26 PM-2] [GROWTH] Annual billing savings copy across all toggles (added 2026-04-26 audit; closed in this cycle's UX audit) [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM-HIGH — INTERNAL_TODO #3 (annual billing) is live; users can pick monthly ($12/mo) or annual ($99/yr). The "Save 31%" badge already ships on the `/pricing` toggle (`views/pricing.ejs:25`) and on the upgrade modal (`views/partials/upgrade-modal.ejs:76`). What's still missing: (a) the "2 months free vs. monthly" framing as a more compelling alternative to the existing "Just $8.25/mo" subhead; (b) the same toggle + badge on `views/settings.ejs` so existing monthly subscribers can switch to annual without going through `/pricing`. Industry data: pricing toggles that explicitly call out the savings convert ~20–30% more annual subscribers vs. toggles that just show the two numbers. Annual subscribers churn at half the rate of monthly, so each annual conversion is worth ~$50 more LTV.
 **Effort:** Very Low (pure copy/layout change)
 **Prerequisites:** None — annual billing #3 is already live.
@@ -1123,7 +1123,7 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### 38. [GROWTH] Public `/roadmap` page (trust + churn defence) (added 2026-04-26 audit) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — when users churn, the #2 reason cited (after price) is "I'm not sure they're actively building this." A public roadmap page with 6–8 upcoming features and rough ETAs is the single highest-leverage trust signal a SaaS can ship — visible on the landing page footer, the pricing page, and inside the upgrade modal as "What's next?". Also pre-empts feature requests ("oh, that's already on the roadmap for next month") and gives existing Pro users a reason to stay subscribed past their first month.
 **Effort:** Low
 **Prerequisites:** None.
@@ -1146,8 +1146,8 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### U1. [UX] Password reset flow does not exist — login page is a hard dead-end (added 2026-04-26 UX audit) [M]
 
-**App:** QuickInvoice (Node.js)
-**Impact:** HIGH (long-tail) — `views/auth/login.ejs` originally had no "Forgot password?" link; the 2026-04-26 UX audit added a "Email support@quickinvoice.io and we'll reset it for you" line as a stopgap, but every reset is now a manual support-ticket task for Master. Industry data: 8–12% of returning users hit forgot-password in any given month; without a self-serve flow, every one of them is either a support-inbox burden or a churned account. Highest-leverage retention-plumbing fix QuickInvoice is missing.
+**App:** DecentInvoice (Node.js)
+**Impact:** HIGH (long-tail) — `views/auth/login.ejs` originally had no "Forgot password?" link; the 2026-04-26 UX audit added a "Email support@decentinvoice.com and we'll reset it for you" line as a stopgap, but every reset is now a manual support-ticket task for Master. Industry data: 8–12% of returning users hit forgot-password in any given month; without a self-serve flow, every one of them is either a support-inbox burden or a churned account. Highest-leverage retention-plumbing fix DecentInvoice is missing.
 **Effort:** Medium
 **Prerequisites:** Email delivery (#13, done) — needs `RESEND_API_KEY` provisioned per TODO_MASTER #18 to actually send.
 
@@ -1169,7 +1169,7 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### U2. [DONE 2026-04-26] [UX] Dashboard empty state does not mention Pro features (added 2026-04-26 UX audit) [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — `views/dashboard.ejs` empty state (lines 143-152) shows "No invoices yet — Create your first invoice and start getting paid." for users with zero invoices. Free users at this moment are at peak intent (they just signed up) but see no information about what Pro unlocks; they create their first invoice and then might not encounter the Pro upsell until they hit the 3-invoice limit. Adding a subtle "✨ Pro tip: with Pro you can email invoices directly + get paid via Stripe payment link — try free for 7 days" callout below the CTA captures the high-intent activation moment without being pushy.
 **Effort:** Very Low (pure view change)
 **Sub-tasks:**
@@ -1189,7 +1189,7 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### 39. [GROWTH] First-invoice seed template on user signup (activation) (added 2026-04-26 audit) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** HIGH — the dashboard onboarding checklist (#14, done) lifts activation by surfacing the path-to-value, but the actual "create your first invoice" step still drops users at an empty form. Pre-creating a draft "Welcome — your sample invoice" with a fake client (`client_name: 'Acme Co (sample)'`, one line item, $500 total) on signup means the new user lands on a dashboard that already has one row — which lifts the "create" step's completion rate to ~100% instantly and makes step 2 of the onboarding checklist auto-complete. Notion, Linear, and Figma all use this pattern; it's the highest-ROI activation trick in SaaS onboarding playbooks.
 **Effort:** Low
 **Prerequisites:** None.
@@ -1205,10 +1205,10 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ---
 
-### 40. [GROWTH] Recurring Invoice Auto-Generation for QuickInvoice (parity with InvoiceFlow #6/P12) (added 2026-04-26 audit) [M]
+### 40. [GROWTH] Recurring Invoice Auto-Generation for DecentInvoice (parity with InvoiceFlow #6/P12) (added 2026-04-26 audit) [M]
 
-**App:** QuickInvoice (Node.js)
-**Impact:** HIGH — retainer freelancers and consultants are the highest-LTV segment of the user base; they invoice the same client(s) the same amount every month. Today, those users have to manually click "Duplicate" → edit dates → mark sent each month, which is exactly the kind of friction that drives churn to FreshBooks / Bonsai. The reminder cron infrastructure (#16, done) already runs daily; adding a recurring-invoice auto-clone job to that same scheduler is a 30-line addition. InvoiceFlow has had this since P12; QuickInvoice's lack of it is the single biggest feature-parity gap and the #1 reason a long-tenured Pro user might cancel.
+**App:** DecentInvoice (Node.js)
+**Impact:** HIGH — retainer freelancers and consultants are the highest-LTV segment of the user base; they invoice the same client(s) the same amount every month. Today, those users have to manually click "Duplicate" → edit dates → mark sent each month, which is exactly the kind of friction that drives churn to FreshBooks / Bonsai. The reminder cron infrastructure (#16, done) already runs daily; adding a recurring-invoice auto-clone job to that same scheduler is a 30-line addition. InvoiceFlow has had this since P12; DecentInvoice's lack of it is the single biggest feature-parity gap and the #1 reason a long-tenured Pro user might cancel.
 **Effort:** Medium
 **Prerequisites:** Reminder cron (#16, done); One-Click Duplication helper from #27 if landed first (re-uses the same line-item clone helper).
 
@@ -1225,14 +1225,14 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 6. `server.js`: register the new job under the same `NODE_ENV !== 'test'` guard as the reminder cron.
 7. New `tests/recurring-invoices.test.js` (6+ tests): MONTHLY frequency advances `recurrence_next_run` exactly 1 month forward; cloned invoice has new invoice number + `status='draft'`; clone preserves line items; free-plan invoice is skipped even if `recurrence_active=true` (defence in depth atop SQL filter); paused recurrence is skipped; clone error in one row doesn't halt the batch.
 
-**Income relevance:** Direct retention. Retainer freelancers churn at 30–50% lower rates when the tool auto-generates their monthly invoice — this is the highest-ROI retention feature still uncaptured in QuickInvoice. Closes the single biggest feature-parity gap with InvoiceFlow and the most common request from Pro users on freelancer forums.
+**Income relevance:** Direct retention. Retainer freelancers churn at 30–50% lower rates when the tool auto-generates their monthly invoice — this is the highest-ROI retention feature still uncaptured in DecentInvoice. Closes the single biggest feature-parity gap with InvoiceFlow and the most common request from Pro users on freelancer forums.
 
 ---
 
 ### 41. [DONE 2026-04-26 PM] [GROWTH] Stripe Payment Link: enable bank/ACH + SEPA (lower fees on big invoices) (added 2026-04-26 audit) [XS]
 
-**App:** QuickInvoice (Node.js)
-**Impact:** HIGH (margin) — Stripe Payment Links default to card-only. For US invoices, ACH Direct Debit is 0.8% capped at $5 vs. cards at 2.9% + $0.30. On a $2,000 retainer invoice, ACH costs $5; card costs $58.30 — a $53 fee delta the freelancer eats. Many freelancers are quietly skipping QuickInvoice's payment link on large invoices because of this. SEPA Direct Debit (EU) is 0.8% capped at €5; AU BECS Direct Debit is similar. Adding `payment_method_types: ['card', 'us_bank_account', 'sepa_debit']` to `stripe.paymentLinks.create()` unlocks the lower-fee path.
+**App:** DecentInvoice (Node.js)
+**Impact:** HIGH (margin) — Stripe Payment Links default to card-only. For US invoices, ACH Direct Debit is 0.8% capped at $5 vs. cards at 2.9% + $0.30. On a $2,000 retainer invoice, ACH costs $5; card costs $58.30 — a $53 fee delta the freelancer eats. Many freelancers are quietly skipping DecentInvoice's payment link on large invoices because of this. SEPA Direct Debit (EU) is 0.8% capped at €5; AU BECS Direct Debit is similar. Adding `payment_method_types: ['card', 'us_bank_account', 'sepa_debit']` to `stripe.paymentLinks.create()` unlocks the lower-fee path.
 **Effort:** Very Low
 **Prerequisites:** Stripe account must enable each payment method in Settings → Payments → Payment methods (1 minute per method, no review). Master action.
 
@@ -1273,8 +1273,8 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### 42. [GROWTH] Custom invoice numbering scheme (Pro feature) (added 2026-04-26 audit) [S]
 
-**App:** QuickInvoice (Node.js)
-**Impact:** MED-HIGH — every freelancer who has used another invoicing tool has an existing invoice numbering scheme (e.g. `2026-001` for tax-year prefix, `JD-2026-001` for initials, `001` for plain sequential). Their accountant wants the numbering to continue without resetting. Right now QuickInvoice forces `INV-YYYY-NNNN` on everyone, which means switching tools forces a numbering break — the single biggest "I'd switch but..." friction point for freelancers with 1+ years of invoicing history. Letting users set a custom prefix (and optionally a starting number) removes this friction and is a tangible, visible Pro feature that competitors (FreshBooks, Bonsai) charge for.
+**App:** DecentInvoice (Node.js)
+**Impact:** MED-HIGH — every freelancer who has used another invoicing tool has an existing invoice numbering scheme (e.g. `2026-001` for tax-year prefix, `JD-2026-001` for initials, `001` for plain sequential). Their accountant wants the numbering to continue without resetting. Right now DecentInvoice forces `INV-YYYY-NNNN` on everyone, which means switching tools forces a numbering break — the single biggest "I'd switch but..." friction point for freelancers with 1+ years of invoicing history. Letting users set a custom prefix (and optionally a starting number) removes this friction and is a tangible, visible Pro feature that competitors (FreshBooks, Bonsai) charge for.
 **Effort:** Low
 **Prerequisites:** None.
 
@@ -1294,7 +1294,7 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### 43. [GROWTH] Public read-only invoice URL (no-login share link) (added 2026-04-26 audit) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — today the only way for a client to view an invoice is the email body or the Stripe Payment Link page. Many clients want to forward "the invoice itself" to their AP department before paying — and our HTML invoice view (`/invoices/:id`) is auth-gated. Adding a public read-only URL like `/i/:token` (where token is a per-invoice random string) lets clients view the full invoice in a browser, download the PDF, and forward the link to their accounting team without any login. Pairs naturally with the existing Payment Link as the "Pay Now" CTA on that page. Also unblocks INTERNAL_TODO #21 (full Client Portal) — the portal page is the per-client list view; this is the per-invoice view, the smallest unit.
 **Effort:** Low
 **Prerequisites:** None (Pro is not required — clients always need to be able to view invoices).
@@ -1302,7 +1302,7 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 **Sub-tasks:**
 1. `db/schema.sql`: idempotent — `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS public_token VARCHAR(40) UNIQUE;` Backfill on read: when the invoice is loaded by an authed user and `public_token IS NULL`, generate `crypto.randomBytes(20).toString('hex')` and persist. Lazy generation avoids a one-time backfill migration.
 2. `db.js`: `getInvoiceByPublicToken(token)` — SELECT invoice + owner business name/email; no plan gate.
-3. `routes/invoices.js`: new `GET /i/:token` (no `requireAuth`). 404 on missing token. Renders a new `views/invoice-public.ejs` (clean, unbranded — no nav, no footer chrome): full line-item table, total, due date, "Pay Now" Stripe Payment Link button (when `payment_link_url` is set), a "Download PDF" link to `/i/:token/pdf`, and a footer "Sent via QuickInvoice".
+3. `routes/invoices.js`: new `GET /i/:token` (no `requireAuth`). 404 on missing token. Renders a new `views/invoice-public.ejs` (clean, unbranded — no nav, no footer chrome): full line-item table, total, due date, "Pay Now" Stripe Payment Link button (when `payment_link_url` is set), a "Download PDF" link to `/i/:token/pdf`, and a footer "Sent via DecentInvoice".
 4. `routes/invoices.js`: new `GET /i/:token/pdf` — same auth-less path; re-uses the existing print template; sends `Content-Disposition: inline; filename="invoice-INV-X.pdf"`.
 5. `views/invoice-view.ejs` (Pro user): add a "Share link" card showing `${APP_URL}/i/${invoice.public_token}` with an Alpine.js copy button (same pattern as the webhook URL copy UI). Tooltip: "Send this link to anyone — they can view and pay the invoice without a login."
 6. New `tests/public-invoice.test.js` (5 tests): valid token → 200 with line items + Pay button; unknown token → 404; lazy-token-generation: first authed view of an invoice without a public_token persists one; PDF route returns Content-Type `application/pdf`; share-link card renders for Pro user only.
@@ -1313,13 +1313,13 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### 44. [GROWTH] In-app changelog widget — "✨ What's new" indicator in nav (added 2026-04-26 audit) [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — the public roadmap (#38) handles "what's coming"; this handles "what just shipped." A small `✨ What's new` link in the nav, with a 6-bullet popover, surfaces the steady stream of feature improvements (annual billing, payment links, instant paid notifications, etc.) so existing Pro users see active development without having to read the public CHANGELOG. Industry data: SaaS users who see at least one "what's new" notice per month churn at 30% lower rates than users who don't. The cost is one nav link + one EJS partial + one curated 6-bullet list refreshed at deploy time.
 **Effort:** Very Low
 **Prerequisites:** None.
 
 **Sub-tasks:**
-1. `views/partials/whats-new.ejs`: a tiny Alpine.js dropdown component anchored on a small `✨` icon in the nav. On open, render a card with: a title ("What's new in QuickInvoice"), 5–6 hand-curated bullet items (each ≤ 12 words) with their ship date, and a "See full roadmap →" footer link to `/roadmap`. Bullets are static — edited at every deploy.
+1. `views/partials/whats-new.ejs`: a tiny Alpine.js dropdown component anchored on a small `✨` icon in the nav. On open, render a card with: a title ("What's new in DecentInvoice"), 5–6 hand-curated bullet items (each ≤ 12 words) with their ship date, and a "See full roadmap →" footer link to `/roadmap`. Bullets are static — edited at every deploy.
 2. `views/partials/nav.ejs`: include the partial when `locals.user` is set (logged-in users only — public visitors get the marketing site already). Position to the right of the user dropdown. Mobile menu: list as a top-level item under the hamburger.
 3. (Optional follow-up, not part of this task): track first-view vs. subsequent-view via a localStorage `qi_whatsnew_seen=<latest_date>` key so a small red dot fades out after the user has clicked the popover once.
 4. New `tests/whats-new.test.js` (3 tests): nav renders the `✨` link for logged-in users; popover lists at least 4 bullet items; popover does NOT render for anon visitors (the partial is gated on `locals.user`).
@@ -1330,7 +1330,7 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### 45. [GROWTH] Last-day urgency dashboard banner for trial users (added 2026-04-26 PM audit) [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** HIGH — pairs with #29 (just-shipped trial nudge email) to give the trial cohort a *second* recovery surface on the most-converting day. The dashboard already renders a blue informational banner when `days_left_in_trial > 0`. On day 1, switch the banner to red/urgent styling with re-pointed copy: "Last day! Add a card before midnight to keep Pro features." Industry data on cart-abandonment urgency styling: same CTA + same copy with a red urgency frame lifts click-through 25-40% over the calm/blue equivalent.
 **Effort:** Very Low
 **Prerequisites:** None — `days_left_in_trial` is already computed and passed to the dashboard.
@@ -1346,7 +1346,7 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### 46. [GROWTH] Pricing page exit-intent modal (added 2026-04-26 PM audit) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MED-HIGH — pricing page is the single highest-bounce page in the funnel. Industry benchmarks (Sumo, OptinMonster) show exit-intent modals lift checkout conversion 5-15% on the same audience. The "no card, 7-day free trial" hook is unusually strong for this format because the offer is reciprocal — visitor gives nothing, gets full Pro access. One-time per-session via a `bounceShown` flag in `localStorage` so we never annoy a returning shopper.
 **Effort:** Low
 **Prerequisites:** None.
@@ -1364,7 +1364,7 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### 47. [GROWTH] Monthly→Annual upgrade prompt on dashboard for monthly Pro users (added 2026-04-26 PM audit) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** HIGH — annual subscribers churn at roughly half the rate of monthly subscribers (industry benchmarks across SaaS). Every monthly→annual conversion roughly doubles the cohort's LTV. Current funnel only surfaces the annual price on `/pricing` (which Pro users rarely revisit) and on `/settings`'s plan section. A small dismissible dashboard banner showing "you'd save $9/year on annual" when `subscription_status='active'` and `billing_cycle='monthly'` brings the upsell to the surface with the highest engagement frequency.
 **Effort:** Low
 **Prerequisites:** Annual price (#3, done) is live.
@@ -1380,18 +1380,18 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ---
 
-### 48. [GROWTH] Embeddable "Powered by QuickInvoice" badge on public invoice URLs (added 2026-04-26 PM audit) [XS]
+### 48. [GROWTH] Embeddable "Powered by DecentInvoice" badge on public invoice URLs (added 2026-04-26 PM audit) [XS]
 
-**App:** QuickInvoice (Node.js)
-**Impact:** MEDIUM (compounding) — once #43 (public read-only invoice URL `/i/:token`) lands, every invoice paid via that surface becomes a passive acquisition touchpoint. A discreet "Sent with QuickInvoice ↗" footer with a `?ref=invoice-pay` UTM tracks attribution. Free-plan invoices already get this on the PDF (#5); the public web version of the same PDF gets a sibling treatment. Compounds with every Pro user's invoice volume — one Pro user sending 20 invoices/mo = 20 unique-eyeball acquisition surfaces.
+**App:** DecentInvoice (Node.js)
+**Impact:** MEDIUM (compounding) — once #43 (public read-only invoice URL `/i/:token`) lands, every invoice paid via that surface becomes a passive acquisition touchpoint. A discreet "Sent with DecentInvoice ↗" footer with a `?ref=invoice-pay` UTM tracks attribution. Free-plan invoices already get this on the PDF (#5); the public web version of the same PDF gets a sibling treatment. Compounds with every Pro user's invoice volume — one Pro user sending 20 invoices/mo = 20 unique-eyeball acquisition surfaces.
 **Effort:** Very Low
 **Prerequisites:** #43 (public invoice URL) must ship first.
 
 **Sub-tasks:**
-1. `views/invoice-public.ejs`: footer block — `<footer><p>Sent with <a href="${APP_URL}/?ref=invoice-pay">QuickInvoice</a> · The fastest way to invoice clients.</p></footer>`. Same subtle gray styling as the existing PDF footer.
+1. `views/invoice-public.ejs`: footer block — `<footer><p>Sent with <a href="${APP_URL}/?ref=invoice-pay">DecentInvoice</a> · The fastest way to invoice clients.</p></footer>`. Same subtle gray styling as the existing PDF footer.
 2. Pro plan toggle: render this footer **only** when `invoice.user.plan === 'free'`. Pro/Business/Agency users get a clean unbranded public page (footer removal is a Pro feature, mirroring #5's PDF treatment).
 3. Server-side: `routes/landing.js` GET `/`: when `req.query.ref === 'invoice-pay'`, store the ref in the session so the eventual signup attributes correctly even after the user clicks around.
-4. New 1-test addition to `tests/public-invoice.test.js` (or new `tests/invoice-public-badge.test.js` if #43 lands first): public view for free user contains the "Sent with QuickInvoice" footer + ref=invoice-pay; public view for Pro user does NOT.
+4. New 1-test addition to `tests/public-invoice.test.js` (or new `tests/invoice-public-badge.test.js` if #43 lands first): public view for free user contains the "Sent with DecentInvoice" footer + ref=invoice-pay; public view for Pro user does NOT.
 
 **Income relevance:** Compounding — the badge cost is one EJS partial; the lift accrues with every invoice volume tick. This is the same passive acquisition mechanic that drove Mailchimp, Calendly, and Typeform's growth in their early years.
 
@@ -1399,14 +1399,14 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### 49. [GROWTH] First-paid-invoice celebration banner + email (added 2026-04-26 PM audit) [S]
 
-**App:** QuickInvoice (Node.js)
-**Impact:** MEDIUM — peak emotional moment in the user's relationship with the product is the first invoice they collect on. The instant paid-notification email (#30) handles the cha-ching for *every* paid invoice; this is a *one-shot* milestone celebration on the lifetime first paid invoice with a different ask: "share QuickInvoice with another freelancer." Industry benchmarks: peak-emotion-moment referral asks convert 5-10x better than steady-state asks.
+**App:** DecentInvoice (Node.js)
+**Impact:** MEDIUM — peak emotional moment in the user's relationship with the product is the first invoice they collect on. The instant paid-notification email (#30) handles the cha-ching for *every* paid invoice; this is a *one-shot* milestone celebration on the lifetime first paid invoice with a different ask: "share DecentInvoice with another freelancer." Industry benchmarks: peak-emotion-moment referral asks convert 5-10x better than steady-state asks.
 **Effort:** Low
 **Prerequisites:** Email delivery (#13, done).
 
 **Sub-tasks:**
 1. `db/schema.sql`: `ALTER TABLE users ADD COLUMN IF NOT EXISTS first_paid_invoice_at TIMESTAMP;`. Stamped on the first transition of any invoice for this user from non-paid to paid.
-2. `routes/billing.js` `checkout.session.completed` payment-link branch (where the paid notification already fires): after `markInvoicePaidByPaymentLinkId`, check if `owner.first_paid_invoice_at IS NULL`. If so, stamp it AND send a one-shot email "🎉 You just got your first paid invoice — congrats!" with two paragraphs: (1) celebrate the milestone + the amount, (2) "Know another freelancer who hates invoicing? Share QuickInvoice with them and we'll give you both 1 month free." and a sharable referral URL `${APP_URL}/?ref=u<user_id>`.
+2. `routes/billing.js` `checkout.session.completed` payment-link branch (where the paid notification already fires): after `markInvoicePaidByPaymentLinkId`, check if `owner.first_paid_invoice_at IS NULL`. If so, stamp it AND send a one-shot email "🎉 You just got your first paid invoice — congrats!" with two paragraphs: (1) celebrate the milestone + the amount, (2) "Know another freelancer who hates invoicing? Share DecentInvoice with them and we'll give you both 1 month free." and a sharable referral URL `${APP_URL}/?ref=u<user_id>`.
 3. `views/dashboard.ejs`: when `user.first_paid_invoice_at` is within the last 7 days, render a small dismissible green banner: "🎉 You just collected your first payment! [Share with another freelancer →]" linking to a `/share` page.
 4. New `views/share.ejs` (single static page): one-line copy + the referral URL with copy-to-clipboard button + Twitter/X / LinkedIn share buttons with pre-filled copy.
 5. New `tests/first-paid-celebration.test.js` (4 tests): first paid invoice for a user → `first_paid_invoice_at` stamped + celebration email sent; second paid invoice for the same user → stamp NOT updated, no email; dashboard banner renders for users within the 7-day window; dashboard banner hidden for older users / new users.
@@ -1417,8 +1417,8 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### 50. [GROWTH] Quote / Estimate flow with one-click "Convert to Invoice" (added 2026-04-26 PM-2 audit) [M]
 
-**App:** QuickInvoice (Node.js)
-**Impact:** HIGH — many B2B freelancers (designers, consultants, agencies) are required to send a formal quote / estimate BEFORE the invoice. Today QuickInvoice has no quote concept; users export the invoice as PDF, email it, and re-create it once the client agrees. This is a 5-step manual workflow and the #1 reason an agency-tier prospect picks FreshBooks / Bonsai over QuickInvoice. A `is_quote BOOLEAN` column + a "Convert to invoice" button is the highest-ROI feature gap still open in the QuickInvoice → Pro funnel.
+**App:** DecentInvoice (Node.js)
+**Impact:** HIGH — many B2B freelancers (designers, consultants, agencies) are required to send a formal quote / estimate BEFORE the invoice. Today DecentInvoice has no quote concept; users export the invoice as PDF, email it, and re-create it once the client agrees. This is a 5-step manual workflow and the #1 reason an agency-tier prospect picks FreshBooks / Bonsai over DecentInvoice. A `is_quote BOOLEAN` column + a "Convert to invoice" button is the highest-ROI feature gap still open in the DecentInvoice → Pro funnel.
 **Effort:** Medium
 **Prerequisites:** None.
 
@@ -1434,13 +1434,13 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 6. `views/partials/nav.ejs` — add "+ New Quote" alongside "+ New Invoice".
 7. New `tests/quotes.test.js` (6+ tests): create quote → DB row has `is_quote=true`; convert → new invoice row created, quote stamped; only Pro users can convert; quote does NOT count against the free-plan invoice limit (separate limit, currently no limit set — gate at 1 quote for free users); quote PDF export omits "Pay Now" section; convert preserves all line items.
 
-**Income relevance:** Direct B2B switching-cost lift. Agencies and consultants close their first deal with a quote, not an invoice — without this feature, QuickInvoice is invisible to that segment. Adding it brings the highest-LTV freelancer cohort (consultants $$$$) into the funnel, which compounds with the Agency-tier upgrade path (#9).
+**Income relevance:** Direct B2B switching-cost lift. Agencies and consultants close their first deal with a quote, not an invoice — without this feature, DecentInvoice is invisible to that segment. Adding it brings the highest-LTV freelancer cohort (consultants $$$$) into the funnel, which compounds with the Agency-tier upgrade path (#9).
 
 ---
 
 ### 51. [GROWTH] Schedule invoice send for a future date (added 2026-04-26 PM-2 audit) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MED-HIGH — a partial alternative to full recurring invoices (#40) for users who don't want a full automated cadence but want to "queue this invoice to send on the 1st." Cron infra is already running (#16); adding a `scheduled_send_at` check is a 30-line addition. Pairs with the existing `sent` transition path so the email + payment-link generation is identical to a manual mark-sent. Lower-friction onramp than full recurring rules.
 **Effort:** Low
 **Prerequisites:** Reminder cron (#16, done); email delivery (#13, done).
@@ -1460,7 +1460,7 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### 52. [GROWTH] JSON-LD `SoftwareApplication` schema on landing + niche pages (added 2026-04-26 PM-2 audit) [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MED-HIGH (long-tail SEO) — Google's rich-result eligibility for SaaS landing pages is unlocked by `application/ld+json` markup with `SoftwareApplication`, `offers`, and `aggregateRating` fields. Every niche landing page (`/invoice-template/freelance-developer`, etc.) currently ranks on long-tail queries but renders as a plain blue link in SERPs. Adding the schema makes the result eligible for the price + star-rating + "free to start" snippet, which lifts CTR by 20–40% on the same impression count. Pure markup change, zero risk.
 **Effort:** Very Low
 **Prerequisites:** None for the landing page; aggregateRating will be empty until INTERNAL_TODO #20 (real testimonials) lands. Ship without the rating field for now; add it later.
@@ -1478,7 +1478,7 @@ The "2 months free" framing was rejected per the original audit note (mathematic
    {
      "@context": "https://schema.org",
      "@type": "SoftwareApplication",
-     "name": "QuickInvoice",
+     "name": "DecentInvoice",
      "applicationCategory": "BusinessApplication",
      "operatingSystem": "Web",
      "url": process.env.APP_URL,
@@ -1499,8 +1499,8 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### 53. [GROWTH] Resend webhook → "Client opened invoice" insight on dashboard (added 2026-04-26 PM-2 audit) [M]
 
-**App:** QuickInvoice (Node.js)
-**Impact:** HIGH — Resend supports webhook events for `email.opened`, `email.clicked`, `email.delivered`, `email.bounced`, `email.complained`. Surfacing "Acme Co opened your invoice 2 hours ago" on the dashboard is a behavioural signal a freelancer cannot get anywhere else short of installing a tracking pixel manually. The freelancer learns when to follow up; the client knows their inbox is on the radar; QuickInvoice becomes the source of truth for invoice-status visibility instead of a fire-and-forget tool. Direct stickiness lift; per-user email volume effectively turns into a continuous engagement loop.
+**App:** DecentInvoice (Node.js)
+**Impact:** HIGH — Resend supports webhook events for `email.opened`, `email.clicked`, `email.delivered`, `email.bounced`, `email.complained`. Surfacing "Acme Co opened your invoice 2 hours ago" on the dashboard is a behavioural signal a freelancer cannot get anywhere else short of installing a tracking pixel manually. The freelancer learns when to follow up; the client knows their inbox is on the radar; DecentInvoice becomes the source of truth for invoice-status visibility instead of a fire-and-forget tool. Direct stickiness lift; per-user email volume effectively turns into a continuous engagement loop.
 **Effort:** Medium
 **Prerequisites:** Email delivery (#13, done) + `RESEND_API_KEY` provisioned (TODO_MASTER #18).
 
@@ -1519,8 +1519,8 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### 54. [GROWTH] Deposit / partial payment invoices (Pro feature) (added 2026-04-26 PM-2 audit) [S]
 
-**App:** QuickInvoice (Node.js)
-**Impact:** HIGH (agency segment) — service contracts ≥$1,000 typically require a 50% upfront deposit. Today QuickInvoice has no concept of partial payment — the freelancer has to send two separate invoices and reconcile them manually. Adding a `paid_amount NUMERIC` column + a "Record partial payment" button lets the freelancer track $X paid of $Y due in one row. The Stripe Payment Link can also be configured for the remaining balance. This is the single biggest reason an agency-tier prospect cites "we'd switch to QuickInvoice if it handled deposits."
+**App:** DecentInvoice (Node.js)
+**Impact:** HIGH (agency segment) — service contracts ≥$1,000 typically require a 50% upfront deposit. Today DecentInvoice has no concept of partial payment — the freelancer has to send two separate invoices and reconcile them manually. Adding a `paid_amount NUMERIC` column + a "Record partial payment" button lets the freelancer track $X paid of $Y due in one row. The Stripe Payment Link can also be configured for the remaining balance. This is the single biggest reason an agency-tier prospect cites "we'd switch to DecentInvoice if it handled deposits."
 **Effort:** Low
 **Prerequisites:** None.
 
@@ -1540,8 +1540,8 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### 55. [GROWTH] Auto thank-you email to client on payment received (added 2026-04-26 PM-2 audit) [XS]
 
-**App:** QuickInvoice (Node.js)
-**Impact:** MEDIUM (compounding) — when a client pays via the Stripe Payment Link, today the freelancer gets the cha-ching email (#30) but the client gets nothing from QuickInvoice (Stripe sends its own receipt). Auto-firing a polite "Thanks for your payment, [client_name]!" email from the freelancer's reply-to adds a level of professionalism that costs the freelancer literally zero effort and that competitor tools (FreshBooks, Wave) don't offer free. Pairs naturally with the existing `lib/email.js` infrastructure.
+**App:** DecentInvoice (Node.js)
+**Impact:** MEDIUM (compounding) — when a client pays via the Stripe Payment Link, today the freelancer gets the cha-ching email (#30) but the client gets nothing from DecentInvoice (Stripe sends its own receipt). Auto-firing a polite "Thanks for your payment, [client_name]!" email from the freelancer's reply-to adds a level of professionalism that costs the freelancer literally zero effort and that competitor tools (FreshBooks, Wave) don't offer free. Pairs naturally with the existing `lib/email.js` infrastructure.
 **Effort:** Very Low
 **Prerequisites:** Email delivery (#13, done); paid-notification (#30, done — re-uses the same `checkout.session.completed` payment_link branch).
 
@@ -1559,7 +1559,7 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### 56. [DONE 2026-04-27 PM] [GROWTH] `robots.txt` + canonical URL meta tag (added 2026-04-27 audit) [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM (compounds with #36 OG metadata + the existing 6 niche landing pages) — Google currently has no `robots.txt` to follow. A missing file isn't fatal (Googlebot crawls everything by default) but a real `robots.txt` with `Allow: /` and an explicit `Sitemap: <APP_URL>/sitemap.xml` is the standard SEO signal that says "this is a real site, here's the index." Pairs with a `<link rel="canonical">` tag in `head.ejs` so duplicate URLs (`/?utm_source=...`, `/pricing#x`, etc.) don't dilute ranking.
 **Effort:** Very Low.
 **Prerequisites:** None.
@@ -1570,7 +1570,7 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 3. **Per-route locals** — `noindex: true` added to every authed/transactional render call: `routes/invoices.js` (dashboard, invoice-form create+edit, invoice-view, invoice-print), `routes/billing.js` (settings), `routes/auth.js` (login + register, including all error-flash render paths). Auth pages were noindexed because indexed login forms have no SEO value and confuse crawlers; the marketing surface (homepage, pricing, niche landing pages) keeps the default `index, follow`.
 4. **`tests/robots-and-canonical.test.js`** (new file, 17 assertions — exceeds the 4-test spec): GET /robots.txt returns 200 + text/plain; disallows the 6 authed paths; sitemap pointer uses APP_URL when set; falls back to request host when APP_URL unset; trailing slash normalised; canonical link renders when APP_URL set; canonical link OMITTED when APP_URL unset; canonicalPath takes precedence over ogPath; canonicalUrl absolute override passes through; canonical falls back to ogPath when canonicalPath unset; meta robots defaults to `index, follow`; meta robots is `noindex, nofollow` when local set; dashboard/settings/auth-login/auth-register views all emit noindex; landing index page emits index, follow (regression guard against accidentally noindexing the homepage). Wired into `package.json` `test` script after `tests/webhook-outbound-from-stripe.test.js`. Full suite: **33 test files, 0 failures.**
 
-**[Master action]** required to complete the polish: set `APP_URL=https://quickinvoice.io` in production env so canonical URLs and the sitemap pointer in robots.txt render as absolute URLs. (Already in TODO_MASTER #39 from the #36 OG/Twitter Card cycle — same env-var, no new Master action needed.)
+**[Master action]** required to complete the polish: set `APP_URL=https://decentinvoice.com` in production env so canonical URLs and the sitemap pointer in robots.txt render as absolute URLs. (Already in TODO_MASTER #39 from the #36 OG/Twitter Card cycle — same env-var, no new Master action needed.)
 
 **Income relevance:** Indirect SEO compounding. (a) Reduces wasted crawl budget on duplicate-querystring URLs and authed pages crawlers can't index anyway. (b) Canonical URLs eliminate duplicate-content penalties when the same page is reachable via multiple paths. (c) Pairs with #36 — every share now carries both a rich preview AND a canonical URL pointing at the canonical domain. (d) Each indexed niche page is a permanent zero-CAC acquisition channel.
 
@@ -1578,7 +1578,7 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### 57. [GROWTH] 30-day NPS micro-survey for Pro users (added 2026-04-27 audit) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** HIGH (retention, churn-prevention) — the single most actionable retention signal a SaaS can collect is a 30-day NPS score from new Pro users. Detractors (0-6) can be reached out to before they cancel; promoters (9-10) can be asked for testimonials (#20 social-proof) or referrals (#18). Without it, churn is silent — by the time the user clicks "cancel" in Stripe, the conversation has already happened in their head. A 1-question Alpine.js modal that fires once at the 30-day Pro mark + free-text follow-up costs ~50 lines of code and produces the highest-quality user-feedback signal available.
 **Effort:** Low.
 **Prerequisites:** None — runs purely on existing session + DB infrastructure.
@@ -1587,7 +1587,7 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 1. `db/schema.sql`: idempotent — `CREATE TABLE IF NOT EXISTS nps_responses (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES users(id), score INT NOT NULL CHECK (score BETWEEN 0 AND 10), comment TEXT, created_at TIMESTAMP DEFAULT NOW());` plus `ALTER TABLE users ADD COLUMN IF NOT EXISTS nps_prompted_at TIMESTAMP;`.
 2. `db.js`: `recordNpsResponse({ userId, score, comment })`, `markNpsPrompted(userId)`, and a `shouldPromptNps(user)` helper — eligible iff `plan IN ('pro','business','agency')`, account is ≥30 days old (`created_at < NOW() - INTERVAL '30 days'`), and `nps_prompted_at IS NULL`.
 3. `routes/invoices.js GET /` (dashboard): pass `npsPrompt: shouldPromptNps(user)` to the template.
-4. `views/dashboard.ejs`: render a `print:hidden` Alpine modal (gated on `locals.npsPrompt`) with copy "How likely are you to recommend QuickInvoice to a friend or colleague?" + 0-10 scale pills + an optional textarea on score selection + Submit button. POSTs to `POST /nps` with `{ score, comment }` + CSRF.
+4. `views/dashboard.ejs`: render a `print:hidden` Alpine modal (gated on `locals.npsPrompt`) with copy "How likely are you to recommend DecentInvoice to a friend or colleague?" + 0-10 scale pills + an optional textarea on score selection + Submit button. POSTs to `POST /nps` with `{ score, comment }` + CSRF.
 5. New `routes/nps.js` (or extension to billing.js): `POST /nps` validates score is 0-10, persists via `recordNpsResponse` + `markNpsPrompted`. Single round-trip; flashes "Thanks for the feedback" and redirects to dashboard.
 6. New `tests/nps.test.js` (5 tests): `shouldPromptNps` returns false for free users; returns false for <30-day Pro accounts; returns true for ≥30-day Pro accounts that haven't been prompted; POST /nps persists the score + comment; POST /nps with score outside 0-10 is rejected.
 
@@ -1597,7 +1597,7 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### 58. [GROWTH] Public coupon-redemption landing page `/redeem/:code` (added 2026-04-27 audit) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM-HIGH — INTERNAL_TODO #35 shipped `allow_promotion_codes: true` on Stripe Checkout. That unlocks coupon entry on the Stripe page, but the user-facing flow today is still "click upgrade → realise you have a code → click 'Add promotion code' → paste." A dedicated `/redeem/:code` page that auto-applies the code at checkout cuts the funnel from 3 clicks to 1 and is the canonical asset every campaign URL points at — Reddit r/SaaS posts, Product Hunt launch coupons, AppSumo deals, accountant-partner #37 referrals.
 **Effort:** Low.
 **Prerequisites:** #35 `allow_promotion_codes` (done).
@@ -1606,24 +1606,24 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 1. New route `GET /redeem/:code` in `server.js` or a new `routes/redeem.js`: render `views/redeem.ejs` showing the code, a one-line description (e.g. "Get 50% off your first 3 months of Pro"), and an "Apply & checkout" CTA. Code passed to the registration-or-checkout link as `?promo=<code>`.
 2. `routes/billing.js POST /create-checkout`: read `req.body.promo` and `req.session.pending_promo`; when set, pass `discounts: [{ promotion_code: '<code>' }]` to `stripe.checkout.sessions.create()`. Stripe validates the promotion code; if invalid, error-handle gracefully (skip the discount, log).
 3. `routes/auth.js POST /register`: persist `req.session.pending_promo = req.body.promo` so a fresh signup → checkout flow carries the code through.
-4. `views/redeem.ejs`: minimal landing page (max-width 600px), QuickInvoice header, code in a monospace badge, the description, and either a "Sign up & redeem →" CTA (anon visitor) or "Apply to my account →" CTA (logged-in user). Pure copy; no DB.
+4. `views/redeem.ejs`: minimal landing page (max-width 600px), DecentInvoice header, code in a monospace badge, the description, and either a "Sign up & redeem →" CTA (anon visitor) or "Apply to my account →" CTA (logged-in user). Pure copy; no DB.
 5. New `tests/redeem.test.js` (4 tests): `GET /redeem/PH50` renders 200 with the code; `POST /create-checkout` with a `promo` body field passes `discounts: [{promotion_code:'PH50'}]` to Stripe; the session falls back to no-discount when promo is empty/invalid; sign-up flow persists `pending_promo` across the redirect-then-checkout flow.
 
-**Income relevance:** Direct conversion lift on every paid distribution channel — Master can drop a clean URL (`quickinvoice.io/redeem/PH50`) into Reddit/X/PH listings without users having to know about Stripe's "Add promotion code" affordance. Pairs with marketing #36 (listicle outreach) — every backlink can carry a unique tracking code (`/redeem/MEDIUM-LISTICLE`) so Master can attribute conversions back to the channel.
+**Income relevance:** Direct conversion lift on every paid distribution channel — Master can drop a clean URL (`decentinvoice.com/redeem/PH50`) into Reddit/X/PH listings without users having to know about Stripe's "Add promotion code" affordance. Pairs with marketing #36 (listicle outreach) — every backlink can carry a unique tracking code (`/redeem/MEDIUM-LISTICLE`) so Master can attribute conversions back to the channel.
 
 ---
 
-### 59. [GROWTH] "Invoiced via QuickInvoice" footer in invoice emails (Pro opt-out, free always-on) (added 2026-04-27 audit) [S]
+### 59. [GROWTH] "Invoiced via DecentInvoice" footer in invoice emails (Pro opt-out, free always-on) (added 2026-04-27 audit) [S]
 
-**App:** QuickInvoice (Node.js)
-**Impact:** MEDIUM-HIGH — every invoice email a freelancer sends is a marketing touchpoint inside the client's inbox. Adding a small `Invoiced via QuickInvoice — quickinvoice.io` footer to the HTML email body turns each Pro user into a passive distribution channel — same dynamic that powers Calendly's "Powered by Calendly" footer (one of the strongest viral-loop signals in SaaS history). Free users get the footer always-on (#48 already has the same idea for public invoice URLs); Pro users get a settings toggle to opt out (paying customers get the choice — same pattern as the PDF footer #5).
+**App:** DecentInvoice (Node.js)
+**Impact:** MEDIUM-HIGH — every invoice email a freelancer sends is a marketing touchpoint inside the client's inbox. Adding a small `Invoiced via DecentInvoice — decentinvoice.com` footer to the HTML email body turns each Pro user into a passive distribution channel — same dynamic that powers Calendly's "Powered by Calendly" footer (one of the strongest viral-loop signals in SaaS history). Free users get the footer always-on (#48 already has the same idea for public invoice URLs); Pro users get a settings toggle to opt out (paying customers get the choice — same pattern as the PDF footer #5).
 **Effort:** Low.
 **Prerequisites:** Email delivery (#13, done); Resend API key in production.
 
 **Sub-tasks:**
-1. `lib/email.js buildInvoiceHtml(invoice, owner)`: append a footer block at the bottom of the existing HTML body. Always render for free; render for Pro/Business/Agency only when `owner.email_footer_enabled !== false` (default true). Footer copy: `<p style="font-size:12px;color:#9ca3af;text-align:center;margin-top:24px;border-top:1px solid #e5e7eb;padding-top:12px">Invoiced via <a href="https://quickinvoice.io/?ref=email-footer" style="color:#6366f1">QuickInvoice</a></p>`. Same copy in the text fallback (`buildInvoiceText`).
+1. `lib/email.js buildInvoiceHtml(invoice, owner)`: append a footer block at the bottom of the existing HTML body. Always render for free; render for Pro/Business/Agency only when `owner.email_footer_enabled !== false` (default true). Footer copy: `<p style="font-size:12px;color:#9ca3af;text-align:center;margin-top:24px;border-top:1px solid #e5e7eb;padding-top:12px">Invoiced via <a href="https://decentinvoice.com/?ref=email-footer" style="color:#6366f1">DecentInvoice</a></p>`. Same copy in the text fallback (`buildInvoiceText`).
 2. `db/schema.sql`: idempotent — `ALTER TABLE users ADD COLUMN IF NOT EXISTS email_footer_enabled BOOLEAN DEFAULT true;`
-3. `views/settings.ejs`: Pro-only checkbox under the existing "Reply-to email" field — `Show "Invoiced via QuickInvoice" footer in client emails` defaulted ON. POSTs through the existing settings handler; `routes/billing.js POST /settings` extends the dynamic-update path to accept the boolean.
+3. `views/settings.ejs`: Pro-only checkbox under the existing "Reply-to email" field — `Show "Invoiced via DecentInvoice" footer in client emails` defaulted ON. POSTs through the existing settings handler; `routes/billing.js POST /settings` extends the dynamic-update path to accept the boolean.
 4. The existing `tests/email.test.js` already asserts on the HTML body shape — update the relevant test fixtures to also assert the footer renders for free, renders for Pro by default, and is hidden for Pro when `email_footer_enabled=false`. Three new assertions in the existing file rather than a new file.
 
 **Income relevance:** Pure organic acquisition. A typical Pro user sends 5-20 invoice emails a month; at 1-3% click-through on the footer link (calendly's measured rate), each Pro user generates 1-6 new visits/month at zero CAC. With Pro users compounding monthly, the footer becomes a top-3 acquisition channel by month 6 with no marketing spend. The opt-out is the right policy: paying users earn the choice; the friction of disabling it is high enough that >80% leave it on (industry data on default-opt-out toggles).
@@ -1632,8 +1632,8 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### 60. [GROWTH] Demo-mode dashboard at `/demo` (no signup required) (added 2026-04-27 audit) [M]
 
-**App:** QuickInvoice (Node.js)
-**Impact:** HIGH — the highest-friction conversion blocker today is "I have to register before I can see what this looks like." A demo dashboard that pre-loads 5 fake invoices in 4 statuses (draft, sent, paid, overdue) lets a visitor click around the dashboard, the invoice form, the PDF view, even the Pro upgrade flow, all without creating an account. Industry data: indie SaaS that ship a no-signup demo see 15-30% lift in the landing → register conversion rate vs. the same audience with no demo. Notion, Linear, and Figma all do this; QuickInvoice does not.
+**App:** DecentInvoice (Node.js)
+**Impact:** HIGH — the highest-friction conversion blocker today is "I have to register before I can see what this looks like." A demo dashboard that pre-loads 5 fake invoices in 4 statuses (draft, sent, paid, overdue) lets a visitor click around the dashboard, the invoice form, the PDF view, even the Pro upgrade flow, all without creating an account. Industry data: indie SaaS that ship a no-signup demo see 15-30% lift in the landing → register conversion rate vs. the same audience with no demo. Notion, Linear, and Figma all do this; DecentInvoice does not.
 **Effort:** Medium.
 **Prerequisites:** None — runs as a session-scoped fake DB layer.
 
@@ -1651,7 +1651,7 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### 61. [GROWTH] Attach invoice PDF to invoice email (added 2026-04-27 PM audit) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** HIGH — today the Pro invoice email body links to the invoice but does NOT attach the PDF. Most accounts-payable departments file the PDF, not a link, and many corporate email gateways block external links by default. As a result, a meaningful fraction of clients ignore or delay payment because they can't extract a "real" invoice from the email. Attaching the PDF directly removes this friction and matches the behaviour every other invoicing tool (FreshBooks, Bonsai, Xero) ships with by default. The Resend SDK supports attachments via the `attachments` array on `emails.send()` — server-side rendering of the PDF is the only piece missing from `lib/email.js`.
 **Effort:** Low
 **Prerequisites:** Email delivery (#13, done); Resend API key in production. Does NOT require a heavy PDF library — the existing `views/invoice-print.ejs` template plus `puppeteer-core` or the lighter-weight `playwright` headless render is sufficient. Alternative: server-side `html-pdf-node` (smaller dep tree, slower).
@@ -1663,21 +1663,21 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 4. `views/settings.ejs`: Pro-only checkbox "Attach PDF to client emails" (default ON). Stored as `attach_pdf_enabled` on users (idempotent `ALTER TABLE users ADD COLUMN IF NOT EXISTS attach_pdf_enabled BOOLEAN DEFAULT true;`).
 5. New `tests/email-attachment.test.js` (5 tests): when PDF render succeeds, attachments array is passed to Resend; when PDF render returns null (graceful), email sends without attachments; pre-existing `attach_pdf_enabled = false` skips the PDF render entirely (saves ~500ms of CPU); attach-pdf is Pro-only (free plan never attaches); attachment filename uses the invoice number.
 
-**Income relevance:** Direct payment-velocity lift. Industry data on invoice-email-with-PDF vs. link-only: PDF-attached invoices are paid 22-35% faster on average, and Net-30 collection rate improves 8-15%. Faster collection ⇒ more cha-ching emails (#30) ⇒ stronger word-of-mouth and retention. Closes the single largest "this is missing the basics" gap in QuickInvoice vs. competitors, particularly for B2B / enterprise clients.
+**Income relevance:** Direct payment-velocity lift. Industry data on invoice-email-with-PDF vs. link-only: PDF-attached invoices are paid 22-35% faster on average, and Net-30 collection rate improves 8-15%. Faster collection ⇒ more cha-ching emails (#30) ⇒ stronger word-of-mouth and retention. Closes the single largest "this is missing the basics" gap in DecentInvoice vs. competitors, particularly for B2B / enterprise clients.
 
 ---
 
 ### 62. [GROWTH] Year-end tax summary PDF + email for Pro users (added 2026-04-27 PM audit) [S]
 
-**App:** QuickInvoice (Node.js)
-**Impact:** HIGH (retention) — every January, freelancers spend 2-3 hours pulling together their full invoicing history for their accountant. A one-click "Download my Year-End Summary" PDF (and a January 5th email blast for the prior calendar year) saves them that time and makes QuickInvoice the indispensable tax-season tool. Tax season is the #1 churn-risk window (freelancers re-evaluate their stack while sitting next to their accountant); every Pro user who has the year-end summary in their inbox is much less likely to switch. Industry benchmark (Xero, FreshBooks): tax-summary email opens at 60-80% (versus product-update emails at 15-25%) and converts 5-15% of recipients into multi-year retention commits.
+**App:** DecentInvoice (Node.js)
+**Impact:** HIGH (retention) — every January, freelancers spend 2-3 hours pulling together their full invoicing history for their accountant. A one-click "Download my Year-End Summary" PDF (and a January 5th email blast for the prior calendar year) saves them that time and makes DecentInvoice the indispensable tax-season tool. Tax season is the #1 churn-risk window (freelancers re-evaluate their stack while sitting next to their accountant); every Pro user who has the year-end summary in their inbox is much less likely to switch. Industry benchmark (Xero, FreshBooks): tax-summary email opens at 60-80% (versus product-update emails at 15-25%) and converts 5-15% of recipients into multi-year retention commits.
 **Effort:** Low
 **Prerequisites:** Email delivery (#13, done) + PDF rendering (gated on #61's `lib/pdf.js`).
 
 **Sub-tasks:**
 1. `db.js`: `getYearlyInvoiceSummary(userId, year)` — single SELECT against invoices: total invoiced, total collected, outstanding, by-quarter breakdown, by-client top-10, count of paid vs. unpaid. Filters on `issue_date BETWEEN year-01-01 AND year-12-31`.
 2. New `views/tax-summary.ejs` — clean printable tax-summary template: business header (from `users.business_*`), year, summary numbers, by-quarter chart (text table — keep it dependency-free), top-10 clients with amounts, line-item-level appendix (paginated). Optimised for print + PDF export.
-3. New route `GET /tax-summary/:year` in `routes/invoices.js` (Pro-gated; default year = previous calendar year). Renders the EJS template; 200 OK; downloadable via `Content-Disposition: attachment; filename="quickinvoice-tax-summary-${year}.pdf"` when path includes `.pdf` suffix (re-uses `lib/pdf.js`).
+3. New route `GET /tax-summary/:year` in `routes/invoices.js` (Pro-gated; default year = previous calendar year). Renders the EJS template; 200 OK; downloadable via `Content-Disposition: attachment; filename="decentinvoice-tax-summary-${year}.pdf"` when path includes `.pdf` suffix (re-uses `lib/pdf.js`).
 4. New cron `jobs/year-end-summary.js`: runs once on Jan 5th at 09:00 UTC (`cron.schedule('0 9 5 1 *', ...)`); for each Pro/Business/Agency user, calls `getYearlyInvoiceSummary` for the prior calendar year and emails them the PDF. One-shot per year, idempotent via `users.tax_summary_sent_for_year` column.
 5. `views/settings.ejs`: add a "Download my year-end tax summary" button under the Pro section with a year-picker dropdown (current year - 3 to current year - 1).
 6. `db/schema.sql`: idempotent `ALTER TABLE users ADD COLUMN IF NOT EXISTS tax_summary_sent_for_year INT;`
@@ -1689,7 +1689,7 @@ The "2 months free" framing was rejected per the original audit note (mathematic
 
 ### 63. [DONE 2026-04-27 PM-2] [GROWTH] Quick-pick recent clients dropdown on invoice form (added 2026-04-27 PM audit) [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — most freelancers invoice the same 3-5 clients repeatedly. Today every new invoice requires re-typing client name, email, address from memory (or copy-pasting from the previous invoice). Adding a "Recent clients" dropdown above the client-name input (auto-populated from the last 10 distinct `client_email` values on the user's invoices) cuts the create-invoice flow from ~30 seconds to ~5 seconds for repeat clients. This is the highest-leverage activation/retention micro-feature still missing — every Pro user feels the friction multiple times per month.
 **Effort:** Very Low
 **Prerequisites:** None — pure SELECT on existing `invoices` table.
@@ -1714,7 +1714,7 @@ New `tests/recent-clients.test.js` (5 assertions): (1) DB-helper dedupe-by-lower
 
 ### 64. [GROWTH] Aging receivables report widget on dashboard (added 2026-04-27 PM audit) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM (retention + perceived professionalism) — every accounting tool from QuickBooks down has an "aging receivables" report — a grouping of outstanding invoices into 0-30 / 31-60 / 61-90 / 90+ day buckets. It's the primary view bookkeepers and finance teams use when they sit down to chase late payments. Adding a small dashboard widget rendering these 4 buckets (with totals) signals "this is a real accounting tool" to the high-intent freelancer + small-agency audience and complements the existing reminder cron (#16) by surfacing where the cron has not yet recovered cash.
 **Effort:** Low
 **Prerequisites:** None.
@@ -1725,13 +1725,13 @@ New `tests/recent-clients.test.js` (5 assertions): (1) DB-helper dedupe-by-lower
 3. `views/dashboard.ejs`: render a 4-column Tailwind grid card above the invoices table, only when any bucket > 0. Each card: bucket label ("0-30 days"), count, total amount. The 90+ bucket renders red (`bg-red-50 text-red-800`) for visual urgency.
 4. New `tests/aging-receivables.test.js` (4 tests): aggregation correctness on a fixture; widget hidden when no outstanding invoices; widget hidden for user with all-paid history; 90+ bucket gets the red styling.
 
-**Income relevance:** Indirect — signals product maturity to prospects evaluating QuickInvoice against accounting tools (FreshBooks, Wave). Bookkeepers and freelancer-CFOs look for this view; its absence reads as "amateur tool." Also a retention lever — the widget makes outstanding cash visible every login, which keeps the user engaged with chasing it (and hence engaged with the product).
+**Income relevance:** Indirect — signals product maturity to prospects evaluating DecentInvoice against accounting tools (FreshBooks, Wave). Bookkeepers and freelancer-CFOs look for this view; its absence reads as "amateur tool." Also a retention lever — the widget makes outstanding cash visible every login, which keeps the user engaged with chasing it (and hence engaged with the product).
 
 ---
 
 ### 65. [GROWTH] "Save invoice as template" + template gallery on invoice form (added 2026-04-27 PM audit) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MED-HIGH — pairs with #63 (recent-clients quick-pick) as the next layer of invoice-creation friction reduction. Users who repeat the same line items (e.g. "Monthly retainer — strategy review", "Sprint 14 dev hours · 28 × $95") save them as a named template and one-click apply on a new invoice. Reduces the create-invoice flow to one click for retainer / repeat patterns, complementing the recurring-invoice flow (#40) for users who want manual control. Different from #40: #40 auto-creates on a schedule; this lets users instantiate on-demand. Pro-feature gating gives the upgrade modal a tangible new bullet.
 **Effort:** Low
 **Prerequisites:** None.
@@ -1750,7 +1750,7 @@ New `tests/recent-clients.test.js` (5 assertions): (1) DB-helper dedupe-by-lower
 
 ### 66. [GROWTH] Auto-CC accountant on every invoice email (Pro feature) (added 2026-04-27 PM-2 audit) [XS]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MED-HIGH retention — every freelancer who works with an accountant currently forwards each invoice email to them by hand (or sets up a Gmail filter, then breaks it the next time their accountant changes email). A single "Accountant email" field in `/billing/settings` (Pro) that auto-BCCs every outgoing invoice email closes that loop. High switching cost once a Pro user has set it — uninstalling means re-rebuilding the forward chain. Zero perceived friction (the freelancer toggles it once and forgets).
 **Effort:** Very Low
 **Prerequisites:** Email delivery (#13 — DONE) is live; Resend API key activated by Master.
@@ -1768,7 +1768,7 @@ New `tests/recent-clients.test.js` (5 assertions): (1) DB-helper dedupe-by-lower
 
 ### 67. [GROWTH] Tip-on-pay toggle for invoice Pay links (Pro feature) (added 2026-04-27 PM-2 audit) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — Stripe Payment Links support an optional "Adjustable tip" parameter (`adjustable_quantity` is for line items; the tip flag is a separate `payment_link.create` field that adds a tip selector to the Pay page). For freelancers in service categories where tipping is normal (creators, designers commissioned by individuals, photographers, writers), a 5-10% opt-in tip lift on every paid invoice compounds quickly. The freelancer toggles it per-invoice or per-account; the client sees the tip selector only when enabled. Zero impact on B2B clients who don't tip.
 **Effort:** Low
 **Prerequisites:** Stripe Payment Links are already live (INTERNAL_TODO #2 — DONE).
@@ -1786,7 +1786,7 @@ New `tests/recent-clients.test.js` (5 assertions): (1) DB-helper dedupe-by-lower
 
 ### 68. [GROWTH] Customisable invoice email template (Pro feature) (added 2026-04-27 PM-2 audit) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — every Pro user currently sends the exact same boilerplate "Invoice X from Y" email body. Branding-conscious freelancers (designers, agencies, lawyers) want to control the email body's tone — formal vs. casual, with their own thank-you line, payment-terms reminder, etc. Pro feature with a tangible "your tool, your voice" appeal that resonates with the same persona who pays for #15 (custom logo/color branding).
 **Effort:** Low
 **Prerequisites:** Email delivery (#13) is DONE.
@@ -1798,19 +1798,19 @@ New `tests/recent-clients.test.js` (5 assertions): (1) DB-helper dedupe-by-lower
 4. `routes/billing.js POST /settings`: cap each template at 2000 chars. Strip raw HTML from the body template — render it as escaped text wrapped in `<p>` tags (same escapeHtml pipeline as existing invoice body). Reject if > 2000 chars or if the body contains `<script` (defence-in-depth).
 5. `tests/email.test.js`: add 4 assertions — subject template interpolation happy path; body template interpolation happy path; template with `<script>` is rejected at save time; template with unknown `{{xyz}}` placeholder leaves it literal (doesn't crash).
 
-**Income relevance:** Pro power-user retention. Branding-tier users feel the product is "theirs" rather than "QuickInvoice's." Same retention dynamic as #15 (logo + color).
+**Income relevance:** Pro power-user retention. Branding-tier users feel the product is "theirs" rather than "DecentInvoice's." Same retention dynamic as #15 (logo + color).
 
 ---
 
 ### 69. [GROWTH] Embeddable "Pay this invoice" JS widget for freelancer websites (added 2026-04-27 PM-2 audit) [M]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MED-HIGH virality — Calendly's growth was driven by the embeddable widget on every freelancer's website becoming a passive ad. Offer a `<script>` tag every Pro freelancer can paste on their site: "Pay your latest invoice" widget that fetches the most recent unpaid invoice for a slug-identified user and renders a Pay button + amount. Each embed is a passive distribution touchpoint. Compounds with #43 (public read-only invoice URL) — the widget is just a styled fetch + button on top of #43.
 **Effort:** Medium (gated on #43)
 **Prerequisites:** #43 (public read-only invoice URL `/i/:token`) — currently OPEN. #69 is gated until that ships.
 
 **Sub-tasks:**
-1. `routes/landing.js GET /embed.js`: serve a small, cached vanilla-JS file that exports `window.QuickInvoice.renderPayButton({ user_slug, container, brand_color })`. Reads the public-invoice JSON from `GET /api/i/:token/latest` (a thin public-read wrapper around #43). No dependencies — single iframe-free script.
+1. `routes/landing.js GET /embed.js`: serve a small, cached vanilla-JS file that exports `window.DecentInvoice.renderPayButton({ user_slug, container, brand_color })`. Reads the public-invoice JSON from `GET /api/i/:token/latest` (a thin public-read wrapper around #43). No dependencies — single iframe-free script.
 2. `views/settings.ejs`: Pro-gated "Embed code" section with a copy-to-clipboard button containing the user's snippet.
 3. `routes/landing.js`: `GET /api/i/:slug/latest` returns `{ amount, currency, pay_link_url, invoice_number, due_date, status }` for the most recent unpaid invoice belonging to `slug`. CORS-allow `*` because this is a fetch from any freelancer's domain.
 4. `lib/css-budget`: keep the rendered widget under 4 KB minified — power users will reject anything heavier on their site.
@@ -1822,7 +1822,7 @@ New `tests/recent-clients.test.js` (5 assertions): (1) DB-helper dedupe-by-lower
 
 ### 70. [GROWTH] Receipt PDF for paid invoices (added 2026-04-27 PM-2 audit) [S]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **Impact:** MEDIUM — once an invoice flips to `paid`, the freelancer often needs to send the client a "receipt" or "paid statement" — a separate document confirming payment was received. Today the freelancer either re-sends the same invoice with a "PAID" stamp (unprofessional) or reaches into their accounting software. Adding a `GET /invoices/:id/receipt` route that renders a styled "Receipt for INV-X — Paid in full on YYYY-MM-DD" page (HTML + print-to-PDF via the existing `invoice-print.ejs` pattern) fills that gap.
 **Effort:** Low
 **Prerequisites:** None — reuses existing print/render infra.
@@ -1841,7 +1841,7 @@ New `tests/recent-clients.test.js` (5 assertions): (1) DB-helper dedupe-by-lower
 
 ### 11. [GROWTH] [UNBLOCKED — email (#13) is live] Churn Win-Back Email Sequence [L]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **~~BLOCKED~~ UNBLOCKED (2026-04-25):** INTERNAL_TODO #13 (email delivery via Resend) shipped on 2026-04-25. Email delivery is now implemented. This task is ready to execute once `RESEND_API_KEY` is provisioned in production. The `churn_sequences` table, job, and webhook handler below can be implemented immediately.
 **Impact:** MEDIUM
 **Effort:** Low–Medium (after email is live)
@@ -1859,7 +1859,7 @@ New `tests/recent-clients.test.js` (5 assertions): (1) DB-helper dedupe-by-lower
 
 ### 12. [GROWTH] [UNBLOCKED — email (#13) is live] Monthly Revenue Summary Email to Pro Subscribers [M]
 
-**App:** QuickInvoice (Node.js)
+**App:** DecentInvoice (Node.js)
 **~~BLOCKED~~ UNBLOCKED (2026-04-25):** INTERNAL_TODO #13 (email delivery via Resend) shipped on 2026-04-25. This task is ready to execute once `RESEND_API_KEY` is provisioned in production.
 **Impact:** MEDIUM — reduces passive churn by reminding users of value received each month
 **Effort:** Low (after email is live)

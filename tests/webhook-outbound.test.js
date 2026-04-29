@@ -328,7 +328,7 @@ async function testFirePaidWebhookPostsJson() {
   assert.strictEqual(receivedHeaders.hostname, 'hooks.zapier.com');
   assert.strictEqual(receivedHeaders.path, '/hooks/catch/1/abc');
   assert.strictEqual(receivedHeaders.headers['Content-Type'], 'application/json');
-  assert.ok(receivedHeaders.headers['User-Agent'].includes('QuickInvoice'),
+  assert.ok(receivedHeaders.headers['User-Agent'].includes('DecentInvoice'),
     'User-Agent must identify the sender');
   const parsed = JSON.parse(receivedBody);
   assert.strictEqual(parsed.event, 'invoice.paid');

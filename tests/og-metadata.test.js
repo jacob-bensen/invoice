@@ -48,8 +48,8 @@ async function testDefaultsRender() {
   assert.ok(html.includes('name="twitter:card"'), 'twitter:card meta must render');
   assert.ok(html.includes('name="twitter:image"'), 'twitter:image meta must render');
   // Defaults
-  assert.ok(extractMeta(html, 'property', 'og:title').includes('QuickInvoice'),
-    'default og:title must mention QuickInvoice');
+  assert.ok(extractMeta(html, 'property', 'og:title').includes('DecentInvoice'),
+    'default og:title must mention DecentInvoice');
   assert.strictEqual(extractMeta(html, 'name', 'twitter:card'), 'summary_large_image',
     'twitter:card must be summary_large_image for big previews');
   assert.strictEqual(extractMeta(html, 'property', 'og:type'), 'website',
@@ -85,32 +85,32 @@ async function testPerPageLocalsOverride() {
 }
 
 async function testAppUrlPrefix() {
-  process.env.APP_URL = 'https://quickinvoice.io';
+  process.env.APP_URL = 'https://decentinvoice.com';
   try {
     const html = await renderHead({ ogPath: '/billing/upgrade' });
-    assert.strictEqual(extractMeta(html, 'property', 'og:url'), 'https://quickinvoice.io/billing/upgrade');
-    assert.strictEqual(extractMeta(html, 'property', 'og:image'), 'https://quickinvoice.io/og-image.png');
-    assert.strictEqual(extractMeta(html, 'name', 'twitter:image'), 'https://quickinvoice.io/og-image.png');
+    assert.strictEqual(extractMeta(html, 'property', 'og:url'), 'https://decentinvoice.com/billing/upgrade');
+    assert.strictEqual(extractMeta(html, 'property', 'og:image'), 'https://decentinvoice.com/og-image.png');
+    assert.strictEqual(extractMeta(html, 'name', 'twitter:image'), 'https://decentinvoice.com/og-image.png');
   } finally {
     delete process.env.APP_URL;
   }
 }
 
 async function testAppUrlTrailingSlashNormalised() {
-  process.env.APP_URL = 'https://quickinvoice.io/';
+  process.env.APP_URL = 'https://decentinvoice.com/';
   try {
     const html = await renderHead({ ogPath: '/' });
     const url = extractMeta(html, 'property', 'og:url');
     assert.ok(!url.includes('//', 'https://'.length),
       'trailing slash on APP_URL must not produce a double slash in og:url');
-    assert.strictEqual(url, 'https://quickinvoice.io/');
+    assert.strictEqual(url, 'https://decentinvoice.com/');
   } finally {
     delete process.env.APP_URL;
   }
 }
 
 async function testAbsoluteOgImageNotRewritten() {
-  process.env.APP_URL = 'https://quickinvoice.io';
+  process.env.APP_URL = 'https://decentinvoice.com';
   try {
     const html = await renderHead({ ogImage: 'https://cdn.example.com/custom-og.png' });
     assert.strictEqual(extractMeta(html, 'property', 'og:image'), 'https://cdn.example.com/custom-og.png',
@@ -179,8 +179,8 @@ async function testIndexRouteSetsOgLocals() {
   // Re-render index.ejs with the same locals server.js passes for /
   delete process.env.APP_URL;
   const html = await ejs.renderFile(path.join(VIEWS, 'index.ejs'), {
-    title: 'QuickInvoice — Get Paid Faster',
-    ogTitle: 'QuickInvoice — Professional invoices in 60 seconds',
+    title: 'DecentInvoice — Get Paid Faster',
+    ogTitle: 'DecentInvoice — Professional invoices in 60 seconds',
     ogDescription: 'Send invoices freelancers can pay in one click. Free to start, $12/mo for Pro. 7-day free trial, no credit card.',
     ogPath: '/',
     user: null
@@ -198,7 +198,7 @@ async function testPricingRouteSetsOgLocals() {
     flash: null,
     user: null,
     csrfToken: 'tkn',
-    ogTitle: 'QuickInvoice Pro — Unlimited invoices, payment links, $12/mo',
+    ogTitle: 'DecentInvoice Pro — Unlimited invoices, payment links, $12/mo',
     ogDescription: 'Upgrade to Pro for unlimited invoices, Stripe payment links, automated reminders, and custom branding. 7-day free trial, no credit card.',
     ogPath: '/billing/upgrade'
   }, { views: [VIEWS] });

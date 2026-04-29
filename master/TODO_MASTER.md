@@ -62,8 +62,8 @@ In Stripe Dashboard → Webhooks → Add endpoint:
 - URL: `https://yourdomain.com/api/stripe/webhook`
 - Events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `payment_link.payment_completed`
 
-## 9. Confirm QuickInvoice webhook covers Payment Link events (added 2026-04-23)
-QuickInvoice's existing Stripe webhook at `POST /billing/webhook` is already subscribed to `checkout.session.completed` (used for Pro subscriptions). The new invoice Payment Link feature re-uses this same event type, distinguished by `session.mode === 'payment'` with a `session.payment_link` ID. **No new event subscription needed** — just verify after deploy that the endpoint shows `checkout.session.completed` events and that a test invoice Payment Link payment flips the invoice to `paid` in the DB.
+## 9. Confirm DecentInvoice webhook covers Payment Link events (added 2026-04-23)
+DecentInvoice's existing Stripe webhook at `POST /billing/webhook` is already subscribed to `checkout.session.completed` (used for Pro subscriptions). The new invoice Payment Link feature re-uses this same event type, distinguished by `session.mode === 'payment'` with a `session.payment_link` ID. **No new event subscription needed** — just verify after deploy that the endpoint shows `checkout.session.completed` events and that a test invoice Payment Link payment flips the invoice to `paid` in the DB.
 
 If you want to harden against network glitches, also subscribe the endpoint to `payment_intent.succeeded` (current code ignores it; future hardening can use it as a fallback).
 
@@ -71,7 +71,7 @@ If you want to harden against network glitches, also subscribe the endpoint to `
 The invoice Payment Links feature adds two columns. `db/schema.sql` includes idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements, so a fresh `psql -f db/schema.sql` run against production is safe and a no-op on already-migrated DBs.
 
 ## 11. Create Stripe annual Pro price and set env var (added 2026-04-23)
-The new annual billing cycle (**$99/year**) is fully implemented on the QuickInvoice side (UI toggle on pricing, settings, and the upgrade modal; `billing_cycle` flows through `POST /billing/create-checkout`). It requires one human action to activate:
+The new annual billing cycle (**$99/year**) is fully implemented on the DecentInvoice side (UI toggle on pricing, settings, and the upgrade modal; `billing_cycle` flows through `POST /billing/create-checkout`). It requires one human action to activate:
 
 1. In the Stripe Dashboard, open the existing **Pro** product and add a second recurring price: **$99 / year**. Copy the new `price_...` ID.
 2. Set the env var on the deployed app:
@@ -85,7 +85,7 @@ The new annual billing cycle (**$99/year**) is fully implemented on the QuickInv
 The existing `checkout.session.completed` and `customer.subscription.updated` webhook handlers already work for annual subscriptions — no webhook change needed.
 
 ## 12. Enable Stripe Smart Retries + Dunning Emails (added 2026-04-23)
-The QuickInvoice code for Stripe Dunning is now live (`customer.subscription.updated` webhook now tracks past_due/paused, dashboard renders a dismissible "Update payment method" banner that deep-links to the Customer Portal). Activating the recovery flow requires three human actions in the Stripe Dashboard on the live account:
+The DecentInvoice code for Stripe Dunning is now live (`customer.subscription.updated` webhook now tracks past_due/paused, dashboard renders a dismissible "Update payment method" banner that deep-links to the Customer Portal). Activating the recovery flow requires three human actions in the Stripe Dashboard on the live account:
 
 1. **Settings → Billing → Subscriptions and emails → Smart Retries:** toggle ON. Accept the default schedule (retries over ~14 days) or customise.
 2. **Settings → Billing → Subscriptions and emails → Emails to customers:** enable "Email customers for failed payments" and "Send emails about expiring cards". These are Stripe-sent dunning emails — no code needed on our side.
@@ -98,7 +98,7 @@ psql $DATABASE_URL -f db/schema.sql
 
 **Verification:** create a test subscription, use Stripe's test card `4000 0000 0000 0341` (successful for subscription creation, fails on first renewal) to simulate a past_due state, and confirm the dashboard renders the red banner with an "Update payment method →" button that opens the Stripe Customer Portal.
 
-## 14. QuickInvoice: idempotent migration for `webhook_url` column (added 2026-04-23)
+## 14. DecentInvoice: idempotent migration for `webhook_url` column (added 2026-04-23)
 The new Zapier outbound-webhook feature (INTERNAL_TODO #7) adds a single nullable `webhook_url TEXT` column to `users`. `db/schema.sql` includes an idempotent `ALTER TABLE users ADD COLUMN IF NOT EXISTS webhook_url TEXT;` statement, so:
 
 ```bash
@@ -111,7 +111,7 @@ is safe to run against production (no-op on already-migrated DBs). No env var, n
 
 ---
 
-## 15. QuickInvoice: submit sitemap to Google Search Console (added 2026-04-23)
+## 15. DecentInvoice: submit sitemap to Google Search Console (added 2026-04-23)
 The SEO niche landing pages feature (INTERNAL_TODO #8) is now live at:
 - `/invoice-template/freelance-designer`
 - `/invoice-template/freelance-developer`
@@ -161,7 +161,7 @@ A new daily scheduler runs at **08:00 UTC** (`@Scheduled(cron = "0 0 8 * * *")`)
 **Action:**
 1. Create a hunter account at producthunt.com (if not already done).
 2. Prepare the listing:
-   - **Name:** QuickInvoice
+   - **Name:** DecentInvoice
    - **Tagline:** "Professional invoices with Stripe payment links — in under a minute"
    - **Description:** 2–3 sentences about the pain (chasing payments), the solution (one-click invoice → client pays via Stripe), and the price (free to start, $12/mo for Pro).
    - **Gallery:** 3–5 screenshots: landing page, invoice editor, invoice with Pay Now button, dashboard stats, pricing page.
@@ -175,9 +175,9 @@ A new daily scheduler runs at **08:00 UTC** (`@Scheduled(cron = "0 0 8 * * *")`)
 
 **Impact:** MEDIUM-HIGH — directory listings drive passive, evergreen organic traffic and backlinks that improve SEO; each listing takes 15–30 minutes
 **Action:** Create consistent listings on each of the following. Use the same description, screenshots, and feature list for each. Category: "Invoicing Software" or "Freelancer Tools."
-- **G2.com** (g2.com/products/new) — highest domain authority; reviews from real users will appear in Google search results for "QuickInvoice reviews"
+- **G2.com** (g2.com/products/new) — highest domain authority; reviews from real users will appear in Google search results for "DecentInvoice reviews"
 - **Capterra** (capterra.com/vendors) — strong for B2B SaaS discovery
-- **AlternativeTo** (alternativeto.net/add-software) — lists QuickInvoice as an alternative to FreshBooks, Wave, Bonsai; captures high-intent comparison traffic
+- **AlternativeTo** (alternativeto.net/add-software) — lists DecentInvoice as an alternative to FreshBooks, Wave, Bonsai; captures high-intent comparison traffic
 - **GetApp** (getapp.com — same vendor portal as Capterra)
 - **SaaSHub** (saashub.com/add) — frequented by developers and indie makers
 - **Indie Hackers Products** (indiehackers.com/products/new) — maker community with high conversion intent
@@ -193,7 +193,7 @@ A new daily scheduler runs at **08:00 UTC** (`@Scheduled(cron = "0 0 8 * * *")`)
 - **r/freelance** (300k+ members): "I got tired of chasing payments so I built a tool that auto-sends Stripe payment links when you mark an invoice sent — free to try"
 - **r/webdev**: "Built a no-nonsense invoicing tool for developers doing freelance work — payment links, PDF export, reminders"
 - **r/Entrepreneur**: "Zero to $X MRR in N weeks building an invoicing SaaS — here's what's working"
-- **r/SideProject**: "Show HN-style: QuickInvoice — freelancer invoicing with built-in Stripe payment collection"
+- **r/SideProject**: "Show HN-style: DecentInvoice — freelancer invoicing with built-in Stripe payment collection"
 - **Facebook group: Freelancers Union** — community post with a screenshot of a paid invoice notification
 - **Indie Hackers** — post a "Milestone" update once you hit first paid subscriber, linking to the product
 
@@ -204,13 +204,13 @@ A new daily scheduler runs at **08:00 UTC** (`@Scheduled(cron = "0 0 8 * * *")`)
 **Impact:** MEDIUM — video on the landing page increases conversion by 20–30% on average; a screen recording showing "invoice created → client pays → dashboard updates" is the fastest way to communicate value
 **Action:**
 1. Use Loom (loom.com, free tier) to record a 60-second screen walkthrough:
-   - 0–10s: Landing page intro ("Here's how QuickInvoice works")
+   - 0–10s: Landing page intro ("Here's how DecentInvoice works")
    - 10–30s: Create a new invoice with one line item, set due date, mark as Sent
    - 30–45s: Show the auto-generated Stripe Payment Link; open it as the "client" in an incognito window
    - 45–60s: Return to dashboard — show invoice flipped to Paid and the revenue stat updated
 2. Download the MP4 from Loom.
 3. Host it on the landing page (`views/index.ejs`) above the feature grid — embed as `<video autoplay muted loop playsinline>` (silent autoplay) with a "▶ Watch demo" click-to-unmute overlay.
-4. Share the same video on Twitter/X, LinkedIn, and as a YouTube short titled "Get paid in 30 seconds — QuickInvoice."
+4. Share the same video on Twitter/X, LinkedIn, and as a YouTube short titled "Get paid in 30 seconds — DecentInvoice."
 
 ---
 
@@ -218,7 +218,7 @@ A new daily scheduler runs at **08:00 UTC** (`@Scheduled(cron = "0 0 8 * * *")`)
 
 **Impact:** MEDIUM — required prerequisite for dev task #17 (Google OAuth signup); without the OAuth client credentials the code cannot be activated
 **Action:**
-1. Go to console.cloud.google.com → Create a new project named "QuickInvoice".
+1. Go to console.cloud.google.com → Create a new project named "DecentInvoice".
 2. Enable "Google+ API" (or "People API").
 3. Credentials → Create OAuth 2.0 Client ID:
    - Application type: Web
@@ -235,9 +235,9 @@ A new daily scheduler runs at **08:00 UTC** (`@Scheduled(cron = "0 0 8 * * *")`)
 
 ### 17. [MARKETING] Tweet / LinkedIn Content Series (Invoicing Tips)
 
-**Impact:** MEDIUM — consistent content in the freelancer space builds an audience that converts to users over 4–8 weeks; positions QuickInvoice as a knowledgeable resource, not just an ad
+**Impact:** MEDIUM — consistent content in the freelancer space builds an audience that converts to users over 4–8 weeks; positions DecentInvoice as a knowledgeable resource, not just an ad
 **Action:** Post one piece of content per week for 6 weeks. Examples:
-- "5 invoicing mistakes that delay your payment (and how to fix them)" — thread, end with a link to QuickInvoice
+- "5 invoicing mistakes that delay your payment (and how to fix them)" — thread, end with a link to DecentInvoice
 - "How to write an invoice payment terms clause that actually gets paid" — tip thread
 - "I analyzed 1,000 freelancer invoices. Here's what separates those paid on time vs. 30 days late."
 - "Free invoice template for [web designers / photographers / consultants]" — link to the niche landing page (after SEO pages are live, dev task #8)
@@ -252,13 +252,13 @@ A new daily scheduler runs at **08:00 UTC** (`@Scheduled(cron = "0 0 8 * * *")`)
 **Action:**
 1. Sign up for **Rewardful** (rewardful.com, $49/mo Starter — free 14-day trial). It integrates directly with Stripe and tracks affiliate-referred checkouts automatically via a UTM parameter.
 2. Set commission to **25% recurring** (this is the standard for SaaS affiliate programs at this price point; at $12/mo Pro, an affiliate earns $3/mo per referral indefinitely — a strong enough incentive for micro-influencers).
-3. Create a public affiliate landing page at `/affiliates` on the site (or use Rewardful's hosted page). Copy: "Earn 25% recurring revenue for every freelancer you refer to QuickInvoice. Most affiliates earn $50–$500/mo."
+3. Create a public affiliate landing page at `/affiliates` on the site (or use Rewardful's hosted page). Copy: "Earn 25% recurring revenue for every freelancer you refer to DecentInvoice. Most affiliates earn $50–$500/mo."
 4. Reach out directly to 10 target affiliates with a templated email. Prioritize:
    - **Freelancer newsletters:** Freelance Weekly (freelanceweekly.email), Swipe Files, The Freelance Folder, Elna Cain's freelance writing community
    - **YouTube channels:** search "freelance invoicing tutorial" — any channel with 5k+ views per video is worth a pitch
    - **Indie Hacker / maker blogs:** writers who review SaaS tools in the productivity / freelance space
    - **Template marketplaces:** Notion template creators who serve freelancers — they can add a "recommended tools" section
-5. Pitch email subject: "Earn recurring revenue recommending QuickInvoice to your audience — 25% lifetime commission."
+5. Pitch email subject: "Earn recurring revenue recommending DecentInvoice to your audience — 25% lifetime commission."
 6. Share the affiliate dashboard link in the email so they can see real-time conversions from day one.
 
 ---
@@ -269,7 +269,7 @@ A new daily scheduler runs at **08:00 UTC** (`@Scheduled(cron = "0 0 8 * * *")`)
 **Action:**
 1. Wait until the product is fully deployed and the 7-day free trial (#19 in INTERNAL_TODO) is live — the trial dramatically reduces the bounce rate from HN visitors.
 2. Write the HN post:
-   - **Title:** `Show HN: QuickInvoice – freelancer invoicing with Stripe payment links and auto-reminders`
+   - **Title:** `Show HN: DecentInvoice – freelancer invoicing with Stripe payment links and auto-reminders`
    - **Body (first comment, posted immediately after submission):** 2–3 short paragraphs. Explain the pain (freelancers spend hours chasing payments), what makes it different (the invoice IS the payment page — clients click Pay and it's done via Stripe), and the pricing model (free to start, $12/mo for Pro, 7-day free trial). End with: "Happy to answer questions about the tech stack (Node.js + Stripe + PostgreSQL) or the product decisions."
 3. Post on a **Tuesday or Wednesday** between **6 AM and 9 AM EST** — this is the HN sweet spot for visibility before the US workday rush.
 4. Do NOT ask friends to upvote (HN penalizes coordinated voting). Do respond to every comment within the first 2 hours — engagement velocity matters for ranking.
@@ -283,9 +283,9 @@ A new daily scheduler runs at **08:00 UTC** (`@Scheduled(cron = "0 0 8 * * *")`)
 **Action:** Draft a short outreach email (under 100 words) and send to each of the following. Use a personal, non-promotional tone — you're a maker sharing a tool, not pitching an ad.
 
 **Email template:**
-> Subject: Tool you might want to share with your readers — QuickInvoice
+> Subject: Tool you might want to share with your readers — DecentInvoice
 >
-> Hi [Name], I built QuickInvoice (quickinvoice.io) for freelancers who are tired of chasing payments. When you mark an invoice as Sent, it automatically creates a Stripe Payment Link so clients pay in one click — no login required. Free to start, $12/mo for Pro features. Thought your readers might find it useful. Happy to give you a free Pro account to try it out. No strings attached.
+> Hi [Name], I built DecentInvoice (decentinvoice.com) for freelancers who are tired of chasing payments. When you mark an invoice as Sent, it automatically creates a Stripe Payment Link so clients pay in one click — no login required. Free to start, $12/mo for Pro features. Thought your readers might find it useful. Happy to give you a free Pro account to try it out. No strings attached.
 
 **Target publications (send one at a time, track opens):**
 - **Freelance Weekly** (freelanceweekly.email) — 15,000+ subscribers, freelancer tool roundups every issue
@@ -303,7 +303,7 @@ Track replies in a spreadsheet. Follow up once if no reply after 7 days.
 
 **Impact:** MEDIUM-HIGH — the social proof section (dev task #20 in INTERNAL_TODO) is built with placeholder testimonials; replacing them with real quotes from actual users drives a 10–20% conversion lift; this is a pure copy task
 **Action:**
-1. After the first 10 Pro signups, email each user: "We'd love to feature your experience on our site — would you share one sentence about how QuickInvoice has helped you? We'll credit you by first name and role."
+1. After the first 10 Pro signups, email each user: "We'd love to feature your experience on our site — would you share one sentence about how DecentInvoice has helped you? We'll credit you by first name and role."
 2. Collect 3 quotes. Requirements for each: specific (mentions a concrete outcome like "paid on time", "stopped chasing payments"), short (1–2 sentences), authentic (no marketing buzzwords).
 3. Replace the placeholder testimonials in `views/index.ejs` (marked with `<!-- MASTER: update the count and replace placeholder testimonials -->`) with the real quotes, names, and roles.
 4. Update the user count number (currently `500+` placeholder) to match actual signups rounded down to the nearest 50. Keep updating this number monthly — social proof compounds as the number grows.
@@ -315,7 +315,7 @@ Track replies in a spreadsheet. Follow up once if no reply after 7 days.
 **Impact:** HIGH — AppSumo has 1M+ deal-seeking subscribers; a well-structured lifetime deal (e.g. $69 once → lifetime Pro access capped at 2,000 invoices/mo) can generate $10,000–50,000 in a single week and creates an instant user base to collect testimonials, bug reports, and referrals; AppSumo customers churn at near-zero rates (they've already paid) and become vocal advocates
 **Action:**
 1. Apply at **appsumo.com/partners** (the "List your product" form). Category: "Business & Productivity" → "Invoicing & Billing."
-2. In the application, emphasise: Stripe Payment Links (unique vs. most competitors), annual billing option, Zapier webhook, PDF export, and the roadmap (recurring invoices coming to QuickInvoice).
+2. In the application, emphasise: Stripe Payment Links (unique vs. most competitors), annual billing option, Zapier webhook, PDF export, and the roadmap (recurring invoices coming to DecentInvoice).
 3. Proposed deal structure: **$69 one-time** → Lifetime Pro access (unlimited invoices, clients, payment links, custom branding, Zapier webhook). AppSumo typically takes 25–50% of revenue; structure the deal so you net at least $35/LTD customer. At 500 sales that's $17,500–35,000 upfront.
 4. Include 5 screenshots: landing page, invoice editor with line items, invoice with Pay Now button, payment dashboard stats, settings with Zapier webhook.
 5. **Prerequisite:** Product must be live with a real domain, functional payment flow, and at least 5 real (non-test) user signups to be accepted by AppSumo's review team. Time the application after Product Hunt launch (#12 above) to show traction.
@@ -323,13 +323,13 @@ Track replies in a spreadsheet. Follow up once if no reply after 7 days.
 
 ---
 
-### 23. [MARKETING] Submit QuickInvoice to Stripe App Marketplace
+### 23. [MARKETING] Submit DecentInvoice to Stripe App Marketplace
 
-**Impact:** HIGH — Stripe's App Marketplace surfaces tools directly to existing Stripe merchants who are already paying with Stripe; the target persona (freelancers and small agencies using Stripe) is a perfect zero-CAC match; a listing puts QuickInvoice in front of millions of Stripe users at the moment they're looking for invoicing tools
+**Impact:** HIGH — Stripe's App Marketplace surfaces tools directly to existing Stripe merchants who are already paying with Stripe; the target persona (freelancers and small agencies using Stripe) is a perfect zero-CAC match; a listing puts DecentInvoice in front of millions of Stripe users at the moment they're looking for invoicing tools
 **Action:**
 1. Apply at **stripe.com/app-marketplace** → "List your app." Category: Invoicing.
 2. Prepare the listing:
-   - **App name:** QuickInvoice
+   - **App name:** DecentInvoice
    - **Tagline:** "Professional invoices with built-in Stripe Payment Links — for freelancers"
    - **Description:** 2–3 sentences. Emphasise: creates Stripe Payment Links automatically when you send an invoice, clients pay in one click, no login required, status auto-updates to Paid via webhook.
    - **Screenshots:** 3–5 images covering the invoice editor, the Pay Now button on an invoice, and the dashboard stats.
@@ -339,20 +339,20 @@ Track replies in a spreadsheet. Follow up once if no reply after 7 days.
 
 ---
 
-### 24. [MARKETING] Submit QuickInvoice as a Native Zapier App (Zapier Marketplace)
+### 24. [MARKETING] Submit DecentInvoice as a Native Zapier App (Zapier Marketplace)
 
-**Impact:** MEDIUM-HIGH — Zapier has 3M+ users who actively search for new app integrations; a native Zapier app listing (separate from the outbound webhook feature in INTERNAL_TODO #7) makes QuickInvoice discoverable inside the Zapier UI under "Invoicing" and puts it in front of exactly the power users most likely to upgrade to Pro; it also enables pre-built Zap templates ("When Stripe payment received → Create QuickInvoice invoice") that appear in Google search results
+**Impact:** MEDIUM-HIGH — Zapier has 3M+ users who actively search for new app integrations; a native Zapier app listing (separate from the outbound webhook feature in INTERNAL_TODO #7) makes DecentInvoice discoverable inside the Zapier UI under "Invoicing" and puts it in front of exactly the power users most likely to upgrade to Pro; it also enables pre-built Zap templates ("When Stripe payment received → Create DecentInvoice invoice") that appear in Google search results
 **Action:**
 1. Create a Zapier developer account at **developer.zapier.com** (free).
-2. Use the Zapier CLI to scaffold a new integration: `npm install -g zapier-platform-cli && zapier init quickinvoice`. Implement at minimum:
+2. Use the Zapier CLI to scaffold a new integration: `npm install -g zapier-platform-cli && zapier init decentinvoice`. Implement at minimum:
    - **Trigger: "Invoice Paid"** — polls `GET /api/invoices?status=paid&since=` or uses the existing outbound webhook as a REST Hook trigger. The outbound webhook (INTERNAL_TODO #7) already sends the correct JSON payload — this maps directly to a Zapier REST hook.
    - **Action: "Create Invoice"** — POSTs to `POST /invoices/new` with client name, line items, and due date. This requires an API-key auth flow (add `GET /auth/api-key` endpoint that returns the session user's API key stored in the `users` table).
 3. Write 3 Zap templates to submit alongside the integration:
-   - "When an invoice is paid in QuickInvoice → Add a row to Google Sheets"
-   - "When a new client is added in QuickInvoice → Add contact to Mailchimp"
-   - "When an invoice is paid in QuickInvoice → Post a message to Slack"
+   - "When an invoice is paid in DecentInvoice → Add a row to Google Sheets"
+   - "When a new client is added in DecentInvoice → Add contact to Mailchimp"
+   - "When an invoice is paid in DecentInvoice → Post a message to Slack"
 4. Submit for Zapier review (typically 2–6 weeks for public listing approval).
-5. **Code note:** this requires a small API key auth system in QuickInvoice (`ALTER TABLE users ADD COLUMN api_key VARCHAR(64) UNIQUE`, generated on first `/settings` load). Flag to the autonomous team to implement as a prerequisite.
+5. **Code note:** this requires a small API key auth system in DecentInvoice (`ALTER TABLE users ADD COLUMN api_key VARCHAR(64) UNIQUE`, generated on first `/settings` load). Flag to the autonomous team to implement as a prerequisite.
 
 ---
 
@@ -362,22 +362,22 @@ Track replies in a spreadsheet. Follow up once if no reply after 7 days.
 **Action:**
 1. Build a prospect list of 100–200 small creative agencies and independent studio owners using **LinkedIn Sales Navigator** (7-day free trial) or **Hunter.io** (free tier, 25 searches/mo). Search criteria: "Creative Director", "Studio Owner", "Agency Principal" with 2–15 employees, in English-speaking markets (US, CA, UK, AU).
 2. Write a 3-email sequence (use a tool like Instantly.ai or Lemlist, ~$30–50/mo):
-   - **Email 1 (Day 0):** Subject: "How [Agency Name] invoices their clients." Body (60 words max): introduce QuickInvoice, 1 sentence on the team-seat feature ("manage invoicing for your whole team from one account"), free trial CTA.
+   - **Email 1 (Day 0):** Subject: "How [Agency Name] invoices their clients." Body (60 words max): introduce DecentInvoice, 1 sentence on the team-seat feature ("manage invoicing for your whole team from one account"), free trial CTA.
    - **Email 2 (Day 4):** Subject: "One thing freelance agencies hate about invoicing." Body: 1–2 pain points (chasing payments, re-entering client details for retainers), link to the `/invoice-generator` landing page.
    - **Email 3 (Day 9):** Subject: "Last check-in — free agency account." Body: 2-sentence "no hard feelings" close + offer a 30-day free Agency trial with Stripe coupon code (create a 100%-off-first-month coupon in Stripe Dashboard).
 3. Track: open rate target >40%, reply rate target >5%, trial signup rate target >2%. At 200 prospects and 2% conversion that's 4 Agency accounts = $196 MRR from one afternoon of setup.
-4. **Prerequisite for team-seat pitch:** INTERNAL_TODO #9 (InvoiceFlow team seats) must be complete before this campaign goes out, or the Agency plan pitch must be limited to QuickInvoice's existing multi-user-friendly features (shared billing, unlimited invoices, Zapier webhook).
+4. **Prerequisite for team-seat pitch:** INTERNAL_TODO #9 (InvoiceFlow team seats) must be complete before this campaign goes out, or the Agency plan pitch must be limited to DecentInvoice's existing multi-user-friendly features (shared billing, unlimited invoices, Zapier webhook).
 
 ---
 
 ### 26. [MARKETING] Request G2 and Capterra Reviews from First Pro Users
 
-**Impact:** HIGH — G2 and Capterra reviews appear directly in Google SERPs for queries like "QuickInvoice reviews" and "best invoicing software for freelancers"; a product with 0 reviews is invisible in category comparisons; even 5 genuine reviews can move a SaaS product from page 3 to the first page of G2's category ranking; this is a zero-cost action that compounds indefinitely (reviews attract more reviews)
+**Impact:** HIGH — G2 and Capterra reviews appear directly in Google SERPs for queries like "DecentInvoice reviews" and "best invoicing software for freelancers"; a product with 0 reviews is invisible in category comparisons; even 5 genuine reviews can move a SaaS product from page 3 to the first page of G2's category ranking; this is a zero-cost action that compounds indefinitely (reviews attract more reviews)
 **Action:**
 1. After the first 10 Pro or Business plan signups, email each user directly from a personal address (not a no-reply). Keep it under 60 words:
    > Subject: Quick favour — 2 minutes on G2?
    >
-   > Hi [first name], I'm the founder of QuickInvoice. You've been using it for [N] days — I'd love to hear what you think. Would you mind leaving a 2-sentence review on G2? It takes about 2 minutes and helps other freelancers find the tool. Here's the link: [G2 review link]. Totally optional — just thought I'd ask.
+   > Hi [first name], I'm the founder of DecentInvoice. You've been using it for [N] days — I'd love to hear what you think. Would you mind leaving a 2-sentence review on G2? It takes about 2 minutes and helps other freelancers find the tool. Here's the link: [G2 review link]. Totally optional — just thought I'd ask.
 2. Include a G2 review link (your product's G2 page — created as part of item #13 above). Do the same for Capterra and AlternativeTo (3 separate outreach emails, spaced 3 days apart, to avoid survey fatigue).
 3. Offer a genuine incentive if helpful: "I'll extend your subscription by 1 month as a thank-you" (create a Stripe coupon for `100% off once` and include a redemption link in the follow-up after they post the review).
 4. Track review counts on a monthly basis. Target: 5 reviews within 60 days of first 10 Pro signups. Update directory listings (#13) with the new review count as it grows.
@@ -388,9 +388,9 @@ Track replies in a spreadsheet. Follow up once if no reply after 7 days.
 
 **Impact:** MEDIUM-HIGH — a downloadable free invoice template PDF serves two purposes: (1) it intercepts the high-intent "invoice template for freelance designer/developer/etc." search query that the niche landing pages (#8) are already targeting, converting organic visitors who aren't ready to sign up yet; (2) it builds an email list for future drip sequences; every user who downloads a template and later becomes a paid subscriber arrived at near-zero CAC
 **Action:**
-1. Create a professional, cleanly designed PDF invoice template for each niche (minimum: one generic + one per the 6 existing niche pages). Tools: Canva (free), Figma, or Google Docs → PDF export. The template should include: the freelancer's name/logo placeholder, client details section, line items table, total, payment terms, and a subtle "Made with QuickInvoice — quickinvoice.io" footer.
+1. Create a professional, cleanly designed PDF invoice template for each niche (minimum: one generic + one per the 6 existing niche pages). Tools: Canva (free), Figma, or Google Docs → PDF export. The template should include: the freelancer's name/logo placeholder, client details section, line items table, total, payment terms, and a subtle "Made with DecentInvoice — decentinvoice.com" footer.
 2. Add a "Download free template" email capture form to each niche landing page (rendered by `views/partials/lp-niche.ejs`). Gate the download behind a first-name + email form. On submit: (a) add the email to a Resend audience list or a simple CSV/Airtable log; (b) redirect to the PDF file URL or email it automatically. The dev team can implement the form + Resend audience add; the PDF itself is a Master asset.
-3. Use the downloaded-user email list for a 3-email onboarding drip: Day 0 ("Here's your template"), Day 3 ("Here's how to make clients pay faster"), Day 7 ("QuickInvoice does all of this automatically — free to start").
+3. Use the downloaded-user email list for a 3-email onboarding drip: Day 0 ("Here's your template"), Day 3 ("Here's how to make clients pay faster"), Day 7 ("DecentInvoice does all of this automatically — free to start").
 4. **Dev prerequisite:** the autonomous team will need a `POST /landing/template-download` route that accepts `email + niche`, adds the email to a `template_leads` DB table (simple: `id, email, niche, created_at`), and either serves a redirect to the PDF asset URL or triggers a Resend send. Small [S] task — flag to the autonomous team as a companion to #25 (Expand SEO niche pages).
 
 ---
@@ -406,7 +406,7 @@ Track replies in a spreadsheet. Follow up once if no reply after 7 days.
 - **Indie Hackers community chat** — already captured for the IH product listing (#13), but also post in the `#growth` and `#tools` channels of the IH Discord.
 - **Remote Work Hub** (various Slack groups under this name) — remote workers include a high proportion of freelancers.
 
-**Tone guide:** Never post a bare product link. Lead with the problem ("Tired of clients saying they never received the invoice?"), describe the solution briefly (2 sentences), and end with "I built QuickInvoice to fix this — happy to give anyone here a free Pro month to try it." The Pro-month offer costs $12 and acquires a user whose LTV is $60–$120.
+**Tone guide:** Never post a bare product link. Lead with the problem ("Tired of clients saying they never received the invoice?"), describe the solution briefly (2 sentences), and end with "I built DecentInvoice to fix this — happy to give anyone here a free Pro month to try it." The Pro-month offer costs $12 and acquires a user whose LTV is $60–$120.
 
 **Timing:** Post Tuesday–Thursday between 9 AM and 1 PM ET for maximum active user overlap.
 
@@ -417,8 +417,8 @@ Track replies in a spreadsheet. Follow up once if no reply after 7 days.
 **Impact:** MEDIUM (operational) — without analytics there is no way to measure whether any of the distribution actions above (#12–#28) are driving traffic or signups; Plausible is privacy-friendly, cookie-less (no GDPR consent banner required per TODO_MASTER L6), and costs $9/mo; the dev team's code integration (INTERNAL_TODO #34) requires the `PLAUSIBLE_DOMAIN` env var from this step
 **Action:**
 1. Sign up at **plausible.io** ($9/mo Starter, or start with the 30-day free trial — no credit card required for the trial).
-2. Add your domain (e.g. `quickinvoice.io`) as a new site in the Plausible dashboard. Plausible will show you the one-line JS snippet — pass the domain name to the autonomous team as `PLAUSIBLE_DOMAIN=quickinvoice.io` so they can complete INTERNAL_TODO #34.
-3. Set `PLAUSIBLE_DOMAIN=quickinvoice.io` as an env var on the deployed app. The code integration is already handled by INTERNAL_TODO #34 — once the env var is set, analytics start immediately on next deploy.
+2. Add your domain (e.g. `decentinvoice.com`) as a new site in the Plausible dashboard. Plausible will show you the one-line JS snippet — pass the domain name to the autonomous team as `PLAUSIBLE_DOMAIN=decentinvoice.com` so they can complete INTERNAL_TODO #34.
+3. Set `PLAUSIBLE_DOMAIN=decentinvoice.com` as an env var on the deployed app. The code integration is already handled by INTERNAL_TODO #34 — once the env var is set, analytics start immediately on next deploy.
 4. In Plausible dashboard → Goals, create the following custom goals (these correspond to the `plausible('EventName')` calls INTERNAL_TODO #34 adds to the views): `Signup`, `UpgradeStart`, `TrialStart`. These will let you see the signup funnel and attribute signups to specific traffic sources.
 5. **Optional:** connect Google Search Console to Plausible (Settings → Integrations) so keyword-level data from your niche landing pages (#8) flows into the same dashboard.
 
@@ -433,7 +433,7 @@ Track replies in a spreadsheet. Follow up once if no reply after 7 days.
 3. Jurisdictions: select the countries/states where you want automatic tax collection. Recommended starter set: US (all states), Canada (all provinces), UK, Australia, EU (all member states).
 4. Once green, set `STRIPE_AUTOMATIC_TAX_ENABLED=true` on the production env. The next checkout session picks it up automatically.
 5. **Pricing:** Stripe Tax is $0.50 per tax-calculated transaction (or 0.5%). Below 250 transactions/month it's free under the Stripe Tax starter plan. At any reasonable scale this is worth orders of magnitude more in unblocked EU revenue than the fee.
-6. **Verification:** open `/billing/upgrade` from a UK IP (or use a UK billing address in test mode). Stripe Checkout should show the price + a "VAT (20%)" line item. The success webhook still fires identically — `automatic_tax` is invisible to QuickInvoice's data model.
+6. **Verification:** open `/billing/upgrade` from a UK IP (or use a UK billing address in test mode). Stripe Checkout should show the price + a "VAT (20%)" line item. The success webhook still fires identically — `automatic_tax` is invisible to DecentInvoice's data model.
 
 ---
 
@@ -457,7 +457,7 @@ Each coupon takes ~30 seconds in the Dashboard. Stripe surfaces them automatical
 
 ### 33. [MARKETING] LinkedIn outreach to top "Best Invoicing Software for Freelancers 2026" listicle authors (added 2026-04-26)
 
-**Impact:** MEDIUM-HIGH — Google's top 3–5 results for "best invoicing software for freelancers" are SEO-driven listicles (G2, Capterra-syndicated, blogger roundups). Each receives ~5,000–20,000 monthly visits with high purchase intent. Getting QuickInvoice added to even one of these articles is a permanent zero-CAC traffic source compounding monthly. The authors are individual people (not committees) and are reachable on LinkedIn.
+**Impact:** MEDIUM-HIGH — Google's top 3–5 results for "best invoicing software for freelancers" are SEO-driven listicles (G2, Capterra-syndicated, blogger roundups). Each receives ~5,000–20,000 monthly visits with high purchase intent. Getting DecentInvoice added to even one of these articles is a permanent zero-CAC traffic source compounding monthly. The authors are individual people (not committees) and are reachable on LinkedIn.
 **Action:**
 1. Search Google for the following queries, capture the top 5 results for each:
    - `best invoicing software for freelancers 2026`
@@ -466,7 +466,7 @@ Each coupon takes ~30 seconds in the Dashboard. Stripe surfaces them automatical
    - `best invoicing app for consultants`
 2. Identify the article author for each (usually in the byline or "About the author" footer). Find them on LinkedIn.
 3. Send a short LinkedIn connection note (under 300 chars):
-   > Hi [Name] — your roundup of [list name] was helpful when I was researching this space. I built QuickInvoice (quickinvoice.io) — Stripe Payment Links auto-generated on every invoice + 7-day free trial. Would you consider adding it to the next refresh? Happy to give you a free Pro account to try first.
+   > Hi [Name] — your roundup of [list name] was helpful when I was researching this space. I built DecentInvoice (decentinvoice.com) — Stripe Payment Links auto-generated on every invoice + 7-day free trial. Would you consider adding it to the next refresh? Happy to give you a free Pro account to try first.
 4. After they connect, follow up with a 1-message pitch: 1 screenshot of the invoice editor, 1-line description, the free Pro account offer. Do NOT send a press kit — these authors are individual creators, not journalists.
 5. Track responses in a spreadsheet. Aim: 3 article inclusions over 60 days. Each ranking #1–3 article is worth ~$200/mo in compounding LTV.
 6. **Prerequisite:** The product must be live with a real domain, the 7-day trial (#19, done) live, and at least one real testimonial on the landing page (after [MARKETING] #21 collects testimonials).
@@ -477,11 +477,11 @@ Each coupon takes ~30 seconds in the Dashboard. Stripe surfaces them automatical
 
 ### 30. [MARKETING] Announce "Invoice Paid Instant Notification" Feature on Social
 
-**Impact:** MEDIUM — when INTERNAL_TODO #30 ("Invoice Paid" notification email to freelancer) ships, it is the kind of emotionally resonant micro-feature that goes viral on Twitter/X among freelancers; the single-sentence pitch ("QuickInvoice now emails you the instant your client pays — so you can stop refreshing your bank account") is a self-contained hook that needs no explanation; native video or screenshot of the email in a phone notification tray maximises engagement
+**Impact:** MEDIUM — when INTERNAL_TODO #30 ("Invoice Paid" notification email to freelancer) ships, it is the kind of emotionally resonant micro-feature that goes viral on Twitter/X among freelancers; the single-sentence pitch ("DecentInvoice now emails you the instant your client pays — so you can stop refreshing your bank account") is a self-contained hook that needs no explanation; native video or screenshot of the email in a phone notification tray maximises engagement
 **Action (after INTERNAL_TODO #30 is deployed):**
-1. Write the tweet/X post: `"I added one small thing to QuickInvoice: the instant a client pays your invoice, you get this email. No more refreshing your bank account. 🔔" [screenshot of the "Invoice #X was just paid — $1,200" email on a phone screen]`
+1. Write the tweet/X post: `"I added one small thing to DecentInvoice: the instant a client pays your invoice, you get this email. No more refreshing your bank account. 🔔" [screenshot of the "Invoice #X was just paid — $1,200" email on a phone screen]`
 2. Post as a native Twitter/X image post (not a link). Tag relevant accounts: `@stripe`, `@resend`, and any freelancer community accounts you follow.
-3. Cross-post to LinkedIn (more professional tone): `"We just shipped a small feature with big emotional impact: QuickInvoice now sends you an instant notification the moment a client pays your invoice."` + screenshot.
+3. Cross-post to LinkedIn (more professional tone): `"We just shipped a small feature with big emotional impact: DecentInvoice now sends you an instant notification the moment a client pays your invoice."` + screenshot.
 4. Share in the same Reddit/community channels from #14 and #28 as a "just shipped" update post. This is a legitimate update post, not a promotional post — communities reward builders who share progress transparently.
 5. Add the feature to the product's landing page feature grid (`views/index.ejs`) with copy: "Instant paid notifications — get emailed the moment your client pays."
 
@@ -515,24 +515,24 @@ You should see `Content-Security-Policy`, `Strict-Transport-Security` (max-age 1
 
 ---
 
-## 18. QuickInvoice: provision Resend API key + verify sending domain (added 2026-04-25)
+## 18. DecentInvoice: provision Resend API key + verify sending domain (added 2026-04-25)
 
-INTERNAL_TODO #13 (email delivery for QuickInvoice) shipped in this commit. The wrapper at `lib/email.js` is fully wired into the "Mark Sent" status transition for Pro/Agency users, but it currently no-ops in production because `RESEND_API_KEY` is unset. **The code is safe to deploy as-is — every send returns `{ ok:false, reason:'not_configured' }` until the key is provisioned, and no other route's behaviour depends on that result.** Do steps 1–4 below to flip the feature live.
+INTERNAL_TODO #13 (email delivery for DecentInvoice) shipped in this commit. The wrapper at `lib/email.js` is fully wired into the "Mark Sent" status transition for Pro/Agency users, but it currently no-ops in production because `RESEND_API_KEY` is unset. **The code is safe to deploy as-is — every send returns `{ ok:false, reason:'not_configured' }` until the key is provisioned, and no other route's behaviour depends on that result.** Do steps 1–4 below to flip the feature live.
 
 1. **Sign up at https://resend.com.** Free tier: 3,000 emails/month, 100/day — plenty to validate the feature and cover the first month or two of paid usage. No credit card required.
 2. **Provision an API key** at https://resend.com/api-keys. Copy the `re_…` value.
 3. **Add the env vars to the production app** (Heroku/Render/etc.):
    ```
    RESEND_API_KEY=re_...
-   EMAIL_FROM="QuickInvoice <onboarding@resend.dev>"   # safe sandbox sender — works immediately
+   EMAIL_FROM="DecentInvoice <onboarding@resend.dev>"   # safe sandbox sender — works immediately
    ```
    The `EMAIL_FROM` fallback (`onboarding@resend.dev`) is Resend's universal sandbox sender and lets sends succeed before a domain is verified. Once the domain is verified (step 4) swap it for a branded address.
-4. **Verify a sending domain** in the Resend dashboard (recommended: `mail.quickinvoice.io`). Steps:
+4. **Verify a sending domain** in the Resend dashboard (recommended: `mail.decentinvoice.com`). Steps:
    - Resend dashboard → Domains → Add Domain → enter the subdomain.
    - Add the three DNS records Resend prints (SPF / DKIM / DMARC) at your DNS provider.
    - Wait for verification (typically <30 min). Once green, update `EMAIL_FROM`:
      ```
-     EMAIL_FROM="QuickInvoice <invoices@mail.quickinvoice.io>"
+     EMAIL_FROM="DecentInvoice <invoices@mail.decentinvoice.com>"
      ```
 5. **Run the schema migration** once after deploy (idempotent — adds the `users.reply_to_email` column):
    ```
@@ -557,7 +557,7 @@ INTERNAL_TODO #19 is closed: the Pro Checkout now ships with `subscription_data:
 Optional post-deploy actions to track trial-cohort health:
 
 1. **Stripe Dashboard health check.** Stripe Dashboard → Billing → Subscriptions → filter `Status = trialing`. Watch the count grow over the first 14 days. Trial → paid conversion typically lands at 25–60% depending on activation; below 20% means the in-product activation flow (INTERNAL_TODO #14 onboarding checklist) is the next bottleneck to fix.
-2. **DB-side cohort query** (run on the QuickInvoice production DB):
+2. **DB-side cohort query** (run on the DecentInvoice production DB):
    ```sql
    SELECT
      date_trunc('day', created_at) AS signup_day,
@@ -575,7 +575,7 @@ INTERNAL_TODO #14 is closed: every dashboard load now renders a 4-step activatio
 
 Optional post-deploy actions to track activation-cohort health:
 
-1. **DB-side activation-funnel query** (run on the QuickInvoice production DB to see how many users complete each step within 7 days of signup):
+1. **DB-side activation-funnel query** (run on the DecentInvoice production DB to see how many users complete each step within 7 days of signup):
    ```sql
    SELECT
      date_trunc('week', u.created_at) AS signup_week,
@@ -593,7 +593,7 @@ Optional post-deploy actions to track activation-cohort health:
 2. **Trigger-based dismissal monitoring**: a sudden spike in `dismissed=true` rows without a corresponding spike in `step4_paid` is a signal the card copy or progress logic is annoying users. Re-evaluate the wording in `views/dashboard.ejs` (`Get up and running` → consider `Welcome — let's get your first invoice paid` if the data warrants it).
 3. **No marketing-email-to-clients fallout**: dismissing the checklist does not affect any email behaviour — it only suppresses the dashboard banner for that user. Safe to roll back via a single UPDATE if the feature regresses (`UPDATE users SET onboarding_dismissed = false;`).
 
-## 20. QuickInvoice: automated payment reminder cron — deploy notes (added 2026-04-25 PM)
+## 20. DecentInvoice: automated payment reminder cron — deploy notes (added 2026-04-25 PM)
 
 INTERNAL_TODO #16 is closed: a daily cron at **09:00 UTC** (`0 9 * * *`) now picks up every Pro/Business/Agency invoice that is `status='sent'`, past its `due_date`, and either never reminded or last reminded > 3 days ago, and emails the client a "Friendly reminder: Invoice X is overdue" nudge with a Pay button. **The cron is a safe no-op until the Resend API key from item 18 is provisioned** — every send returns `{ ok:false, reason:'not_configured' }`, no DB stamp is written, and the next 09:00 UTC tick retries. The instant `RESEND_API_KEY` is set, the next tick begins delivering the entire backlog.
 
@@ -603,7 +603,7 @@ No Master action is required *for this feature on its own* — item 18 (Resend A
 
 1. **Confirm the schedule is registered.** Tail the production log for the boot line:
    ```
-   QuickInvoice running on port 3000
+   DecentInvoice running on port 3000
    [reminders] scheduled (0 9 * * *)
    ```
    If you see `[reminders] not scheduled: cron_unavailable` instead, redeploy — `node-cron` did not install. If you see `[reminders] not scheduled: test_env`, the dyno is running with `NODE_ENV=test` (config error — set to `production`).
@@ -616,7 +616,7 @@ No Master action is required *for this feature on its own* — item 18 (Resend A
    - `errors > 0` means `sendEmail` threw or the DB stamp failed; check Resend dashboard → Logs and the application log for the row IDs.
    - `sent=M` matches the number of clients who received a reminder. The `last_reminder_sent_at` column on those rows will be set to the tick's `NOW()`.
 
-3. **DB-side spot check** (run on the QuickInvoice production DB):
+3. **DB-side spot check** (run on the DecentInvoice production DB):
    ```sql
    SELECT id, invoice_number, client_email, due_date, status, last_reminder_sent_at
      FROM invoices
@@ -659,13 +659,13 @@ The 3-day cooldown is currently a code constant (`DEFAULT_COOLDOWN_DAYS=3` in `j
 ### What clients see
 
 Subject: `Friendly reminder: Invoice INV-2026-0042 is overdue`
-From: `<EMAIL_FROM>` (currently `QuickInvoice <onboarding@resend.dev>` until item 18 step 4 — the verified domain — completes; Resend's sandbox sender works but lands in spam more often, so prioritise domain verification).
+From: `<EMAIL_FROM>` (currently `DecentInvoice <onboarding@resend.dev>` until item 18 step 4 — the verified domain — completes; Resend's sandbox sender works but lands in spam more often, so prioritise domain verification).
 Reply-to: `users.reply_to_email > business_email > email` of the freelancer (so the client's "Reply" lands in the freelancer's inbox, not in a no-reply void).
 Body: HTML + plaintext, both include the freelancer's business name, the invoice total, the original due date, the days-overdue count, and a "Pay invoice X" button (only when the invoice has a `payment_link_url` — Pro/Agency invoices created or marked-sent after #2 shipped on 2026-04-23).
 
 ### Why this is the highest-leverage feature shipped this cycle
 
-QuickInvoice's entire upgrade-modal copy promises "automated payment reminders" — until this commit, that promise was unfulfilled. Pro/Agency users have been paying $9-$19/month for a manual chase tool. Industry data: an automated 3-day overdue nudge typically lifts the on-time payment rate by 15-25%. Each recovered invoice is also a touchpoint that flips the user's relationship with the tool from "manual chase" to "set-and-forget cashflow" — the same retention dynamic that drives InvoiceFlow's stickiness.
+DecentInvoice's entire upgrade-modal copy promises "automated payment reminders" — until this commit, that promise was unfulfilled. Pro/Agency users have been paying $9-$19/month for a manual chase tool. Industry data: an automated 3-day overdue nudge typically lifts the on-time payment rate by 15-25%. Each recovered invoice is also a touchpoint that flips the user's relationship with the tool from "manual chase" to "set-and-forget cashflow" — the same retention dynamic that drives InvoiceFlow's stickiness.
 
 ---
 
@@ -688,7 +688,7 @@ If unset, defaults to `./uploads` relative to the working directory (not persist
 - **Code follow-up (can be done by the autonomous team once you supply the markdown):** add a `GET /terms` route rendering `views/legal/terms.ejs`, and link it from register, the footer of every landing page, and the footer of `views/index.ejs`.
 
 ### L2. [LEGAL] Publish Privacy Policy — **hard requirement** (GDPR Art. 13 / CCPA §1798.100)
-QuickInvoice collects email, name, invoice / client data, Stripe customer IDs, session cookies, and (once INTERNAL_TODO #13 / #17 land) Resend and Google OAuth identifiers. Under GDPR and CCPA/CPRA a privacy policy is legally required whenever a site collects personal data from an EU/UK or California resident — which any public signup form does.
+DecentInvoice collects email, name, invoice / client data, Stripe customer IDs, session cookies, and (once INTERNAL_TODO #13 / #17 land) Resend and Google OAuth identifiers. Under GDPR and CCPA/CPRA a privacy policy is legally required whenever a site collects personal data from an EU/UK or California resident — which any public signup form does.
 - Minimum disclosures: categories of data collected, purposes, lawful basis (contract performance + legitimate interest), third-party sub-processors (**Stripe, SendGrid/Resend once live, Heroku or whichever host**), cookie disclosures (session cookie, Stripe fraud-detection cookies set by Checkout), data-subject rights (access, deletion, portability), contact email for requests, retention policy.
 - **Action:** Publish at `/privacy` and link it from the register form, every landing page footer, and the Stripe Checkout branding settings.
 
@@ -722,7 +722,7 @@ Reviewed all direct runtime dependencies: `express` (MIT), `express-session` (MI
 
 ---
 
-## 22. QuickInvoice: paid-notification email — verify after Resend goes live (added 2026-04-26)
+## 22. DecentInvoice: paid-notification email — verify after Resend goes live (added 2026-04-26)
 
 INTERNAL_TODO #30 is closed: every Stripe Payment Link checkout now fires a fire-and-forget "you just got paid" email to the freelancer (invoice owner) with the client name, invoice number, and total. **No new env var, no schema migration, no Stripe Dashboard change** — the wiring lives entirely inside the existing `checkout.session.completed` webhook, gated on `session.mode === 'payment'`. Until item 18 (Resend API key) is provisioned, every notification is a logged no-op.
 
@@ -744,7 +744,7 @@ This pairs with [MARKETING] item 30 ("Announce Invoice Paid Instant Notification
 
 ---
 
-## 21. QuickInvoice: re-run schema migration to widen `users.plan` CHECK (added 2026-04-25 PM)
+## 21. DecentInvoice: re-run schema migration to widen `users.plan` CHECK (added 2026-04-25 PM)
 
 INTERNAL_TODO H5 is closed: `db/schema.sql` now declares `plan` as `CHECK (plan IN ('free', 'pro', 'business', 'agency'))` (was `('free', 'pro')`) and includes an idempotent `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_plan_check; ALTER TABLE users ADD CONSTRAINT users_plan_check CHECK (...)` block to migrate existing production DBs.
 
@@ -784,7 +784,7 @@ Indirect income lift: this is the prerequisite plumbing for #9 (Agency team seat
 
 ---
 
-## 30. QuickInvoice: activate Stripe Tax + flip `STRIPE_AUTOMATIC_TAX_ENABLED` (added 2026-04-26)
+## 30. DecentInvoice: activate Stripe Tax + flip `STRIPE_AUTOMATIC_TAX_ENABLED` (added 2026-04-26)
 
 INTERNAL_TODO #35 is closed in code: every Stripe Checkout session now ships with `allow_promotion_codes: true` (active immediately — no env var, no Dashboard change) and `automatic_tax: { enabled: process.env.STRIPE_AUTOMATIC_TAX_ENABLED === 'true' }` (env-var gated; off by default).
 
@@ -826,7 +826,7 @@ Both are zero-CAC revenue lifts.
 
 ---
 
-## 31. QuickInvoice: re-run schema migration for `trial_nudge_sent_at` (added 2026-04-26 PM)
+## 31. DecentInvoice: re-run schema migration for `trial_nudge_sent_at` (added 2026-04-26 PM)
 
 INTERNAL_TODO #29 (Trial End Day-3 Nudge Email) is closed in code. The job is wired into `server.js` and ticks at 10:00 UTC daily once `NODE_ENV !== 'test'`. It depends on a new column `users.trial_nudge_sent_at TIMESTAMP` (idempotent `ALTER TABLE … ADD COLUMN IF NOT EXISTS …` already in `db/schema.sql`).
 
@@ -867,18 +867,18 @@ This is the highest-leverage trial-cohort conversion action available to the pro
 
 ## 32. [MARKETING] Stripe App Partner profile listing (added 2026-04-26 PM)
 
-QuickInvoice is a Stripe-connected SaaS that uses Stripe for both subscription billing and invoice Payment Links. Stripe maintains an "App Partner" directory at https://stripe.com/apps where partners can list a profile with screenshots, a description, and a link back to the SaaS. Inclusion does not require a "Stripe App" build (which is the heavier path for embedded apps inside the Stripe Dashboard); the Partner directory accepts any verified Stripe-integrated SaaS.
+DecentInvoice is a Stripe-connected SaaS that uses Stripe for both subscription billing and invoice Payment Links. Stripe maintains an "App Partner" directory at https://stripe.com/apps where partners can list a profile with screenshots, a description, and a link back to the SaaS. Inclusion does not require a "Stripe App" build (which is the heavier path for embedded apps inside the Stripe Dashboard); the Partner directory accepts any verified Stripe-integrated SaaS.
 
 ### Action (Master, ~30 min)
 
-1. Sign up at https://stripe.com/partners with the same Stripe account that processes QuickInvoice subscriptions and Payment Links.
-2. Submit the partner application: business name "QuickInvoice", category "Invoicing & Billing", short description ("Smart invoicing SaaS for freelancers — Pro plan unlocks Stripe Payment Links on every invoice and instant paid-notification emails the moment a client pays"), 3-4 screenshots (the dashboard, an invoice with the Pay Now button, the pricing page).
+1. Sign up at https://stripe.com/partners with the same Stripe account that processes DecentInvoice subscriptions and Payment Links.
+2. Submit the partner application: business name "DecentInvoice", category "Invoicing & Billing", short description ("Smart invoicing SaaS for freelancers — Pro plan unlocks Stripe Payment Links on every invoice and instant paid-notification emails the moment a client pays"), 3-4 screenshots (the dashboard, an invoice with the Pay Now button, the pricing page).
 3. Wait for verification (typically 5-10 business days; Stripe checks the integrated account and confirms live processing).
-4. Once approved, the listing appears at stripe.com/apps in the Invoicing category with a backlink to `quickinvoice.io` — the backlink alone is high-DA SEO juice (Stripe's domain is one of the strongest in fintech).
+4. Once approved, the listing appears at stripe.com/apps in the Invoicing category with a backlink to `decentinvoice.com` — the backlink alone is high-DA SEO juice (Stripe's domain is one of the strongest in fintech).
 
 ### Why this matters (income relevance)
 
-Compounding distribution: every visitor to stripe.com/apps researching invoicing solutions sees QuickInvoice in the listing. Stripe's directory traffic is a high-quality cohort — these are SaaS owners and freelancers who already use Stripe and have credit-card-on-file with a Stripe-related vendor. Conversion rate from Stripe directory traffic is typically 2-3x the cold-traffic baseline. The backlink also lifts overall SEO authority for ranking on "Stripe-integrated invoicing", "Stripe invoice tool", and similar long-tail queries that the niche landing pages (#8) target.
+Compounding distribution: every visitor to stripe.com/apps researching invoicing solutions sees DecentInvoice in the listing. Stripe's directory traffic is a high-quality cohort — these are SaaS owners and freelancers who already use Stripe and have credit-card-on-file with a Stripe-related vendor. Conversion rate from Stripe directory traffic is typically 2-3x the cold-traffic baseline. The backlink also lifts overall SEO authority for ranking on "Stripe-integrated invoicing", "Stripe invoice tool", and similar long-tail queries that the niche landing pages (#8) target.
 
 ---
 
@@ -896,7 +896,7 @@ AppSumo and SaaS Mantra both run lifetime-deal marketplaces where SaaS founders 
 
 ### Why this matters (income relevance)
 
-One-time cash injection: typical $10k-$50k in 4-6 weeks. More importantly, ~500-2000 lifetime users become a permanent revenue floor: they don't churn (they paid once and are sticky), they refer their freelancer networks (the cohort is heavy in the indie-hacker/freelancer niche we target), and they generate Stripe Payment Link transaction fee revenue if we ever add a "QuickInvoice take-rate on collected invoices" tier. Caveats: lifetime cohorts have higher support volume per user (~3x); they can compress the price elasticity ceiling because you can't raise lifetime prices later. Plan for 2-4 hours/week of support during the deal window.
+One-time cash injection: typical $10k-$50k in 4-6 weeks. More importantly, ~500-2000 lifetime users become a permanent revenue floor: they don't churn (they paid once and are sticky), they refer their freelancer networks (the cohort is heavy in the indie-hacker/freelancer niche we target), and they generate Stripe Payment Link transaction fee revenue if we ever add a "DecentInvoice take-rate on collected invoices" tier. Caveats: lifetime cohorts have higher support volume per user (~3x); they can compress the price elasticity ceiling because you can't raise lifetime prices later. Plan for 2-4 hours/week of support during the deal window.
 
 ---
 
@@ -909,15 +909,15 @@ The Indie Hackers product directory (https://indiehackers.com/products) and r/Sa
 1. Wait for two prerequisites: (a) `RESEND_API_KEY` provisioned per #18 so email-driven features (invoice send, reminders, paid notification, trial nudge) actually fire end-to-end during launch traffic; (b) public roadmap (INTERNAL_TODO #38) live so the inevitable "what's next?" comments have a single linkable answer.
 2. Write the IH launch post: 600-800 words, structured as: (1) the problem ("freelancers waste 4-6 hrs/mo chasing late invoices"), (2) the build journey (concrete numbers — "shipped in 6 weeks; 23 commits this month; 28 test files"), (3) the differentiators (Stripe Payment Links + instant paid notification + 7-day no-card trial), (4) the ask ("would love feedback / what feature would you want next"). Link to pricing.
 3. r/SaaS post: 200-300 words, lighter tone, focus on one concrete numbers-backed insight from the build (e.g. "what shipping a 7-day no-card trial did to our trial-to-paid conversion") with the product mention as context, not the headline. Reddit's algorithm rewards educational content and demotes promotional posts.
-4. Follow-up: respond to every comment within 4 hours of posting for the first 24 hrs. The IH product page also accepts permanent reviews / ratings; a 4-5 star average on the IH directory is a long-tail conversion lever (every prospect who searches "QuickInvoice review" finds it).
+4. Follow-up: respond to every comment within 4 hours of posting for the first 24 hrs. The IH product page also accepts permanent reviews / ratings; a 4-5 star average on the IH directory is a long-tail conversion lever (every prospect who searches "DecentInvoice review" finds it).
 
 ### Why this matters (income relevance)
 
-Two-week traffic spike of 2k-10k uniques lifts the funnel by 50-200 trial signups (at typical SaaS landing-page conversion). At 30-50% trial-to-paid (per #29 above) → 20-100 new Pro subscribers → +$180-$900/mo MRR per launch. The IH product directory listing also stays as a permanent SEO surface — the listing ranks well for "QuickInvoice" branded searches and captures every subsequent prospect who tries to validate the product before signing up.
+Two-week traffic spike of 2k-10k uniques lifts the funnel by 50-200 trial signups (at typical SaaS landing-page conversion). At 30-50% trial-to-paid (per #29 above) → 20-100 new Pro subscribers → +$180-$900/mo MRR per launch. The IH product directory listing also stays as a permanent SEO surface — the listing ranks well for "DecentInvoice" branded searches and captures every subsequent prospect who tries to validate the product before signing up.
 
 ---
 
-## 35. QuickInvoice: enable bank-debit payment methods on Stripe Payment Links (added 2026-04-26 PM)
+## 35. DecentInvoice: enable bank-debit payment methods on Stripe Payment Links (added 2026-04-26 PM)
 
 INTERNAL_TODO #41 shipped the code-side wiring for low-fee bank-debit Payment Link methods (ACH, SEPA, BECS, BACS, ACSS). The new env var `STRIPE_PAYMENT_METHODS` is read by `lib/stripe-payment-link.js` and forwarded as `payment_method_types` to `stripe.paymentLinks.create()`. Default stays `card` only — the deploy is reversible and safe to release before activating any new methods in Stripe.
 
@@ -946,12 +946,12 @@ Two compounding effects on the existing Pro cohort:
 
 ## 36. [MARKETING] Free "Invoice Generator" lead-magnet landing page link-building (added 2026-04-26 PM-2)
 
-**Impact:** MEDIUM-HIGH (long-tail SEO + backlink building) — the existing `/invoice-generator` and `/invoice-template/<niche>` landing pages are content marketing assets that target high-intent keywords ("freelance designer invoice template", etc.). To rank, they need backlinks. The single highest-leverage outreach channel is to small-business / freelancer roundup posts: Medium and Substack bloggers regularly write "Top 10 invoice templates for freelancers in 2026" listicles that include 5-10 outbound links to template generators. Getting QuickInvoice listed in just 5-10 of these listicles is worth more domain authority than a Product Hunt launch and lasts indefinitely.
+**Impact:** MEDIUM-HIGH (long-tail SEO + backlink building) — the existing `/invoice-generator` and `/invoice-template/<niche>` landing pages are content marketing assets that target high-intent keywords ("freelance designer invoice template", etc.). To rank, they need backlinks. The single highest-leverage outreach channel is to small-business / freelancer roundup posts: Medium and Substack bloggers regularly write "Top 10 invoice templates for freelancers in 2026" listicles that include 5-10 outbound links to template generators. Getting DecentInvoice listed in just 5-10 of these listicles is worth more domain authority than a Product Hunt launch and lasts indefinitely.
 
 ### Action (Master, ~3-4 hrs identification + ~1 hr per outreach)
 
-1. Search Google for: `"invoice template" "freelance" 2025 OR 2026 -site:quickinvoice.io`. Filter to results from past 12 months. Identify 15-20 listicle-style posts on Medium / Substack / freelancer-blog domains (Upwork blog, Fiverr Workspace, Bonsai blog, Freshbooks blog are too large to reach; target solo bloggers and mid-size sites).
-2. For each post, find the author's contact email or Twitter / X DM handle. Send a short personalised note: "Hi [name], saw your great post on freelance invoice templates. We just shipped QuickInvoice, a free invoice generator with built-in Stripe payment links — would love to be considered for the list if you ever update it. Here's a screenshot: [link]." No ask for payment, no pressure. Track responses in a simple spreadsheet.
+1. Search Google for: `"invoice template" "freelance" 2025 OR 2026 -site:decentinvoice.com`. Filter to results from past 12 months. Identify 15-20 listicle-style posts on Medium / Substack / freelancer-blog domains (Upwork blog, Fiverr Workspace, Bonsai blog, Freshbooks blog are too large to reach; target solo bloggers and mid-size sites).
+2. For each post, find the author's contact email or Twitter / X DM handle. Send a short personalised note: "Hi [name], saw your great post on freelance invoice templates. We just shipped DecentInvoice, a free invoice generator with built-in Stripe payment links — would love to be considered for the list if you ever update it. Here's a screenshot: [link]." No ask for payment, no pressure. Track responses in a simple spreadsheet.
 3. For posts where the author lets readers submit tools (often via a "submit your tool" form or `add@` email), submit through that channel instead of cold email.
 4. Track replies for 4 weeks; about 20-30% of cold outreach to small bloggers converts to a backlink. 5 successful backlinks at DA 20-40 is enough to lift the niche pages from page 2-3 to page 1 for their target keywords.
 
@@ -963,35 +963,35 @@ Page-1 organic ranking on a freelancer-niche query is worth ~50-200 visits/month
 
 ## 37. [MARKETING] Accountant / Bookkeeper partner program (added 2026-04-26 PM-2)
 
-**Impact:** HIGH (B2B referral channel) — accountants and bookkeepers each serve 20-100 freelance clients. Every accountant who recommends QuickInvoice represents 20-100 prospective Pro signups with extremely high trust (the recommendation comes from the client's existing trusted financial professional). Setting up a simple "refer a client, get 1 month free Pro" partner program targets this segment specifically. Industry data: SaaS that builds a strong accountant-referral channel sees 25-40% of new revenue come through that channel within 12 months.
+**Impact:** HIGH (B2B referral channel) — accountants and bookkeepers each serve 20-100 freelance clients. Every accountant who recommends DecentInvoice represents 20-100 prospective Pro signups with extremely high trust (the recommendation comes from the client's existing trusted financial professional). Setting up a simple "refer a client, get 1 month free Pro" partner program targets this segment specifically. Industry data: SaaS that builds a strong accountant-referral channel sees 25-40% of new revenue come through that channel within 12 months.
 
 ### Action (Master, ~4-6 hrs setup + ongoing engagement)
 
-1. Create a one-page `views/partners.ejs` (or have INTERNAL_TODO add a code task — pure copy + form) explaining the partner offer: accountants who refer 5+ clients get a 50% lifetime discount on a Pro account they use to manage their own freelance projects, plus a co-branded "QuickInvoice Certified Accountant" badge. The 5-client threshold filters out single-referral attempts and incentivises ongoing engagement.
+1. Create a one-page `views/partners.ejs` (or have INTERNAL_TODO add a code task — pure copy + form) explaining the partner offer: accountants who refer 5+ clients get a 50% lifetime discount on a Pro account they use to manage their own freelance projects, plus a co-branded "DecentInvoice Certified Accountant" badge. The 5-client threshold filters out single-referral attempts and incentivises ongoing engagement.
 2. Build a target list of 50-100 accountants who specialise in freelancers / solopreneurs. Sources: LinkedIn search "accountant freelancer", QuickBooks ProAdvisor directory (accountants who serve small clients but might want a simpler invoicing tool to recommend), local small-business CPA listings.
-3. Send a personalised outreach email to each: "Hi [name], saw you specialise in freelance clients on [LinkedIn / their site]. We just launched QuickInvoice — a Stripe-native invoicing tool we built specifically for solo freelancers. Would you be open to recommending it to clients who don't need full QuickBooks-level accounting? We'll comp your account and add you to our partner directory." Personal email > automated drip.
+3. Send a personalised outreach email to each: "Hi [name], saw you specialise in freelance clients on [LinkedIn / their site]. We just launched DecentInvoice — a Stripe-native invoicing tool we built specifically for solo freelancers. Would you be open to recommending it to clients who don't need full QuickBooks-level accounting? We'll comp your account and add you to our partner directory." Personal email > automated drip.
 4. Track responses in a simple Google Sheet. For accountants who reply positively, set up the Stripe coupon (`PARTNER50` valid forever) and add them to a `views/partner-directory.ejs` page (creates a useful SEO surface in addition to the partner channel itself).
-5. Quarterly check-in email to active partners with a "what's new in QuickInvoice" recap and a request to share with one more client.
+5. Quarterly check-in email to active partners with a "what's new in DecentInvoice" recap and a request to share with one more client.
 
 ### Why this matters (income relevance)
 
-The accountant-referral channel is the single highest-trust distribution channel in B2B SaaS — a freelancer who hears "QuickInvoice handles your invoicing" from their CPA converts at 5-10x the rate of cold organic traffic. Five active partner accountants each referring 2-5 clients per quarter = 40-100 new Pro signups per year per partner cohort, at ~zero ongoing CAC. The compounding effect over 12-18 months can produce a recurring revenue floor that is more stable than any single launch event.
+The accountant-referral channel is the single highest-trust distribution channel in B2B SaaS — a freelancer who hears "DecentInvoice handles your invoicing" from their CPA converts at 5-10x the rate of cold organic traffic. Five active partner accountants each referring 2-5 clients per quarter = 40-100 new Pro signups per year per partner cohort, at ~zero ongoing CAC. The compounding effect over 12-18 months can produce a recurring revenue floor that is more stable than any single launch event.
 
 ---
 
-## 38. QuickInvoice: replace `public/og-image.png` with branded asset (added 2026-04-27)
+## 38. DecentInvoice: replace `public/og-image.png` with branded asset (added 2026-04-27)
 
-**Impact:** MEDIUM-HIGH (compounds across every share) — INTERNAL_TODO #36 shipped Open Graph + Twitter Card metadata on every public page (landing, pricing, all 6 niche landing pages). The placeholder `public/og-image.png` is a valid 1200×630 brand-indigo PNG so social-card validators accept it pre-replacement, but the actual share preview is just a solid color block. Replacing it with a branded card (logo + tagline + brand color background) makes every shared link in Slack / iMessage / Twitter / LinkedIn / Discord render as a recognisable QuickInvoice card.
+**Impact:** MEDIUM-HIGH (compounds across every share) — INTERNAL_TODO #36 shipped Open Graph + Twitter Card metadata on every public page (landing, pricing, all 6 niche landing pages). The placeholder `public/og-image.png` is a valid 1200×630 brand-indigo PNG so social-card validators accept it pre-replacement, but the actual share preview is just a solid color block. Replacing it with a branded card (logo + tagline + brand color background) makes every shared link in Slack / iMessage / Twitter / LinkedIn / Discord render as a recognisable DecentInvoice card.
 
 ### Action (Master, ~15 min)
 
 1. Open Figma / Canva / any image tool. Create a 1200×630 PNG with:
-   - QuickInvoice wordmark or `⚡ QuickInvoice` logo (top-left or centered)
+   - DecentInvoice wordmark or `⚡ DecentInvoice` logo (top-left or centered)
    - Tagline: "Professional invoices in 60 seconds" or "Get paid faster"
    - Brand-indigo (#4f46e5) background or gradient (matches `views/partials/head.ejs` Tailwind brand-600)
    - White or near-white text for high contrast
 2. Export as PNG, name it `og-image.png`, replace `public/og-image.png` in the repo. Commit + deploy.
-3. Validate after deploy by pasting `https://quickinvoice.io/` into:
+3. Validate after deploy by pasting `https://decentinvoice.com/` into:
    - LinkedIn Post Inspector: https://www.linkedin.com/post-inspector/
    - Twitter Card Validator: https://cards-dev.twitter.com/validator
    - Both should show the new card. If they show the old image, click "Refresh" / "Re-fetch" to bust their cache.
@@ -1002,7 +1002,7 @@ Indirect but compounding. Every distribution action in TODO_MASTER (Reddit posts
 
 ---
 
-## 39. QuickInvoice: set `APP_URL` env var in production (added 2026-04-27)
+## 39. DecentInvoice: set `APP_URL` env var in production (added 2026-04-27)
 
 **Impact:** MEDIUM-HIGH — INTERNAL_TODO #36's Open Graph metadata uses `process.env.APP_URL` to render absolute `og:url` and `og:image` URLs. Most social-card validators (Twitter, LinkedIn, Discord) require absolute URLs for the preview image — relative paths fail silently and the card falls back to "no image." The env var is also used by other features (`jobs/trial-nudge.js`'s CTA, `lib/email.js` paid-notification button) where it's nice-to-have; for OG metadata it's effectively required.
 
@@ -1010,7 +1010,7 @@ Indirect but compounding. Every distribution action in TODO_MASTER (Reddit posts
 
 1. In Heroku / Render / your prod env, set:
    ```
-   APP_URL=https://quickinvoice.io
+   APP_URL=https://decentinvoice.com
    ```
    (no trailing slash — the OG helper normalises it either way, but cleaner without).
 2. Restart / redeploy so the new env var takes effect.
@@ -1062,9 +1062,9 @@ Self-serve portal features convert "support escalation" into "happy customer" wi
    - `ACCOUNTANT-PARTNER50` — 50% off first 3 months (for #37 partner referrals)
 2. For each coupon, create a Stripe Promotion Code with the same name (Stripe distinguishes Coupons from Promotion Codes; #58 reads the latter).
 3. Draft 3 launch posts that carry the URLs:
-   - **Product Hunt launch** — `https://quickinvoice.io/redeem/PH50` in the comments.
-   - **Show HN** — `https://quickinvoice.io/redeem/SHOWHN30` in the body.
-   - **r/SaaS Friday Roundup** — `https://quickinvoice.io/redeem/REDDITSAAS25` in the post.
+   - **Product Hunt launch** — `https://decentinvoice.com/redeem/PH50` in the comments.
+   - **Show HN** — `https://decentinvoice.com/redeem/SHOWHN30` in the body.
+   - **r/SaaS Friday Roundup** — `https://decentinvoice.com/redeem/REDDITSAAS25` in the post.
 4. Track conversions per code in Stripe → Coupons → individual coupon page → "Redemptions" count. Each redemption is a measurable Pro signup attributable to that exact channel.
 
 ### Why this matters
@@ -1073,16 +1073,16 @@ Without per-channel codes, every paid signup looks identical in Stripe and chann
 
 ---
 
-## 42. [MARKETING] Submit `quickinvoice.io/sitemap.xml` + verify in Google Search Console (added 2026-04-27 PM)
+## 42. [MARKETING] Submit `decentinvoice.com/sitemap.xml` + verify in Google Search Console (added 2026-04-27 PM)
 
 **Impact:** HIGH (one-time SEO foundation) — INTERNAL_TODO #56 just shipped `robots.txt` + canonical URLs, completing the trio (`/sitemap.xml` already shipped in #8, `/robots.txt` now points at it). Google still needs to be told the site exists. Verifying ownership in Google Search Console is a 5-minute one-time action that unlocks: (a) accelerated indexing of every niche landing page (typically 2-3 days vs. 4-8 weeks for organic discovery), (b) impression / click data per query so Master can see which niche pages are pulling traffic, (c) a manual reindex button for any single page after a copy update, (d) backlink reports.
 
 ### Action (Master, ~10 min total)
 
 1. Go to https://search.google.com/search-console.
-2. Click "Add property" → enter `https://quickinvoice.io` (use the domain property if Cloudflare/Route53 can hold a TXT record; otherwise use the URL prefix property and verify via the HTML file method or Google Tag).
-3. After verification, navigate to "Sitemaps" → submit `https://quickinvoice.io/sitemap.xml`. Confirm Google reports "Success" (a few minutes after submission).
-4. Repeat for `https://quickinvoice.io/robots.txt` via "Settings" → "robots.txt" report — Google fetches it automatically; this just surfaces any parse errors.
+2. Click "Add property" → enter `https://decentinvoice.com` (use the domain property if Cloudflare/Route53 can hold a TXT record; otherwise use the URL prefix property and verify via the HTML file method or Google Tag).
+3. After verification, navigate to "Sitemaps" → submit `https://decentinvoice.com/sitemap.xml`. Confirm Google reports "Success" (a few minutes after submission).
+4. Repeat for `https://decentinvoice.com/robots.txt` via "Settings" → "robots.txt" report — Google fetches it automatically; this just surfaces any parse errors.
 5. Bookmark the "Performance" tab — review monthly to identify which niche pages are ranking and which queries are driving traffic. Use this signal to prioritise INTERNAL_TODO #25 (expand niche pages from 6 → 15) toward the queries already showing impressions.
 
 ### Why this matters
@@ -1093,13 +1093,13 @@ Without this, INTERNAL_TODO #8 (sitemap), #25 (niche pages), #36 (OG metadata), 
 
 ## 43. [MARKETING] Listicle outreach — "best invoicing tools for freelancers" backlinks (added 2026-04-27 PM)
 
-**Impact:** HIGH (compounding SEO) — Google's #1 ranking signal remains backlinks from authoritative listicle articles. Searching "best invoicing software for freelancers 2026" returns the same 8-12 listicles that drive most freelancer-tool decisions. Getting QuickInvoice mentioned in even 3-5 of these articles drives sustained referral traffic for years. The pattern is well-established: a polite cold email to the article author offering a free Pro account + a one-paragraph product summary + a screenshot (now branded after #38 og-image lands) gets a "yes" rate of 15-25% on cold outreach.
+**Impact:** HIGH (compounding SEO) — Google's #1 ranking signal remains backlinks from authoritative listicle articles. Searching "best invoicing software for freelancers 2026" returns the same 8-12 listicles that drive most freelancer-tool decisions. Getting DecentInvoice mentioned in even 3-5 of these articles drives sustained referral traffic for years. The pattern is well-established: a polite cold email to the article author offering a free Pro account + a one-paragraph product summary + a screenshot (now branded after #38 og-image lands) gets a "yes" rate of 15-25% on cold outreach.
 
 ### Action (Master, ~6 hrs total over 2 weeks)
 
 1. **Scope the target list** (~1 hr). Search Google for: "best invoicing software for freelancers", "best invoice apps for designers", "freelance invoice tools", "Bonsai alternatives", "FreshBooks alternatives", "invoice generator review". Compile the top 20 articles into a spreadsheet with: URL, author name, author email (use Hunter.io free tier or check author byline), date last updated, current tools listed.
 2. **Filter to active authors** (~30 min). Drop any article older than 18 months (Google heavily discounts stale content). Drop any article whose author isn't reachable (anonymous bylines).
-3. **Draft a 5-line outreach email** (~30 min). Template: "Hi [name], I saw your [year] article on [topic] — really useful breakdown. I'm the founder of QuickInvoice (quickinvoice.io), a stripped-down invoicing tool for freelancers. Two things specifically that competitors don't: (a) instant Stripe Payment Link on every invoice, (b) a dead-simple Free plan (no credit card, 3 invoices). I'd love to be considered for the next refresh of your article — happy to set you up with a free Pro account so you can try it. No expectation of anything in return. — Master / @quickinvoice". Per-author personalisation (~2 min each) lifts response rate ~3x.
+3. **Draft a 5-line outreach email** (~30 min). Template: "Hi [name], I saw your [year] article on [topic] — really useful breakdown. I'm the founder of DecentInvoice (decentinvoice.com), a stripped-down invoicing tool for freelancers. Two things specifically that competitors don't: (a) instant Stripe Payment Link on every invoice, (b) a dead-simple Free plan (no credit card, 3 invoices). I'd love to be considered for the next refresh of your article — happy to set you up with a free Pro account so you can try it. No expectation of anything in return. — Master / @decentinvoice". Per-author personalisation (~2 min each) lifts response rate ~3x.
 4. **Send 20 outreach emails over 2 weeks** (~3 hrs incl. follow-ups). Stagger: 5 / day to avoid Gmail rate limits.
 5. **Track each response** in the same spreadsheet. For each "yes," provision a free Pro account via the Stripe Dashboard (manual subscription create — no code required). For each "yes" that results in a backlink, note the article URL.
 6. **Re-pitch every 6 months** for any author who replied positively but didn't end up linking.
@@ -1117,7 +1117,7 @@ Backlinks from the right 5 listicles outperform any paid ad campaign for indie S
 ### Action (Master, ~3 hrs/week ongoing)
 
 1. **Set up a LinkedIn Sales Navigator free trial** (1 month free; cancel before billing). Use the Lead filter: "Job title = Operations Director / VP Engineering / Head of People", "Location = US/UK/EU", "Started in current role within last 90 days".
-2. **Send 20 connection requests/week** with a personalised note: "Hi [name], congrats on the [title] role at [company]. I run QuickInvoice (quickinvoice.io) — we make invoicing freelance contractors painless for ops teams. Happy to share a Pro plan if you ever want to try us out. — Master".
+2. **Send 20 connection requests/week** with a personalised note: "Hi [name], congrats on the [title] role at [company]. I run DecentInvoice (decentinvoice.com) — we make invoicing freelance contractors painless for ops teams. Happy to share a Pro plan if you ever want to try us out. — Master".
 3. **For accepted connections**, send a one-line follow-up 3-5 days later: "Thanks for connecting! If you're hiring freelancers and they're invoicing you via Word/PDF, our Agency tier ($49/mo) handles 5 contractor seats with auto-reminders + Stripe payment links. Want me to set you up with a free 30-day trial? — Master". Do NOT send a follow-up to anyone who didn't accept.
 4. **For "yes" responses**, provision a manual 30-day Agency-tier trial via the Stripe Dashboard. Master sets a calendar reminder for day 25 to check in.
 5. Track in a spreadsheet: name / company / connect-accepted / responded / trialled / converted-to-paid.
@@ -1140,9 +1140,9 @@ The Agency tier ($49/mo, 5 contractor seats) has the highest LTV in the funnel b
    - **Online Geniuses Slack** (free, onlinegeniuses.com — marketing/SaaS focus, freelancers building agencies)
    - **r/freelance Discord** (linked from the subreddit sidebar) — direct freelancer audience match
 2. **Set up a saved search** in each (Slack: `/search invoice OR invoicing OR FreshBooks OR Bonsai`; Discord: same keywords). Check 2-3 times a week.
-3. **For each relevant thread** (someone asking "what invoicing tool do you use?" or complaining about FreshBooks/Bonsai pricing): reply naturally with one sentence about how you handle invoicing, link to QuickInvoice ONLY if you're already a participating member of that channel for 2+ weeks (to avoid the "drive-by promoter" auto-ban).
+3. **For each relevant thread** (someone asking "what invoicing tool do you use?" or complaining about FreshBooks/Bonsai pricing): reply naturally with one sentence about how you handle invoicing, link to DecentInvoice ONLY if you're already a participating member of that channel for 2+ weeks (to avoid the "drive-by promoter" auto-ban).
 4. **Track each link share** in a spreadsheet: community / thread URL / date / response. After 8 weeks compare community-attribution to Plausible referrer data (#34 once live) to identify the highest-converting community.
-5. **Run one community-only AMA** per quarter (e.g. "Ask me anything about building QuickInvoice from scratch"). Indie Hackers AMAs typically draw 20-50 questions, several of which become inbound trial signups.
+5. **Run one community-only AMA** per quarter (e.g. "Ask me anything about building DecentInvoice from scratch"). Indie Hackers AMAs typically draw 20-50 questions, several of which become inbound trial signups.
 
 ### Why this matters
 
@@ -1152,7 +1152,7 @@ Closed communities are the highest-conversion-per-impression distribution surfac
 
 ## 46. [MARKETING] 60-second YouTube product walkthrough video (evergreen SEO + landing) (added 2026-04-27 PM-2)
 
-**Impact:** MEDIUM — distinct from the existing Loom demo plan (#15 — that's an autoplay clip on the landing page). A separate, public YouTube video titled "QuickInvoice — Invoice + Get Paid in 60 Seconds (Freelancer Tool Demo)" lives on YouTube indefinitely, ranks for the long-tail "how to invoice freelance clients" query, and is embedded as the landing-page hero (replacing or complementing #15). YouTube SEO compounds — the video is discoverable for years, drives passive signups every month with zero ongoing effort, and the landing-page embed gives QuickInvoice a video-thumbnail social-share preview that the static OG image (#36, INTERNAL_TODO) can't.
+**Impact:** MEDIUM — distinct from the existing Loom demo plan (#15 — that's an autoplay clip on the landing page). A separate, public YouTube video titled "DecentInvoice — Invoice + Get Paid in 60 Seconds (Freelancer Tool Demo)" lives on YouTube indefinitely, ranks for the long-tail "how to invoice freelance clients" query, and is embedded as the landing-page hero (replacing or complementing #15). YouTube SEO compounds — the video is discoverable for years, drives passive signups every month with zero ongoing effort, and the landing-page embed gives DecentInvoice a video-thumbnail social-share preview that the static OG image (#36, INTERNAL_TODO) can't.
 
 ### Action (Master, ~3 hrs one-time)
 
@@ -1160,9 +1160,9 @@ Closed communities are the highest-conversion-per-impression distribution surfac
    - 0-10s: Problem hook ("Stop chasing invoices.")
    - 10-30s: Create an invoice — 3 line items, mark Sent
    - 30-45s: Switch to the client's perspective — open the Stripe Payment Link, click Pay
-   - 45-60s: Back to dashboard — invoice flips to PAID; revenue stat ticks up. End-card with quickinvoice.io URL.
+   - 45-60s: Back to dashboard — invoice flips to PAID; revenue stat ticks up. End-card with decentinvoice.com URL.
 2. **Edit + caption** (~1 hr) — auto-captions in YouTube Studio + manual cleanup.
-3. **Publish to YouTube** with: title "QuickInvoice — Invoice + Get Paid in 60 Seconds (Freelancer Tool Demo)", description with timestamps + landing-page link, end-card pointing to the video's own playlist, tags `freelance, invoicing, stripe, saas, freelancer`. Submit to the YouTube SEO via the description (first 200 chars).
+3. **Publish to YouTube** with: title "DecentInvoice — Invoice + Get Paid in 60 Seconds (Freelancer Tool Demo)", description with timestamps + landing-page link, end-card pointing to the video's own playlist, tags `freelance, invoicing, stripe, saas, freelancer`. Submit to the YouTube SEO via the description (first 200 chars).
 4. **Embed on landing page** in `views/index.ejs` — replace or complement the auto-play Loom from #15. YouTube embed gives a thumbnail + Schema.org `VideoObject` that inflates the SEO of the landing page itself (compounds with the JSON-LD `SoftwareApplication` work in INTERNAL_TODO #52).
 5. **Cross-post the video link** to: r/freelance, Indie Hackers (as a Show update), LinkedIn (native upload — LinkedIn deboosts external links but boosts native video), Twitter/X.
 

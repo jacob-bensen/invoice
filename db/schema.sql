@@ -1,4 +1,4 @@
--- QuickInvoice Database Schema
+-- DecentInvoice Database Schema
 
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,

@@ -1,5 +1,5 @@
 {
-  "name": "quickinvoice",
+  "name": "decentinvoice",
   "version": "1.0.0",
   "description": "Professional invoicing SaaS for freelancers",
   "main": "server.js",

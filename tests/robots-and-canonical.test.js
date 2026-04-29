@@ -123,11 +123,11 @@ async function testRobotsDisallowsAuthedSurface() {
 }
 
 async function testRobotsIncludesSitemapWithAppUrl() {
-  process.env.APP_URL = 'https://quickinvoice.io';
+  process.env.APP_URL = 'https://decentinvoice.com';
   try {
     await withServer(buildAppWithRobots(), async (server) => {
       const r = await getRequest(server, '/robots.txt');
-      assert.ok(r.body.includes('Sitemap: https://quickinvoice.io/sitemap.xml'),
+      assert.ok(r.body.includes('Sitemap: https://decentinvoice.com/sitemap.xml'),
         'sitemap pointer must use APP_URL when set');
     });
   } finally {
@@ -145,13 +145,13 @@ async function testRobotsFallsBackToRequestHost() {
 }
 
 async function testRobotsNormalisesTrailingSlashOnAppUrl() {
-  process.env.APP_URL = 'https://quickinvoice.io/';
+  process.env.APP_URL = 'https://decentinvoice.com/';
   try {
     await withServer(buildAppWithRobots(), async (server) => {
       const r = await getRequest(server, '/robots.txt');
-      assert.ok(!r.body.includes('quickinvoice.io//sitemap.xml'),
+      assert.ok(!r.body.includes('decentinvoice.com//sitemap.xml'),
         'trailing-slash APP_URL must not produce double slash before sitemap.xml');
-      assert.ok(r.body.includes('Sitemap: https://quickinvoice.io/sitemap.xml'),
+      assert.ok(r.body.includes('Sitemap: https://decentinvoice.com/sitemap.xml'),
         'sitemap pointer must be normalised');
     });
   } finally {
@@ -162,11 +162,11 @@ async function testRobotsNormalisesTrailingSlashOnAppUrl() {
 // -------- canonical link tag --------------------------------------------
 
 async function testCanonicalRendersWhenAppUrlSet() {
-  process.env.APP_URL = 'https://quickinvoice.io';
+  process.env.APP_URL = 'https://decentinvoice.com';
   try {
     const html = await renderHead({ ogPath: '/' });
     const href = extractLinkHref(html, 'canonical');
-    assert.strictEqual(href, 'https://quickinvoice.io/',
+    assert.strictEqual(href, 'https://decentinvoice.com/',
       'canonical URL must render when APP_URL is set');
   } finally {
     delete process.env.APP_URL;
@@ -182,11 +182,11 @@ async function testCanonicalOmittedWhenAppUrlUnset() {
 }
 
 async function testCanonicalPathOverride() {
-  process.env.APP_URL = 'https://quickinvoice.io';
+  process.env.APP_URL = 'https://decentinvoice.com';
   try {
     const html = await renderHead({ ogPath: '/og-path', canonicalPath: '/canonical-path' });
     const href = extractLinkHref(html, 'canonical');
-    assert.strictEqual(href, 'https://quickinvoice.io/canonical-path',
+    assert.strictEqual(href, 'https://decentinvoice.com/canonical-path',
       'canonicalPath local must take precedence over ogPath');
   } finally {
     delete process.env.APP_URL;
@@ -194,7 +194,7 @@ async function testCanonicalPathOverride() {
 }
 
 async function testCanonicalUrlAbsoluteOverride() {
-  process.env.APP_URL = 'https://quickinvoice.io';
+  process.env.APP_URL = 'https://decentinvoice.com';
   try {
     const html = await renderHead({
       ogPath: '/og-path',
@@ -209,11 +209,11 @@ async function testCanonicalUrlAbsoluteOverride() {
 }
 
 async function testCanonicalFallsBackToOgPath() {
-  process.env.APP_URL = 'https://quickinvoice.io';
+  process.env.APP_URL = 'https://decentinvoice.com';
   try {
     const html = await renderHead({ ogPath: '/billing/upgrade' });
     const href = extractLinkHref(html, 'canonical');
-    assert.strictEqual(href, 'https://quickinvoice.io/billing/upgrade',
+    assert.strictEqual(href, 'https://decentinvoice.com/billing/upgrade',
       'canonical URL must fall back to ogPath when canonicalPath is unset');
   } finally {
     delete process.env.APP_URL;
@@ -280,7 +280,7 @@ async function testRegisterEmitsNoindex() {
 async function testIndexEmitsIndexFollow() {
   delete process.env.APP_URL;
   const html = await ejs.renderFile(path.join(VIEWS, 'index.ejs'), {
-    title: 'QuickInvoice — Get Paid Faster',
+    title: 'DecentInvoice — Get Paid Faster',
     ogTitle: 'X', ogDescription: 'Y', ogPath: '/', user: null
   }, { views: [VIEWS] });
   assert.strictEqual(extractMeta(html, 'name', 'robots'), 'index, follow',

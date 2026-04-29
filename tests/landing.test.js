@@ -6,7 +6,7 @@
  * Covers:
  *   - 6 niche routes render 200 with niche-specific copy
  *   - each route includes the register CTA pointing at /auth/register
- *   - each route includes the nav partial + "QuickInvoice" brand
+ *   - each route includes the nav partial + "DecentInvoice" brand
  *   - niche headlines are distinct (no accidental copy reuse)
  *   - /sitemap.xml returns XML with all 6 niche URLs + core pages
  *   - /sitemap.xml sets Content-Type: application/xml
@@ -114,7 +114,7 @@ async function testEachNichePageUsesNavAndBranding() {
   const app = buildApp();
   for (const url of EXPECTED_NICHE_PATHS) {
     const res = await request(app, 'GET', url);
-    assert.ok(res.body.includes('QuickInvoice'),
+    assert.ok(res.body.includes('DecentInvoice'),
       `${url} must include the product name`);
     assert.ok(res.body.includes('<nav'),
       `${url} must include the nav partial`);
@@ -286,7 +286,7 @@ async function run() {
   const tests = [
     ['all 6 niche routes return 200', testAllSixNicheRoutesReturn200],
     ['each niche has a /auth/register CTA', testEachNichePageHasRegisterCta],
-    ['each niche renders nav + QuickInvoice brand', testEachNichePageUsesNavAndBranding],
+    ['each niche renders nav + DecentInvoice brand', testEachNichePageUsesNavAndBranding],
     ['niche headlines are distinct', testNicheCopyIsDistinct],
     ['designer copy mentions designers', testDesignerNicheCopy],
     ['developer copy mentions developers', testDeveloperNicheCopy],
