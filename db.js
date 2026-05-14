@@ -310,6 +310,25 @@ const db = {
     return rows[0] || null;
   },
 
+  /*
+   * Count of currently-active paid Pro/Agency subscribers used by the
+   * trial-urgent banner social-proof line (#135). Restricted to
+   * subscription_status='active' so we don't pad the number with trialing
+   * users (who are the audience this line is shown to) or past_due/paused
+   * users (who are mid-churn). The result powers a "Join N freelancers on
+   * Pro" anchor; lib/pro-subscriber-count.js wraps this in a 1-hour cache
+   * so the dashboard doesn't issue this query per render.
+   */
+  async countActiveProSubscribers() {
+    const { rows } = await pool.query(
+      `SELECT COUNT(*)::int AS count
+         FROM users
+        WHERE plan IN ('pro', 'agency')
+          AND subscription_status = 'active'`
+    );
+    return parseInt(rows[0] && rows[0].count, 10) || 0;
+  },
+
   async getNextInvoiceNumber(userId) {
     const { rows } = await pool.query(
       'SELECT COUNT(*) as count FROM invoices WHERE user_id=$1',

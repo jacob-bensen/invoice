@@ -91,6 +91,18 @@
               Lock in $99/year &mdash; 3 months free
             </span>
           </p>
+          <% if (locals.socialProof) { %>
+            <p class="mt-2" data-testid="trial-urgent-social-proof">
+              <span class="inline-flex items-center gap-1.5 bg-red-100 text-red-800 text-xs font-semibold px-2 py-1 rounded-full">
+                <span aria-hidden="true">&#128101;</span>
+                <% if (socialProof.count) { %>
+                  Join <span data-testid="trial-urgent-social-proof-count"><%= socialProof.count.toLocaleString('en-US') %></span> freelancers on Pro
+                <% } else { %>
+                  <span data-testid="trial-urgent-social-proof-fallback"><%= socialProof.fallback %></span>
+                <% } %>
+              </span>
+            </p>
+          <% } %>
         <% } %>
         <form action="/billing/portal" method="POST" class="mt-3">
           <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">

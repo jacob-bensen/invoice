@@ -3,6 +3,13 @@
 ---
 
 ## 2026-05-14
+Shipped: #135 social-proof anchor on the day-1 trial-urgent banner — new `db.countActiveProSubscribers()` filters on `plan IN ('pro','agency') AND subscription_status='active'` (excludes trialing + dunning users), wrapped by a process-local `lib/pro-subscriber-count.js` loader with a 1-hour TTL, in-flight coalescing, and a static-copy fallback for below-threshold (<50) counts or DB-throw paths. The dashboard route only triggers the cached lookup when `days_left_in_trial === 1`, so the day-7-through-day-2 banner pays zero round-trips. View renders "Join N freelancers on Pro" (thousands-separated) below the existing #134 hours-remaining + #133 annual-savings pills, in the red-urgent palette, closing milestone 4's anchor stack. 16 tests across db SQL shape, loader cache/coalesce/refresh paths, and view DOM order + XSS escape.
+Advances: Milestone 4 (trial urgency stack frozen).
+Master action: none.
+
+---
+
+## 2026-05-14
 Shipped: canonical `views/partials/pro-lock.ejs` upsell card (#15) wired into every gated-feature dead-end — replaces the bespoke webhook "Upgrade to Pro →" link in `views/settings.ejs` and surfaces two new lock cards on `views/invoice-view.ejs` for free users (payment_link + email_send) where previously they saw silent omission. The partial accepts `{feature, headline, benefit, icon}` locals, is a no-op for Pro/Agency users or when locals are missing, and POSTs straight to `/billing/create-checkout` with `billing_cycle=annual` and a per-surface `source=pro-lock-<feature>` tag so analytics can attribute conversions by lock. 15 new tests in `tests/pro-lock.test.js` cover the partial's render + 4 silent-no-op paths, the absence of the legacy "Upgrade to Pro →" copy, and the wiring on both surfaces for free vs. Pro vs. Agency users.
 Advances: Milestone 2 (locked-feature upsell stack).
 Master action: none.

@@ -8,6 +8,7 @@ const { createInvoicePaymentLink } = stripePaymentLinkLib;
 const parsePaymentMethods = stripePaymentLinkLib.parsePaymentMethods || (() => ['card']);
 const { firePaidWebhook, buildPaidPayload } = require('../lib/outbound-webhook');
 const { sendInvoiceEmail } = require('../lib/email');
+const { loadProSubscriberCount } = require('../lib/pro-subscriber-count');
 
 const router = express.Router();
 const FREE_LIMIT = 3;
@@ -49,14 +50,21 @@ router.get('/', requireAuth, async (req, res) => {
     const invoiceLimitProgress = buildInvoiceLimitProgress(user);
     const recentRevenueCard = buildRecentRevenueCard(user, recentRevenue);
     const annualUpgradePrompt = buildAnnualUpgradePrompt(user);
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, noindex: true });
+    // Pro social-proof anchor (#135): fire the cached count lookup only on
+    // the final-day banner render path — earlier-trial banner variants
+    // don't surface this line, so a fresh-cache miss isn't worth the
+    // round-trip on day-7-through-day-2.
+    const socialProof = days_left_in_trial === 1
+      ? await loadProSubscriberCount(db).catch(() => null)
+      : null;
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
       title: 'My Invoices', invoices: [], user: req.session.user || null,
       flash: null, days_left_in_trial: 0, onboarding: null,
       invoiceLimitProgress: null, recentRevenue: null,
-      annualUpgradePrompt: null, noindex: true
+      annualUpgradePrompt: null, socialProof: null, noindex: true
     });
   }
 });
