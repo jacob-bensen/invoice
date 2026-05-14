@@ -283,6 +283,33 @@ const db = {
     return rows;
   },
 
+  /*
+   * Records a single "what's missing?" feedback row (#145). Called from
+   * POST /billing/feedback when a user submits the upgrade-modal close
+   * widget. The route trims/whitelists every field before calling here; we
+   * still cap message length at 1000 chars as a belt-and-braces defence
+   * against a runaway TEXT write. user_id may be null for anonymous
+   * pricing-page submissions.
+   */
+  async recordFeedbackSignal({ user_id, source, reason, message, cycle }) {
+    const trimmedMessage = typeof message === 'string'
+      ? message.trim().slice(0, 1000)
+      : null;
+    const { rows } = await pool.query(
+      `INSERT INTO feedback_signals (user_id, source, reason, message, cycle)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, created_at`,
+      [
+        user_id || null,
+        source,
+        reason || null,
+        trimmedMessage && trimmedMessage.length > 0 ? trimmedMessage : null,
+        cycle || null
+      ]
+    );
+    return rows[0] || null;
+  },
+
   async getNextInvoiceNumber(userId) {
     const { rows } = await pool.query(
       'SELECT COUNT(*) as count FROM invoices WHERE user_id=$1',

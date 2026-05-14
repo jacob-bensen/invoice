@@ -6,10 +6,6 @@
 Single canonical upsell component fired from every gated feature (email send, payment link, branding, webhook URL) instead of bespoke dead-end copy per surface.
 Milestone 2 (locked-feature upsell stack).
 
-## #145 — "What's missing?" feedback widget on upgrade-modal close
-`<details>` element at the bottom of the upgrade modal; submission writes to a new `feedback_signals` table. Captures the silent close-without-upgrade signal Master needs to act on.
-Milestone 3 (conversion intelligence).
-
 ## #49 — First-paid-invoice celebration banner + referral email
 On the freelancer's first paid invoice, surface a celebration banner + send a "share QuickInvoice with a friend, both get Pro month" email — converts the emotional spike into a viral loop.
 Milestone 3 (conversion intelligence).

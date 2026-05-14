@@ -74,3 +74,22 @@ CREATE INDEX IF NOT EXISTS idx_invoices_payment_link_id ON invoices(payment_link
 CREATE INDEX IF NOT EXISTS idx_invoices_reminder_due
   ON invoices(status, due_date)
   WHERE status = 'sent';
+
+-- Conversion-intelligence signals captured from the upgrade-modal "What's
+-- missing?" widget (#145). user_id is nullable so the table also accepts
+-- anonymous pricing-page submissions; ON DELETE SET NULL preserves the
+-- aggregate signal even after the user is wiped. `reason` is the structured
+-- bucket (too_expensive | missing_feature | not_ready | still_evaluating |
+-- other), `message` the free-text follow-up. `source` namespaces future
+-- widgets so a single table feeds every conversion-feedback surface.
+CREATE TABLE IF NOT EXISTS feedback_signals (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  source VARCHAR(64) NOT NULL,
+  reason VARCHAR(64),
+  message TEXT,
+  cycle VARCHAR(20),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_signals_created_at ON feedback_signals(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_feedback_signals_source_reason ON feedback_signals(source, reason);

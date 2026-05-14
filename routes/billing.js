@@ -145,6 +145,54 @@ router.post('/switch-to-annual', requireAuth, async (req, res) => {
   }
 });
 
+// #145 — Conversion-intelligence capture from the upgrade-modal "What's
+// missing?" widget. Whitelists reason + source so a hostile client cannot
+// pollute the table with arbitrary buckets; trims/caps message length on
+// the way in (db.recordFeedbackSignal also caps at 1000 as defence-in-
+// depth). Returns 200 JSON on success — the widget flips to a thanks
+// state. Anonymous submissions (logged-out user on /billing/upgrade) are
+// allowed; user_id stores null.
+const FEEDBACK_REASONS = new Set([
+  'too_expensive',
+  'missing_feature',
+  'not_ready',
+  'still_evaluating',
+  'other'
+]);
+const FEEDBACK_SOURCES = new Set(['upgrade-modal', 'pricing-page']);
+const FEEDBACK_CYCLES = new Set(['monthly', 'annual']);
+
+router.post('/feedback', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const source = typeof body.source === 'string' && FEEDBACK_SOURCES.has(body.source)
+      ? body.source
+      : 'upgrade-modal';
+    const reason = typeof body.reason === 'string' && FEEDBACK_REASONS.has(body.reason)
+      ? body.reason
+      : null;
+    const cycle = typeof body.cycle === 'string' && FEEDBACK_CYCLES.has(body.cycle)
+      ? body.cycle
+      : null;
+    const message = typeof body.message === 'string' ? body.message : null;
+    if (!reason && (!message || !message.trim())) {
+      return res.status(400).json({ ok: false, error: 'missing_reason_or_message' });
+    }
+    const userId = req.session && req.session.user ? req.session.user.id : null;
+    const row = await db.recordFeedbackSignal({
+      user_id: userId,
+      source,
+      reason,
+      message,
+      cycle
+    });
+    res.json({ ok: true, id: row && row.id });
+  } catch (err) {
+    console.error('Feedback signal error:', err && err.message);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
 router.post('/portal', requireAuth, async (req, res) => {
   try {
     const user = await db.getUserById(req.session.user.id);

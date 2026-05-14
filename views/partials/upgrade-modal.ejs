@@ -113,9 +113,136 @@
           Not now
         </button>
       </div>
+
+      <!--
+        #145 — "What's missing?" feedback widget. The silent close-without-
+        upgrade signal is the most common, least-actionable outcome on this
+        modal. The <details> disclosure stays out of the way for users who
+        intend to upgrade and is the one path a hesitant user can take to
+        tell us *why* they didn't. Submission POSTs JSON to /billing/feedback
+        which writes feedback_signals; UI flips to a "thanks" state without
+        closing the modal so the user can still upgrade afterwards.
+      -->
+      <details class="mt-5 border-t border-gray-100 pt-4 text-xs" data-feedback-widget>
+        <summary class="cursor-pointer text-gray-500 hover:text-gray-700 font-medium select-none list-none flex items-center gap-1">
+          <span aria-hidden="true">💬</span>
+          <span>Not upgrading? Tell us what's missing</span>
+        </summary>
+        <form
+          x-data="upgradeFeedback()"
+          @submit.prevent="submit()"
+          class="mt-3 space-y-3"
+          data-testid="upgrade-feedback-form"
+        >
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          <input type="hidden" name="source" value="upgrade-modal">
+          <div class="space-y-1.5">
+            <label class="flex items-start gap-2 text-gray-600">
+              <input type="radio" name="reason" value="too_expensive" x-model="reason" class="mt-0.5">
+              <span>Too expensive for me right now</span>
+            </label>
+            <label class="flex items-start gap-2 text-gray-600">
+              <input type="radio" name="reason" value="missing_feature" x-model="reason" class="mt-0.5">
+              <span>Missing a feature I need</span>
+            </label>
+            <label class="flex items-start gap-2 text-gray-600">
+              <input type="radio" name="reason" value="not_ready" x-model="reason" class="mt-0.5">
+              <span>Not ready to commit yet</span>
+            </label>
+            <label class="flex items-start gap-2 text-gray-600">
+              <input type="radio" name="reason" value="still_evaluating" x-model="reason" class="mt-0.5">
+              <span>Still comparing alternatives</span>
+            </label>
+            <label class="flex items-start gap-2 text-gray-600">
+              <input type="radio" name="reason" value="other" x-model="reason" class="mt-0.5">
+              <span>Something else</span>
+            </label>
+          </div>
+          <textarea
+            name="message"
+            x-model="message"
+            rows="2"
+            maxlength="1000"
+            placeholder="Optional: which feature, which competitor, what blocks you?"
+            class="w-full text-xs rounded-md border border-gray-200 px-2 py-1.5 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-200"
+          ></textarea>
+          <div class="flex items-center justify-between">
+            <button
+              type="submit"
+              :disabled="submitting || (!reason && !message)"
+              class="bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed text-gray-700 font-medium px-3 py-1.5 rounded-md text-xs transition"
+              data-testid="upgrade-feedback-submit"
+            >
+              <span x-show="!submitting">Send feedback</span>
+              <span x-show="submitting" x-cloak>Sending…</span>
+            </button>
+            <span
+              x-show="thanks"
+              x-cloak
+              class="text-emerald-600 font-medium"
+              data-testid="upgrade-feedback-thanks"
+            >Thanks — we read every reply.</span>
+            <span
+              x-show="errored"
+              x-cloak
+              class="text-red-500 font-medium"
+              data-testid="upgrade-feedback-error"
+            >Could not send. Try again?</span>
+          </div>
+        </form>
+      </details>
     </div>
   </div>
 </div>
+
+<script>
+  function upgradeFeedback() {
+    return {
+      reason: '',
+      message: '',
+      submitting: false,
+      thanks: false,
+      errored: false,
+      async submit() {
+        if (this.submitting || this.thanks) return;
+        if (!this.reason && !this.message) return;
+        this.submitting = true;
+        this.errored = false;
+        try {
+          var csrfEl = document.querySelector(
+            '[data-feedback-widget] input[name="_csrf"]'
+          );
+          var csrf = csrfEl ? csrfEl.value : '';
+          var cycleEl = document.querySelector(
+            '[x-data="upgradeModal()"] input[name="billing_cycle"]'
+          );
+          var cycle = cycleEl ? cycleEl.value : '';
+          var r = await fetch('/billing/feedback', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'X-CSRF-Token': csrf
+            },
+            body: JSON.stringify({
+              source: 'upgrade-modal',
+              reason: this.reason || null,
+              message: this.message || null,
+              cycle: cycle || null
+            })
+          });
+          if (!r.ok) throw new Error('http_' + r.status);
+          this.thanks = true;
+        } catch (e) {
+          this.errored = true;
+        } finally {
+          this.submitting = false;
+        }
+      }
+    };
+  }
+</script>
 
 <script>
   function upgradeModal() {

@@ -3,6 +3,13 @@
 ---
 
 ## 2026-05-14
+Shipped: "What's missing?" feedback widget on upgrade-modal close (#145) — `<details>` disclosure at the bottom of `views/partials/upgrade-modal.ejs` with five whitelisted reason radios (too_expensive / missing_feature / not_ready / still_evaluating / other) + optional 1000-char message; submits async via fetch to a new `POST /billing/feedback` route that whitelists source/reason/cycle and writes a row through new `db.recordFeedbackSignal()` into a new idempotent `feedback_signals` table (user_id REFERENCES users ON DELETE SET NULL so anonymous + post-deletion signals both survive). CSRF-enforced via X-CSRF-Token header; widget travels with the modal onto every surface that includes it (dashboard + invoice-form). 16 new tests across the data layer (insert shape, 1000-char cap, whitespace→null, anonymous user_id), the route (authed + anonymous + invalid-reason coercion + bad-source coercion + 400 on empty + cycle whitelist + CSRF rejection + DB-throw 500), and the view (markup + 5-radio contract + testid contract + CSRF wired + invoice-form coverage).
+Advances: Milestone 3 (conversion intelligence captured).
+Master action: none — `feedback_signals` table is created idempotently via `db/schema.sql`; `heroku pg:psql < db/schema.sql` (already in MASTER_ACTIONS Deploy section) picks it up.
+
+---
+
+## 2026-05-14
 Shipped: monthly→annual upgrade banner on the dashboard (#47) — `buildAnnualUpgradePrompt` in `routes/invoices.js` gates on Pro+monthly+post-trial+active+has-subscription-id, the new `views/dashboard.ejs` banner POSTs to a new `POST /billing/switch-to-annual` endpoint that retrieves the Stripe subscription, swaps the item's price to `STRIPE_PRO_ANNUAL_PRICE_ID` with `proration_behavior: 'create_prorations'`, and persists `users.billing_cycle='annual'`; the Stripe checkout webhook now writes `billing_cycle` from `session.metadata.billing_cycle` (whitelisted to monthly|annual) so eligibility data accumulates from this deploy forward; idempotent schema migration adds the `billing_cycle VARCHAR(20)` column; 18 new tests cover the helper's 9 eligibility branches, the dashboard banner render contract, the route's 4 paths (free / already-annual / eligible-switch / annual-price-unset fallback), and 3 webhook capture paths. Also fixed two pre-existing rebrand typos in `tests/trial-nudge.test.js` (`decentinvoice.io` → `.com`) that had broken the test chain on master.
 Advances: Milestone 1 (decision-moment surfaces complete on /pricing, dashboard, and upgrade modal).
 Master action: none — `STRIPE_PRO_ANNUAL_PRICE_ID` is already tracked under Stripe configuration.
