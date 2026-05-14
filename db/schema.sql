@@ -51,6 +51,11 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMP;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_dismissed BOOLEAN DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_nudge_sent_at TIMESTAMP;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_reminder_sent_at TIMESTAMP;
+-- billing_cycle is set from Stripe checkout-session metadata so the dashboard
+-- can offer monthly subscribers a one-click switch to annual ($99/yr saves
+-- $45/year vs. monthly $12/mo). Nullable: legacy Pro rows without a recorded
+-- cycle simply do not see the switch prompt.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_cycle VARCHAR(20);
 
 -- INTERNAL_TODO H5: widen users.plan CHECK to allow 'business' and 'agency'.
 -- The CREATE TABLE above already uses the wide list for fresh installs; this

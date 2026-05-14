@@ -3,6 +3,13 @@
 ---
 
 ## 2026-05-14
+Shipped: monthly→annual upgrade banner on the dashboard (#47) — `buildAnnualUpgradePrompt` in `routes/invoices.js` gates on Pro+monthly+post-trial+active+has-subscription-id, the new `views/dashboard.ejs` banner POSTs to a new `POST /billing/switch-to-annual` endpoint that retrieves the Stripe subscription, swaps the item's price to `STRIPE_PRO_ANNUAL_PRICE_ID` with `proration_behavior: 'create_prorations'`, and persists `users.billing_cycle='annual'`; the Stripe checkout webhook now writes `billing_cycle` from `session.metadata.billing_cycle` (whitelisted to monthly|annual) so eligibility data accumulates from this deploy forward; idempotent schema migration adds the `billing_cycle VARCHAR(20)` column; 18 new tests cover the helper's 9 eligibility branches, the dashboard banner render contract, the route's 4 paths (free / already-annual / eligible-switch / annual-price-unset fallback), and 3 webhook capture paths. Also fixed two pre-existing rebrand typos in `tests/trial-nudge.test.js` (`decentinvoice.io` → `.com`) that had broken the test chain on master.
+Advances: Milestone 1 (decision-moment surfaces complete on /pricing, dashboard, and upgrade modal).
+Master action: none — `STRIPE_PRO_ANNUAL_PRICE_ID` is already tracked under Stripe configuration.
+
+---
+
+## 2026-05-14
 Shipped: pricing-page exit-intent modal (#46) — `views/partials/exit-intent-modal.ejs` fires once per session on mouseleave-top or visibilitychange-hidden, offering the annual plan ($99/yr = save $45/year) with a single-click checkout form; gated to non-Pro users only, one-shot via `qi.exitIntent.shown` sessionStorage flag, with 15 tests covering view-source markup, the Pro-user exclusion, the CSRF + billing_cycle wiring, and a vm-sandboxed exercise of the factory (init short-circuit, handler registration, trigger one-shot, clientY edge filter, visibility=hidden gate, sessionStorage throw safety).
 Advances: Milestone 1 (decision-moment surfaces complete on /pricing, dashboard, and upgrade modal).
 Master action: none.

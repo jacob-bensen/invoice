@@ -2,10 +2,6 @@
 
 > Each item advances a milestone in PLAN.md. Half-session-or-more of real engineering; no badge / copy-tweak / one-liner items.
 
-## #47 — Monthly → Annual upgrade prompt on dashboard
-For active monthly Pro users past day-30, render an in-dashboard prompt to switch to annual ($99/yr = 3 months free). HIGH LTV lift on the cohort already paying.
-Milestone 1 (decision-moment surfaces).
-
 ## #15 — Contextual Pro upsell prompts on locked features
 Single canonical upsell component fired from every gated feature (email send, payment link, branding, webhook URL) instead of bespoke dead-end copy per surface.
 Milestone 2 (locked-feature upsell stack).

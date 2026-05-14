@@ -105,6 +105,46 @@ router.get('/success', requireAuth, async (req, res) => {
   res.redirect('/dashboard');
 });
 
+router.post('/switch-to-annual', requireAuth, async (req, res) => {
+  try {
+    const user = await db.getUserById(req.session.user.id);
+    if (!user) return res.redirect('/auth/login');
+    if (user.plan !== 'pro' || !user.stripe_subscription_id) {
+      req.session.flash = { type: 'error', message: 'Only paying Pro subscribers can switch to annual.' };
+      return res.redirect('/invoices');
+    }
+    if (user.billing_cycle === 'annual') {
+      req.session.flash = { type: 'success', message: 'You\'re already on annual billing.' };
+      return res.redirect('/invoices');
+    }
+    const annualPriceId = process.env.STRIPE_PRO_ANNUAL_PRICE_ID;
+    if (!annualPriceId) {
+      // Annual price not yet configured in Stripe — graceful fallback so the
+      // CTA never produces an opaque 500. Operator action lives in
+      // MASTER_ACTIONS.md ("Create annual Pro price").
+      req.session.flash = { type: 'error', message: 'Annual billing is not available yet — please contact support.' };
+      return res.redirect('/invoices');
+    }
+    const sub = await stripe.subscriptions.retrieve(user.stripe_subscription_id);
+    const itemId = sub && sub.items && sub.items.data && sub.items.data[0] && sub.items.data[0].id;
+    if (!itemId) {
+      req.session.flash = { type: 'error', message: 'Could not locate your subscription. Please try again from the customer portal.' };
+      return res.redirect('/invoices');
+    }
+    await stripe.subscriptions.update(user.stripe_subscription_id, {
+      items: [{ id: itemId, price: annualPriceId }],
+      proration_behavior: 'create_prorations'
+    });
+    await db.updateUser(user.id, { billing_cycle: 'annual' });
+    req.session.flash = { type: 'success', message: 'Switched to annual billing — you\'ll save $45/year. Prorated credit applied.' };
+    res.redirect('/invoices');
+  } catch (err) {
+    console.error('Switch to annual error:', err && err.message);
+    req.session.flash = { type: 'error', message: 'Could not switch to annual billing. Please try again.' };
+    res.redirect('/invoices');
+  }
+});
+
 router.post('/portal', requireAuth, async (req, res) => {
   try {
     const user = await db.getUserById(req.session.user.id);
@@ -149,6 +189,10 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
               plan: 'pro',
               stripe_subscription_id: session.subscription
             };
+            const metaCycle = session.metadata && session.metadata.billing_cycle;
+            if (metaCycle === 'monthly' || metaCycle === 'annual') {
+              updates.billing_cycle = metaCycle;
+            }
             try {
               const sub = await stripe.subscriptions.retrieve(session.subscription);
               if (sub && sub.trial_end) {

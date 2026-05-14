@@ -48,13 +48,15 @@ router.get('/', requireAuth, async (req, res) => {
     const onboarding = buildOnboardingState(user, invoices);
     const invoiceLimitProgress = buildInvoiceLimitProgress(user);
     const recentRevenueCard = buildRecentRevenueCard(user, recentRevenue);
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, noindex: true });
+    const annualUpgradePrompt = buildAnnualUpgradePrompt(user);
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
       title: 'My Invoices', invoices: [], user: req.session.user || null,
       flash: null, days_left_in_trial: 0, onboarding: null,
-      invoiceLimitProgress: null, recentRevenue: null, noindex: true
+      invoiceLimitProgress: null, recentRevenue: null,
+      annualUpgradePrompt: null, noindex: true
     });
   }
 });
@@ -69,6 +71,44 @@ function buildInvoiceLimitProgress(user) {
   const atLimit = used >= max;
   const nearLimit = !atLimit && remaining <= 1;
   return { used, max, percent, remaining, atLimit, nearLimit };
+}
+
+/*
+ * Decides whether to render the monthly → annual upgrade banner on the
+ * dashboard (#47). The prompt is the highest-LTV move on already-paying
+ * customers: switching from $12/mo to $99/yr stretches retention from a
+ * monthly renewal decision to an annual one, and the freelancer saves
+ * $45/year — pure win-win that compounds with each customer who flips.
+ *
+ * Eligibility (all must hold):
+ *   - user is on the Pro plan
+ *   - billing_cycle is recorded as 'monthly' (set from Stripe checkout
+ *     metadata when the user first subscribed)
+ *   - subscription is not in a dunning state (past_due / paused) — never
+ *     stack an upsell on top of "your card failed"
+ *   - trial has ended OR no trial was used (we do not nudge during trial;
+ *     the trial banner owns that surface)
+ *   - we have a stripe_subscription_id (needed to actually update the
+ *     Stripe subscription server-side)
+ *
+ * Returns the prompt payload (a tiny shape the EJS template renders) or
+ * null when the user is ineligible.
+ */
+function buildAnnualUpgradePrompt(user) {
+  if (!user) return null;
+  if (user.plan !== 'pro') return null;
+  if (user.billing_cycle !== 'monthly') return null;
+  if (user.subscription_status === 'past_due' || user.subscription_status === 'paused') return null;
+  if (!user.stripe_subscription_id) return null;
+  if (user.trial_ends_at) {
+    const ends = new Date(user.trial_ends_at).getTime();
+    if (Number.isFinite(ends) && ends > Date.now()) return null;
+  }
+  return {
+    monthlyPrice: 12,
+    annualPrice: 99,
+    savingsPerYear: 45
+  };
 }
 
 function buildOnboardingState(user, invoices) {
@@ -421,6 +461,7 @@ module.exports = router;
 module.exports.buildOnboardingState = buildOnboardingState;
 module.exports.buildInvoiceLimitProgress = buildInvoiceLimitProgress;
 module.exports.buildRecentRevenueCard = buildRecentRevenueCard;
+module.exports.buildAnnualUpgradePrompt = buildAnnualUpgradePrompt;
 module.exports.onboardingDismissHandler = onboardingDismissHandler;
 module.exports.ALLOWED_INVOICE_STATUSES = ALLOWED_INVOICE_STATUSES;
 module.exports.FREE_LIMIT = FREE_LIMIT;

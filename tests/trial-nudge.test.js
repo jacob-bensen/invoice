@@ -61,7 +61,7 @@ function testHtmlEscapesNameAndIncludesCta() {
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.match(html, /Your Pro trial ends in 3 days/);
   assert.match(html, /4 invoices/, 'must show pluralised invoice count');
-  assert.match(html, /https:\/\/decentinvoice\.io\/dashboard/, 'CTA must link to /dashboard');
+  assert.match(html, /https:\/\/decentinvoice\.com\/dashboard/, 'CTA must link to /dashboard');
   assert.match(html, /Keep Pro/);
   assert.match(html, /Add payment method/);
   assert.match(html, /Stripe Payment Links/);
@@ -105,7 +105,7 @@ function testTextFallback() {
   assert.match(text, /trial ends in 3 days/);
   assert.match(text, /7 invoices/);
   assert.match(text, /Stripe Payment Links/);
-  assert.match(text, /https:\/\/decentinvoice\.io\/dashboard/, 'must trim trailing slash from APP_URL');
+  assert.match(text, /https:\/\/decentinvoice\.com\/dashboard/, 'must trim trailing slash from APP_URL');
 }
 
 function testDaysLeftArithmetic() {

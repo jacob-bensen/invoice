@@ -108,6 +108,44 @@
     </div>
   <% } %>
 
+  <% if (locals.annualUpgradePrompt && annualUpgradePrompt) { %>
+    <div
+      x-data="{ dismissed: false }"
+      x-show="!dismissed"
+      x-cloak
+      data-testid="annual-upgrade-banner"
+      class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4 flex items-start gap-3 print:hidden"
+      role="region"
+      aria-label="Switch to annual billing"
+    >
+      <div class="text-emerald-500 text-xl leading-none mt-0.5" aria-hidden="true">&#128176;</div>
+      <div class="flex-1 text-sm">
+        <p class="font-semibold text-emerald-900">
+          Save $<%= annualUpgradePrompt.savingsPerYear %>/year — switch to annual billing
+        </p>
+        <p class="text-emerald-800 mt-0.5">
+          You're paying $<%= annualUpgradePrompt.monthlyPrice %>/month. Annual is $<%= annualUpgradePrompt.annualPrice %>/year — that's 3 months free and one decision instead of twelve.
+        </p>
+        <form action="/billing/switch-to-annual" method="POST" class="mt-3">
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          <button
+            type="submit"
+            data-testid="annual-upgrade-submit"
+            class="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-3 py-2 rounded-lg transition"
+          >
+            Switch to annual &mdash; lock in $<%= annualUpgradePrompt.annualPrice %>/yr &rarr;
+          </button>
+        </form>
+      </div>
+      <button
+        type="button"
+        @click="dismissed = true"
+        class="text-emerald-400 hover:text-emerald-600 text-2xl leading-none"
+        aria-label="Dismiss"
+      >&times;</button>
+    </div>
+  <% } %>
+
   <% if (user && (user.subscription_status === 'past_due' || user.subscription_status === 'paused')) { %>
     <div
       x-data="{ dismissed: false }"
