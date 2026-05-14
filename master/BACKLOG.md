@@ -2,10 +2,6 @@
 
 > Each item advances a milestone in PLAN.md. Half-session-or-more of real engineering; no badge / copy-tweak / one-liner items.
 
-## #15 — Contextual Pro upsell prompts on locked features
-Single canonical upsell component fired from every gated feature (email send, payment link, branding, webhook URL) instead of bespoke dead-end copy per surface.
-Milestone 2 (locked-feature upsell stack).
-
 ## #49 — First-paid-invoice celebration banner + referral email
 On the freelancer's first paid invoice, surface a celebration banner + send a "share QuickInvoice with a friend, both get Pro month" email — converts the emotional spike into a viral loop.
 Milestone 3 (conversion intelligence).

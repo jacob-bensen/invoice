@@ -1,0 +1,52 @@
+<%
+  // Canonical Pro upsell card (#15). Replaces bespoke dead-end "Upgrade →"
+  // copy on every gated-feature surface with one consistent component that
+  // POSTs straight into the Stripe-checkout flow — no extra hop through the
+  // pricing page. Caller passes data via `locals.proLock`:
+  //   feature  — slug for testid + analytics ("webhook" / "payment_link" /
+  //              "email_send" / "branding"). Required.
+  //   headline — short benefit-led title shown on the lock card. Required.
+  //   benefit  — one-sentence outcome the user unlocks. Required.
+  //   icon     — single emoji rendered in the badge. Optional, defaults to 🔒.
+  //
+  // The partial is gated to non-Pro users; on Pro/Agency it silently emits
+  // nothing so it's safe to include unconditionally next to a Pro-only block.
+  const proLockCtx = locals.proLock || {};
+  const proLockFeature = String(proLockCtx.feature || '');
+  const proLockHeadline = String(proLockCtx.headline || '');
+  const proLockBenefit = String(proLockCtx.benefit || '');
+  const proLockIcon = String(proLockCtx.icon || '🔒');
+  const proLockUser = locals.user || null;
+  const proLockIsPaid = proLockUser && (proLockUser.plan === 'pro' || proLockUser.plan === 'agency');
+  if (proLockFeature && proLockHeadline && proLockBenefit && !proLockIsPaid) {
+%>
+<div
+  data-pro-lock="<%= proLockFeature %>"
+  class="border border-brand-200 bg-gradient-to-br from-brand-50 to-white rounded-xl p-5"
+>
+  <div class="flex items-start gap-3">
+    <div class="text-2xl leading-none" aria-hidden="true"><%= proLockIcon %></div>
+    <div class="flex-1 min-w-0">
+      <div class="flex items-center gap-2 mb-1">
+        <h3 class="font-semibold text-gray-900 text-sm"><%= proLockHeadline %></h3>
+        <span class="bg-brand-100 text-brand-700 text-[10px] font-bold px-2 py-0.5 rounded-full">PRO</span>
+      </div>
+      <p class="text-sm text-gray-600 mb-4"><%= proLockBenefit %></p>
+      <form action="/billing/create-checkout" method="POST" class="flex flex-wrap items-center gap-3" data-pro-lock-form>
+        <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+        <input type="hidden" name="billing_cycle" value="annual">
+        <input type="hidden" name="source" value="pro-lock-<%= proLockFeature %>">
+        <button
+          type="submit"
+          class="bg-brand-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-brand-700 transition"
+        >
+          Start 7-day free trial &rarr;
+        </button>
+        <span class="text-xs text-gray-500">
+          $99/yr · <span class="text-green-700 font-semibold">save $45 vs. monthly</span> · cancel anytime
+        </span>
+      </form>
+    </div>
+  </div>
+</div>
+<% } %>

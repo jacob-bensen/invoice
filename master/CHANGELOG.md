@@ -3,6 +3,13 @@
 ---
 
 ## 2026-05-14
+Shipped: canonical `views/partials/pro-lock.ejs` upsell card (#15) wired into every gated-feature dead-end — replaces the bespoke webhook "Upgrade to Pro →" link in `views/settings.ejs` and surfaces two new lock cards on `views/invoice-view.ejs` for free users (payment_link + email_send) where previously they saw silent omission. The partial accepts `{feature, headline, benefit, icon}` locals, is a no-op for Pro/Agency users or when locals are missing, and POSTs straight to `/billing/create-checkout` with `billing_cycle=annual` and a per-surface `source=pro-lock-<feature>` tag so analytics can attribute conversions by lock. 15 new tests in `tests/pro-lock.test.js` cover the partial's render + 4 silent-no-op paths, the absence of the legacy "Upgrade to Pro →" copy, and the wiring on both surfaces for free vs. Pro vs. Agency users.
+Advances: Milestone 2 (locked-feature upsell stack).
+Master action: none.
+
+---
+
+## 2026-05-14
 Shipped: "What's missing?" feedback widget on upgrade-modal close (#145) — `<details>` disclosure at the bottom of `views/partials/upgrade-modal.ejs` with five whitelisted reason radios (too_expensive / missing_feature / not_ready / still_evaluating / other) + optional 1000-char message; submits async via fetch to a new `POST /billing/feedback` route that whitelists source/reason/cycle and writes a row through new `db.recordFeedbackSignal()` into a new idempotent `feedback_signals` table (user_id REFERENCES users ON DELETE SET NULL so anonymous + post-deletion signals both survive). CSRF-enforced via X-CSRF-Token header; widget travels with the modal onto every surface that includes it (dashboard + invoice-form). 16 new tests across the data layer (insert shape, 1000-char cap, whitespace→null, anonymous user_id), the route (authed + anonymous + invalid-reason coercion + bad-source coercion + 400 on empty + cycle whitelist + CSRF rejection + DB-throw 500), and the view (markup + 5-radio contract + testid contract + CSRF wired + invoice-form coverage).
 Advances: Milestone 3 (conversion intelligence captured).
 Master action: none — `feedback_signals` table is created idempotently via `db/schema.sql`; `heroku pg:psql < db/schema.sql` (already in MASTER_ACTIONS Deploy section) picks it up.

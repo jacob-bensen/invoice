@@ -163,6 +163,30 @@
       </div>
     </div>
 
+    <!-- Free-plan dead-end recovery (#15). When the invoice has no payment
+         link AND the owner is on free, surface a canonical pro-lock card so
+         the user can see + click into the paid feature instead of staring
+         at a printable PDF and wondering why "Mark as Sent" did nothing.
+         Pro/Agency users with payment_link_url fall through to the live UI
+         a few lines below; Pro users without a link (e.g. status=draft)
+         silently skip this whole section. -->
+    <% if (!invoice.payment_link_url && user.plan === 'free') { %>
+      <div class="border-t border-gray-100 pt-6 mb-6 space-y-3">
+        <%- include('partials/pro-lock', { proLock: {
+          feature: 'payment_link',
+          icon: '💳',
+          headline: 'Add a one-click Stripe pay button to this invoice',
+          benefit: 'Pro auto-creates a secure Stripe payment link on every invoice — clients pay by card, ACH, or bank in one click instead of mailing a check.'
+        } }) %>
+        <%- include('partials/pro-lock', { proLock: {
+          feature: 'email_send',
+          icon: '✉️',
+          headline: 'Email this invoice to the client automatically',
+          benefit: 'On Pro, "Mark as Sent" emails the invoice straight to the client with the pay link attached — no copy-paste, no forgotten attachments.'
+        } }) %>
+      </div>
+    <% } %>
+
     <!-- Payment Link (Pro) -->
     <% if (invoice.payment_link_url && user.plan === 'pro') { %>
       <%

@@ -126,13 +126,12 @@
         </details>
       </div>
     <% } else { %>
-      <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
-        <p class="text-sm text-gray-600 mb-2">
-          🔒 Webhooks fire whenever you mark an invoice paid — perfect for connecting DecentInvoice to Zapier,
-          Make, Slack, or a spreadsheet.
-        </p>
-        <a href="/billing/upgrade" class="text-brand-600 text-sm font-semibold hover:underline">Upgrade to Pro →</a>
-      </div>
+      <%- include('partials/pro-lock', { proLock: {
+        feature: 'webhook',
+        icon: '🔗',
+        headline: 'Pipe every paid invoice into Slack, Zapier, or a spreadsheet',
+        benefit: 'Pro fires a JSON POST the moment any invoice is marked paid — paste a Zapier or Make hook URL above and stop chasing payments in three different tabs.'
+      } }) %>
     <% } %>
   </div>
 
