@@ -1,0 +1,131 @@
+<%
+// Exit-intent recovery modal (#46). Fires once per session on mouseleave-top
+// or visibilitychange-hidden, intercepting pricing-page bounces with the
+// annual offer ($99/yr = 3 months free). One-shot guard via sessionStorage
+// keyed on `qi.exitIntent.shown` so the same visitor never sees the modal
+// twice in one browsing session. Pro users are excluded — they're already
+// converted and shouldn't see a recovery surface.
+%>
+<% if (!locals.user || locals.user.plan !== 'pro') { %>
+<div
+  id="exit-intent-modal"
+  x-data="exitIntentModal()"
+  x-init="init()"
+  x-show="open"
+  x-cloak
+  @keydown.escape.window="close()"
+  class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/70 px-4"
+  style="display:none"
+>
+  <div
+    @click.outside="close()"
+    x-transition:enter="transition ease-out duration-150"
+    x-transition:enter-start="opacity-0 scale-95"
+    x-transition:enter-end="opacity-100 scale-100"
+    class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="exit-intent-modal-title"
+  >
+    <div class="bg-gradient-to-br from-emerald-500 to-emerald-700 px-8 py-8 text-white relative">
+      <button
+        type="button"
+        @click="close()"
+        class="absolute top-4 right-4 text-white/70 hover:text-white text-2xl leading-none"
+        aria-label="Close"
+      >&times;</button>
+      <div class="text-4xl mb-3" aria-hidden="true">🎁</div>
+      <h2 id="exit-intent-modal-title" class="text-2xl font-bold mb-2">Wait — get 3 months free.</h2>
+      <p class="text-emerald-50 text-sm">
+        Switch to annual and save $45/year on Pro. Same 7-day free trial, same one-click cancel.
+      </p>
+    </div>
+
+    <div class="px-8 py-6">
+      <div class="flex items-center justify-between mb-6">
+        <div>
+          <p class="text-xs text-gray-400 uppercase tracking-wide font-semibold mb-1">Pro · Annual</p>
+          <p class="text-3xl font-extrabold text-gray-900 mb-0">$99<span class="text-base font-normal text-gray-400">/yr</span></p>
+          <p class="text-sm text-gray-500">Just $8.25/mo, billed yearly</p>
+        </div>
+        <div class="text-right">
+          <span class="inline-block bg-emerald-100 text-emerald-700 text-xs font-extrabold px-3 py-1 rounded-full mb-1">Save $45/year</span>
+          <p class="text-xs text-gray-400 line-through mb-0">$144/yr monthly</p>
+        </div>
+      </div>
+
+      <form action="/billing/create-checkout" method="POST" class="mb-3">
+        <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+        <input type="hidden" name="billing_cycle" value="annual">
+        <button
+          type="submit"
+          class="w-full bg-emerald-600 text-white font-bold py-3 rounded-xl hover:bg-emerald-700 transition text-center"
+        >
+          Start 7-day free trial · Annual &rarr;
+        </button>
+      </form>
+
+      <p class="text-center text-xs text-gray-400">
+        No credit card required. Cancel anytime in one click.
+      </p>
+
+      <div class="text-center mt-4">
+        <button
+          type="button"
+          @click="close()"
+          class="text-xs text-gray-500 hover:text-gray-700 underline underline-offset-2"
+        >
+          No thanks &mdash; I'll keep looking
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function exitIntentModal() {
+    var STORAGE_KEY = 'qi.exitIntent.shown';
+    return {
+      open: false,
+      shown: false,
+      init: function () {
+        try {
+          if (typeof sessionStorage !== 'undefined' &&
+              sessionStorage.getItem(STORAGE_KEY) === '1') {
+            this.shown = true;
+            return;
+          }
+        } catch (e) { /* private-mode read fail — register handlers anyway */ }
+
+        var self = this;
+        var onLeave = function (e) {
+          if (e && typeof e.clientY === 'number' && e.clientY > 0) return;
+          self.trigger('mouseleave');
+        };
+        var onVisibility = function () {
+          if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+            self.trigger('visibility');
+          }
+        };
+        if (typeof document !== 'undefined' && document.addEventListener) {
+          document.addEventListener('mouseleave', onLeave);
+          document.addEventListener('visibilitychange', onVisibility);
+        }
+      },
+      trigger: function (_reason) {
+        if (this.shown) return;
+        this.shown = true;
+        try {
+          if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem(STORAGE_KEY, '1');
+          }
+        } catch (e) { /* swallow quota / private-mode write fail */ }
+        this.open = true;
+      },
+      close: function () {
+        this.open = false;
+      }
+    };
+  }
+</script>
+<% } %>

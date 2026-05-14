@@ -2,10 +2,6 @@
 
 > Each item advances a milestone in PLAN.md. Half-session-or-more of real engineering; no badge / copy-tweak / one-liner items.
 
-## #46 — Pricing-page exit-intent modal
-Mouse-leave / tab-hidden trigger on `/pricing` opens a one-shot modal with the annual offer; 5-15% bounce-cohort recovery on the highest-intent page in the funnel.
-Milestone 1 (decision-moment surfaces).
-
 ## #47 — Monthly → Annual upgrade prompt on dashboard
 For active monthly Pro users past day-30, render an in-dashboard prompt to switch to annual ($99/yr = 3 months free). HIGH LTV lift on the cohort already paying.
 Milestone 1 (decision-moment surfaces).
