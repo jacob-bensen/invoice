@@ -13,6 +13,7 @@ const { csrfProtection } = require('./middleware/csrf');
 const { securityHeaders } = require('./middleware/security-headers');
 const { requireAuth } = require('./middleware/auth');
 const { formatTrialCountdown } = require('./lib/html');
+const { getCompetitorPricing } = require('./lib/competitor-pricing');
 
 const app = express();
 
@@ -62,6 +63,7 @@ app.get('/', (req, res) => {
   if (req.session.user) return res.redirect('/dashboard');
   res.render('index', {
     title: 'DecentInvoice — Get Paid Faster',
+    competitorPricing: getCompetitorPricing(),
     ogTitle: 'DecentInvoice — Professional invoices in 60 seconds',
     ogDescription: 'Send invoices freelancers can pay in one click. Free to start, $12/mo for Pro. 7-day free trial, no credit card.',
     ogPath: '/'

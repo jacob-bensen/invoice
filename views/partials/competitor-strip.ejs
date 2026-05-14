@@ -1,0 +1,62 @@
+<%
+  const competitorData = locals.competitorPricing;
+  if (competitorData && competitorData.products && competitorData.products.length) {
+    const products = competitorData.products;
+    const labels = competitorData.featureLabels || {};
+    const featureKeys = Object.keys(labels);
+%>
+<section aria-labelledby="competitor-pricing-heading" class="max-w-5xl mx-auto mt-16 px-2">
+  <h2 id="competitor-pricing-heading" class="text-center text-2xl font-bold text-gray-900 mb-2">
+    How we compare
+  </h2>
+  <p class="text-center text-gray-500 text-sm mb-8">
+    Same Stripe-powered invoicing as the big-name tools, at a fraction of the monthly price.
+  </p>
+  <div class="overflow-x-auto -mx-2">
+    <table class="w-full text-sm border-collapse bg-white rounded-2xl shadow-sm border border-gray-200">
+      <thead>
+        <tr class="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+          <th scope="col" class="px-4 py-3 font-semibold">Product</th>
+          <th scope="col" class="px-4 py-3 font-semibold whitespace-nowrap">Lowest paid tier</th>
+          <th scope="col" class="px-4 py-3 font-semibold">Free tier</th>
+          <% featureKeys.forEach(function (key) { %>
+            <th scope="col" class="px-3 py-3 font-semibold text-center whitespace-nowrap"><%= labels[key] %></th>
+          <% }) %>
+        </tr>
+      </thead>
+      <tbody>
+        <% products.forEach(function (p) {
+             const rowCls = p.highlight ? 'bg-brand-50 font-semibold text-brand-900' : 'text-gray-700';
+        %>
+        <tr class="border-t border-gray-100 <%= rowCls %>">
+          <th scope="row" class="px-4 py-3 text-left font-semibold align-middle">
+            <%= p.name %>
+            <% if (p.highlight) { %>
+              <span class="ml-2 inline-block bg-brand-600 text-white text-[10px] font-bold uppercase px-2 py-0.5 rounded-full align-middle">You're here</span>
+            <% } %>
+          </th>
+          <td class="px-4 py-3 whitespace-nowrap">$<%= p.monthlyPrice %>/mo</td>
+          <td class="px-4 py-3 whitespace-nowrap"><%= p.freeTierNote || (p.freeTier ? 'Yes' : 'No') %></td>
+          <% featureKeys.forEach(function (key) {
+              const v = p.features && p.features[key];
+          %>
+          <td class="px-3 py-3 text-center">
+            <% if (v) { %>
+              <span class="text-green-600" aria-label="<%= labels[key] %>: Yes">✓</span>
+            <% } else { %>
+              <span class="text-gray-300" aria-label="<%= labels[key] %>: No">✕</span>
+            <% } %>
+          </td>
+          <% }) %>
+        </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+  <% if (competitorData.disclaimerNote) { %>
+    <p class="text-center text-gray-400 text-xs mt-4 max-w-2xl mx-auto">
+      <%= competitorData.disclaimerNote %>
+    </p>
+  <% } %>
+</section>
+<% } %>

@@ -2,6 +2,13 @@
 
 ---
 
+## 2026-05-14
+Shipped: side-by-side competitor pricing strip on /billing/upgrade and the homepage `#pricing` section, sourced from a new `data/competitor-pricing.json` fixture + `lib/competitor-pricing.js` loader, with a 12-test guard covering data shape (every product carries booleans for every feature key, exactly one highlighted row, DecentInvoice priced cheapest) and end-to-end rendering on both surfaces.
+Advances: Milestone 1 (decision-moment surfaces complete on /pricing, dashboard, and upgrade modal).
+Master action: none.
+
+---
+
 ## 2026-04-29T03:30Z — Cycle 23 — Session Briefing (Role 1: Epic Manager)
 
 **Active epics this cycle (3 of 9, no change):**

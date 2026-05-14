@@ -1,0 +1,83 @@
+{
+  "products": [
+    {
+      "name": "DecentInvoice Pro",
+      "monthlyPrice": 12,
+      "annualPrice": 99,
+      "freeTier": true,
+      "freeTierNote": "Free up to 3 invoices",
+      "highlight": true,
+      "features": {
+        "unlimitedInvoices": true,
+        "stripePaymentLinks": true,
+        "autoReminders": true,
+        "customBranding": true,
+        "noPerClientCap": true
+      }
+    },
+    {
+      "name": "FreshBooks Lite",
+      "monthlyPrice": 19,
+      "freeTier": false,
+      "freeTierNote": "30-day trial only",
+      "highlight": false,
+      "features": {
+        "unlimitedInvoices": false,
+        "stripePaymentLinks": true,
+        "autoReminders": true,
+        "customBranding": true,
+        "noPerClientCap": false
+      }
+    },
+    {
+      "name": "Bonsai Starter",
+      "monthlyPrice": 25,
+      "freeTier": false,
+      "freeTierNote": "14-day trial",
+      "highlight": false,
+      "features": {
+        "unlimitedInvoices": true,
+        "stripePaymentLinks": true,
+        "autoReminders": true,
+        "customBranding": true,
+        "noPerClientCap": true
+      }
+    },
+    {
+      "name": "HoneyBook Starter",
+      "monthlyPrice": 19,
+      "freeTier": false,
+      "freeTierNote": "7-day trial",
+      "highlight": false,
+      "features": {
+        "unlimitedInvoices": true,
+        "stripePaymentLinks": false,
+        "autoReminders": true,
+        "customBranding": true,
+        "noPerClientCap": true
+      }
+    },
+    {
+      "name": "Wave Pro",
+      "monthlyPrice": 16,
+      "freeTier": false,
+      "freeTierNote": "No free plan",
+      "highlight": false,
+      "features": {
+        "unlimitedInvoices": true,
+        "stripePaymentLinks": true,
+        "autoReminders": true,
+        "customBranding": false,
+        "noPerClientCap": true
+      }
+    }
+  ],
+  "featureLabels": {
+    "unlimitedInvoices": "Unlimited invoices",
+    "stripePaymentLinks": "Stripe payment links",
+    "autoReminders": "Auto reminders",
+    "customBranding": "Custom branding",
+    "noPerClientCap": "No per-client cap"
+  },
+  "disclaimerNote": "Prices in USD, monthly equivalent as of 2026. Trademarks belong to their respective owners; this comparison reflects each vendor's lowest paid tier and may not match every plan they sell."
+}

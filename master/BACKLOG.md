@@ -10,10 +10,6 @@ Milestone 1 (decision-moment surfaces).
 For active monthly Pro users past day-30, render an in-dashboard prompt to switch to annual ($99/yr = 3 months free). HIGH LTV lift on the cohort already paying.
 Milestone 1 (decision-moment surfaces).
 
-## #108 — Side-by-side competitor pricing strip on /pricing
-Static table comparing QuickInvoice Pro $12/mo to FreshBooks / Bonsai / HoneyBook / Wave; bolds the QuickInvoice row. Pulls from `data/competitor-pricing.json` fixture.
-Milestone 1 (decision-moment surfaces).
-
 ## #15 — Contextual Pro upsell prompts on locked features
 Single canonical upsell component fired from every gated feature (email send, payment link, branding, webhook URL) instead of bespoke dead-end copy per surface.
 Milestone 2 (locked-feature upsell stack).

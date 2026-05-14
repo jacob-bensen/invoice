@@ -4,6 +4,7 @@ const { db, pool } = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const { isValidWebhookUrl, firePaidWebhook, buildPaidPayload } = require('../lib/outbound-webhook');
 const { sendPaidNotificationEmail } = require('../lib/email');
+const { getCompetitorPricing } = require('../lib/competitor-pricing');
 
 const router = express.Router();
 
@@ -13,6 +14,7 @@ router.get('/upgrade', requireAuth, (req, res) => {
   res.render('pricing', {
     title: 'Upgrade to Pro',
     flash,
+    competitorPricing: getCompetitorPricing(),
     ogTitle: 'DecentInvoice Pro — Unlimited invoices, payment links, $12/mo',
     ogDescription: 'Upgrade to Pro for unlimited invoices, Stripe payment links, automated reminders, and custom branding. 7-day free trial, no credit card.',
     ogPath: '/billing/upgrade'
