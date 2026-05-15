@@ -84,6 +84,14 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS referrer_id INTEGER REFERENCES users(
 -- than one free month per referral.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_credited_at TIMESTAMP;
 
+-- Welcome-email idempotency. Stamped the first time the post-signup welcome
+-- email fires so a re-trigger (e.g. catch-up email helper for legacy users
+-- created before the email landed) never double-sends to the same address.
+-- The fire path is a single UPDATE guarded on `welcome_email_sent_at IS NULL`,
+-- mirroring `recordFirstPaidIfMissing` (#49) and `creditReferrerIfMissing`
+-- (#50) — race-safe by SQL construction.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS welcome_email_sent_at TIMESTAMP;
+
 -- INTERNAL_TODO H5: widen users.plan CHECK to allow 'business' and 'agency'.
 -- The CREATE TABLE above already uses the wide list for fresh installs; this
 -- block migrates pre-existing deployments whose constraint still pins

@@ -418,6 +418,29 @@ const db = {
   },
 
   /*
+   * Idempotently stamps users.welcome_email_sent_at the first time the
+   * post-signup welcome email fires. Single SQL UPDATE guarded on the column
+   * being NULL — concurrent callers race on the row lock and exactly one
+   * sees rows[0] returned (the others see []), so the email is sent at most
+   * once per user even if /auth/register were retriggered or a future
+   * catch-up job re-enters this path. Returns the post-stamp user row when
+   * the email should be sent now, or null when the welcome was already sent.
+   */
+  async markWelcomeEmailSent(userId) {
+    if (!userId) return null;
+    const { rows } = await pool.query(
+      `UPDATE users
+          SET welcome_email_sent_at = NOW(),
+              updated_at            = NOW()
+        WHERE id = $1
+          AND welcome_email_sent_at IS NULL
+        RETURNING id, email, name, business_name, business_email, reply_to_email, plan`,
+      [userId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Lazy-generates a stable referral code on first need (#49). 8 random
    * bytes → 16 hex chars; collision probability against the population is
    * negligible (2^64). UNIQUE constraint on the column means a colliding

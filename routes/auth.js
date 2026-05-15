@@ -4,6 +4,7 @@ const { body, validationResult } = require('express-validator');
 const { db } = require('../db');
 const { redirectIfAuth } = require('../middleware/auth');
 const { authLimiter } = require('../middleware/rate-limit');
+const { triggerWelcomeEmail } = require('../lib/welcome');
 
 const router = express.Router();
 
@@ -77,6 +78,19 @@ router.post('/register', redirectIfAuth, authLimiter, [
       subscription_status: user.subscription_status || null,
       trial_ends_at: user.trial_ends_at || null
     };
+
+    // Welcome email (fire-and-forget). Drives the signup → first-real-invoice
+    // activation step that gates every downstream trial-conversion surface.
+    // Idempotent at the DB layer; soft-fails on Resend not_configured / send
+    // errors so a transactional-email outage never blocks signup.
+    triggerWelcomeEmail(db, user.id)
+      .then(r => {
+        if (!r.ok && r.reason !== 'not_configured' && r.reason !== 'already_sent') {
+          console.warn(`Welcome email skipped for user ${user.id}: ${r.reason}`);
+        }
+      })
+      .catch(e => console.error('Welcome email error:', e && e.message));
+
     res.redirect('/dashboard');
   } catch (err) {
     console.error('Register error:', err);

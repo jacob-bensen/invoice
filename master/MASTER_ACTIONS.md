@@ -2,6 +2,10 @@
 
 > Items genuinely waiting on a human (credentials, payment-provider setup, asset delivery, legal, store listings). Code is in for every item below; nothing here is solved by a commit.
 
+## [PLAN-REVIEW]
+
+Trial→paid Primary Objective code-side "Done means" surfaces all shipped (pre-decision, at-decision, in-trial, post-trial-close — see CHANGELOG entries). Next session should pick a new Primary Objective; proposed: **Maximize signup → first-sent-invoice activation rate** (activation is the upstream multiplier on every trial→paid lever already shipped). Operator also needs to validate the trial→paid loop on live Stripe (the "at least one Pro-paying user end-to-end" criterion in current PLAN.md → Done means) before the rotation locks in.
+
 ## Deploy
 
 ### Provision Heroku app + Postgres + env
