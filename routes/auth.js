@@ -48,6 +48,16 @@ router.post('/register', redirectIfAuth, authLimiter, [
     const password_hash = await bcrypt.hash(req.body.password, 12);
     const user = await db.createUser({ email: req.body.email, password_hash, name: req.body.name });
 
+    // Seed a sample draft invoice (#39) so the dashboard is never empty.
+    // Best-effort: a seed failure must NOT abort account creation.
+    try {
+      if (typeof db.createSeedInvoice === 'function') {
+        await db.createSeedInvoice({ user_id: user.id });
+      }
+    } catch (err) {
+      console.error('Seed invoice failed:', err && err.message);
+    }
+
     req.session.user = {
       id: user.id, email: user.email, name: user.name,
       plan: user.plan, invoice_count: user.invoice_count,

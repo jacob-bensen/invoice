@@ -122,10 +122,13 @@ function buildAnnualUpgradePrompt(user) {
 function buildOnboardingState(user, invoices) {
   if (!user || user.onboarding_dismissed) return null;
   const list = Array.isArray(invoices) ? invoices : [];
+  // Exclude the signup-seeded sample invoice (#39) from progress counting —
+  // the user hasn't "created" their first invoice until they've made a real one.
+  const realInvoices = list.filter((i) => !i.is_seed);
   const businessAdded = !!(user.business_name && String(user.business_name).trim());
-  const invoiceCreated = list.length >= 1;
-  const invoiceSent = list.some((i) => ['sent', 'paid', 'overdue'].includes(i.status));
-  const invoicePaid = list.some((i) => i.status === 'paid');
+  const invoiceCreated = realInvoices.length >= 1;
+  const invoiceSent = realInvoices.some((i) => ['sent', 'paid', 'overdue'].includes(i.status));
+  const invoicePaid = realInvoices.some((i) => i.status === 'paid');
   const steps = [
     { key: 'business', label: 'Add your business info', href: '/billing/settings', done: businessAdded },
     { key: 'create', label: 'Create your first invoice', href: '/invoices/new', done: invoiceCreated },

@@ -54,6 +54,53 @@ const db = {
     return rows[0] || null;
   },
 
+  /*
+   * Inserts the "welcome" sample invoice (#39) at signup so the new user's
+   * dashboard is never empty. The row is marked `is_seed = true`, which the
+   * dashboard surfaces as an Example badge + edit-me hint, and the onboarding
+   * checklist ignores when counting "create your first invoice". Critically,
+   * we do NOT bump users.invoice_count — the seed is a free 4th slot on the
+   * free tier so the user doesn't burn a real invoice slot on the template.
+   * Best-effort: callers (auth/register) wrap this in try/catch so a seed
+   * failure can never block account creation.
+   */
+  async createSeedInvoice({ user_id }) {
+    const items = [
+      { description: 'Design consultation (4 hrs)', quantity: 4, unit_price: 75 }
+    ];
+    const subtotal = 300;
+    const tax_rate = 0;
+    const tax_amount = 0;
+    const total = 300;
+    const issued = new Date();
+    const due = new Date(Date.now() + 30 * 86400000);
+    const year = issued.getFullYear();
+    const invoice_number = `INV-${year}-0001`;
+    const { rows } = await pool.query(
+      `INSERT INTO invoices
+        (user_id, invoice_number, client_name, client_email, client_address,
+         items, subtotal, tax_rate, tax_amount, total, notes, due_date, issued_date, is_seed)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, true)
+       RETURNING *`,
+      [
+        user_id,
+        invoice_number,
+        'Sample Client (edit this)',
+        'client@example.com',
+        '',
+        JSON.stringify(items),
+        subtotal,
+        tax_rate,
+        tax_amount,
+        total,
+        'Thanks for your business! Payment due within 30 days.',
+        due,
+        issued
+      ]
+    );
+    return rows[0];
+  },
+
   async createInvoice(data) {
     const {
       user_id, invoice_number, client_name, client_email, client_address,

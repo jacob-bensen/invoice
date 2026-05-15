@@ -2,6 +2,13 @@
 
 ---
 
+## 2026-05-15
+Shipped: #39 first-invoice seed template on signup — `db.createSeedInvoice({ user_id })` inserts a draft `INV-<year>-0001` row marked `is_seed=true` with a sample client + one $300 line item + 30-day due date, and crucially does NOT bump `users.invoice_count` so the seed is a free 4th slot on top of the 3-invoice free-tier limit. `POST /auth/register` calls it best-effort (try/catch + `typeof` guard) so account creation never fails on a seed insert error. `buildOnboardingState` excludes `is_seed` rows from create/send/paid progress so the checklist still requires a real invoice. `views/dashboard.ejs` renders a one-line "this is a sample — edit it" hint when the invoice list is seed-only, plus an "Example" badge on the seed row that stays even after the user creates real invoices. Idempotent schema migration adds `invoices.is_seed BOOLEAN DEFAULT false`. 12 new tests cover the SQL shape (is_seed=true literal, INV-year-0001 format, no users UPDATE), three register integration paths (called, survives throw, survives missing method), three onboarding branches, and four dashboard render branches.
+Advances: Milestone 3 (conversion intelligence — activation feeds the trial cohort).
+Master action: none — `is_seed` migration runs on next `heroku pg:psql < db/schema.sql` (already in MASTER_ACTIONS Deploy section).
+
+---
+
 ## 2026-05-14
 Shipped: #135 social-proof anchor on the day-1 trial-urgent banner — new `db.countActiveProSubscribers()` filters on `plan IN ('pro','agency') AND subscription_status='active'` (excludes trialing + dunning users), wrapped by a process-local `lib/pro-subscriber-count.js` loader with a 1-hour TTL, in-flight coalescing, and a static-copy fallback for below-threshold (<50) counts or DB-throw paths. The dashboard route only triggers the cached lookup when `days_left_in_trial === 1`, so the day-7-through-day-2 banner pays zero round-trips. View renders "Join N freelancers on Pro" (thousands-separated) below the existing #134 hours-remaining + #133 annual-savings pills, in the red-urgent palette, closing milestone 4's anchor stack. 16 tests across db SQL shape, loader cache/coalesce/refresh paths, and view DOM order + XSS escape.
 Advances: Milestone 4 (trial urgency stack frozen).

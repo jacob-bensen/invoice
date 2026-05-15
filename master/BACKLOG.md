@@ -6,10 +6,6 @@
 On the freelancer's first paid invoice, surface a celebration banner + send a "share QuickInvoice with a friend, both get Pro month" email — converts the emotional spike into a viral loop.
 Milestone 3 (conversion intelligence).
 
-## #39 — First-invoice seed template on signup
-Auto-populate a draft invoice for new users so the dashboard is never empty; activation lift compounds directly with trial-end conversion.
-Milestone 3 (conversion intelligence — activation feeds the trial cohort).
-
 ## #43 — Public read-only invoice URL `/i/:token`
 Tokenized share link for an invoice without login; unblocks downstream surfaces (#48 powered-by badge, #69 embed widget, #78 freelancer profile, #111 client-preview).
 Milestone 2 (locked-feature upsell stack — adds a Pro-only share surface).

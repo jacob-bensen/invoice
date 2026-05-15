@@ -49,6 +49,7 @@ const dbStub = {
       usersByEmail.set(email, user);
       return user;
     },
+    async createSeedInvoice() { return { id: 1, is_seed: true }; },
     async updateUser() { return null; }
   },
   pool: { query: async () => ({ rows: [] }) }

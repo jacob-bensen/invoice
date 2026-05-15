@@ -490,6 +490,20 @@
 
     <!-- Invoice table -->
     <% const isProUser = user && (user.plan === 'pro' || user.plan === 'agency'); %>
+    <% const onlySeedInvoices = invoices.length > 0 && invoices.every((i) => i.is_seed); %>
+    <% if (onlySeedInvoices) { %>
+      <div
+        data-testid="seed-invoice-hint"
+        class="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-5 py-3 flex items-start gap-3 print:hidden"
+        role="region"
+        aria-label="Sample invoice ready to edit"
+      >
+        <div class="text-amber-500 text-lg leading-none mt-0.5" aria-hidden="true">&#9999;</div>
+        <p class="text-sm text-amber-900 flex-1">
+          <strong>This is a sample invoice.</strong> Open it, replace the client and line items, and you'll have your first real invoice ready to send &mdash; it doesn't count against your free limit.
+        </p>
+      </div>
+    <% } %>
     <div id="invoices-table" class="bg-white rounded-2xl border border-gray-200 overflow-hidden scroll-mt-6">
       <table class="w-full text-sm">
         <thead class="bg-gray-50 border-b border-gray-200">
@@ -506,8 +520,13 @@
         </thead>
         <tbody class="divide-y divide-gray-100">
           <% invoices.forEach(inv => { %>
-            <tr class="hover:bg-gray-50 cursor-pointer" onclick="window.location='/invoices/<%= inv.id %>'">
-              <td class="px-6 py-4 font-medium text-brand-600"><%= inv.invoice_number %></td>
+            <tr class="hover:bg-gray-50 cursor-pointer" data-is-seed="<%= inv.is_seed ? 'true' : 'false' %>" onclick="window.location='/invoices/<%= inv.id %>'">
+              <td class="px-6 py-4 font-medium text-brand-600">
+                <%= inv.invoice_number %>
+                <% if (inv.is_seed) { %>
+                  <span data-testid="seed-invoice-badge" class="ml-2 inline-block text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">Example</span>
+                <% } %>
+              </td>
               <td class="px-6 py-4 text-gray-700"><%= inv.client_name %></td>
               <td class="px-6 py-4 text-gray-500"><%= new Date(inv.issued_date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) %></td>
               <td class="px-6 py-4 text-right font-semibold text-gray-900">$<%= parseFloat(inv.total).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) %></td>

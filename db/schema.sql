@@ -56,6 +56,12 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_reminder_sent_at TIMESTAMP;
 -- $45/year vs. monthly $12/mo). Nullable: legacy Pro rows without a recorded
 -- cycle simply do not see the switch prompt.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_cycle VARCHAR(20);
+-- is_seed flags the template invoice auto-inserted at signup (#39) so the
+-- dashboard is never empty for a brand-new user. Seeded rows do NOT count
+-- toward the free-tier 3-invoice limit (createSeedInvoice skips the
+-- users.invoice_count bump), and the dashboard renders an "Example" badge
+-- + a one-line edit-me hint on them.
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS is_seed BOOLEAN DEFAULT false;
 
 -- INTERNAL_TODO H5: widen users.plan CHECK to allow 'business' and 'agency'.
 -- The CREATE TABLE above already uses the wide list for fresh installs; this
