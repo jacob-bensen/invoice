@@ -504,6 +504,88 @@ const db = {
    * days) all see the WHERE clause fail and return `{ rows: [] }` → null,
    * so the caller's Stripe `subscriptions.update` is never invoked twice.
    */
+  /*
+   * Lazy-generates a stable public-share token for an invoice (#43). Token is
+   * 16 hex chars (8 random bytes) — same shape as referral codes, opaque
+   * enough that enumeration is intractable (2^64). Scoped by user_id so a
+   * caller can't mint a token on someone else's invoice. UNIQUE constraint
+   * means a colliding INSERT throws 23505 — we retry with a fresh code.
+   * The COALESCE pattern handles concurrent callers: both race the UPDATE,
+   * only one write lands, both see the same final token on the follow-up
+   * SELECT.
+   */
+  async getOrCreatePublicToken(invoiceId, userId) {
+    if (!invoiceId || !userId) return null;
+    const existing = await pool.query(
+      'SELECT public_token FROM invoices WHERE id = $1 AND user_id = $2',
+      [invoiceId, userId]
+    );
+    if (!existing.rows[0]) return null;
+    const current = existing.rows[0].public_token;
+    if (current) return current;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const token = crypto.randomBytes(8).toString('hex');
+      try {
+        const { rows } = await pool.query(
+          `UPDATE invoices
+              SET public_token = $3,
+                  updated_at    = NOW()
+            WHERE id = $1
+              AND user_id = $2
+              AND public_token IS NULL
+            RETURNING public_token`,
+          [invoiceId, userId, token]
+        );
+        if (rows[0] && rows[0].public_token) return rows[0].public_token;
+        const reread = await pool.query(
+          'SELECT public_token FROM invoices WHERE id = $1 AND user_id = $2',
+          [invoiceId, userId]
+        );
+        if (reread.rows[0] && reread.rows[0].public_token) {
+          return reread.rows[0].public_token;
+        }
+      } catch (err) {
+        if (!err || err.code !== '23505') throw err;
+      }
+    }
+    return null;
+  },
+
+  /*
+   * Fetches an invoice + the owner's branding fields for a public, no-auth
+   * render at /i/:token (#43). Token format is strictly enforced before the
+   * round-trip — anything that's not 8-32 hex chars short-circuits to null
+   * so a probing crawler doesn't pay the SQL cost. Joins users so the
+   * public template can render the owner's business name / address / email
+   * without a second query, and exposes plan + payment_link_url so the
+   * template can conditionally show a Pay-now button (Pro/Agency only).
+   */
+  async getInvoiceByPublicToken(token) {
+    if (!token || typeof token !== 'string') return null;
+    const trimmed = token.trim();
+    if (!/^[a-f0-9]{8,32}$/i.test(trimmed)) return null;
+    const { rows } = await pool.query(
+      `SELECT
+         i.id, i.invoice_number, i.client_name, i.client_email, i.client_address,
+         i.items, i.subtotal, i.tax_rate, i.tax_amount, i.total, i.notes,
+         i.status, i.issued_date, i.due_date,
+         i.payment_link_url, i.public_token,
+         u.id              AS owner_id,
+         u.name            AS owner_name,
+         u.email           AS owner_email,
+         u.business_name   AS owner_business_name,
+         u.business_address AS owner_business_address,
+         u.business_email   AS owner_business_email,
+         u.business_phone   AS owner_business_phone,
+         u.plan            AS owner_plan
+         FROM invoices i
+         JOIN users u ON u.id = i.user_id
+        WHERE i.public_token = $1`,
+      [trimmed]
+    );
+    return rows[0] || null;
+  },
+
   async creditReferrerIfMissing(referredUserId) {
     if (!referredUserId) return null;
     const { rows } = await pool.query(

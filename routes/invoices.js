@@ -10,6 +10,7 @@ const { firePaidWebhook, buildPaidPayload } = require('../lib/outbound-webhook')
 const { sendInvoiceEmail, sendReferralCelebrationEmail } = require('../lib/email');
 const { loadProSubscriberCount } = require('../lib/pro-subscriber-count');
 const { triggerFirstPaidCelebration, buildReferralUrl } = require('../lib/celebration');
+const { buildPublicInvoiceUrl } = require('../lib/share-link');
 
 const router = express.Router();
 const FREE_LIMIT = 3;
@@ -483,6 +484,34 @@ router.post('/:id/status', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Status update error:', err);
     res.redirect(`/invoices/${req.params.id}`);
+  }
+});
+
+/*
+ * Pro-only: lazy-mints (or returns the existing) public share token for an
+ * invoice and responds with the absolute /i/<token> URL the user pastes to
+ * their client (#43). Free users get a JSON 403 so the inline pro-lock card
+ * — which already lives next to the share button — is the visible upsell;
+ * we don't redirect through the pricing page because the client-side caller
+ * is a fetch() that wants a structured response. CSRF-protected via the
+ * shared middleware (POST methods require X-CSRF-Token).
+ */
+router.post('/:id/share', requireAuth, async (req, res) => {
+  try {
+    const user = await db.getUserById(req.session.user.id);
+    if (!user) return res.status(401).json({ error: 'auth_required' });
+    if (user.plan !== 'pro' && user.plan !== 'agency') {
+      return res.status(403).json({ error: 'pro_only' });
+    }
+    const invoice = await db.getInvoiceById(req.params.id, req.session.user.id);
+    if (!invoice) return res.status(404).json({ error: 'not_found' });
+    const token = await db.getOrCreatePublicToken(invoice.id, req.session.user.id);
+    if (!token) return res.status(500).json({ error: 'token_failed' });
+    res.set('Cache-Control', 'no-store');
+    res.json({ token, url: buildPublicInvoiceUrl(token) });
+  } catch (err) {
+    console.error('Share-link mint error:', err && err.message);
+    res.status(500).json({ error: 'server_error' });
   }
 });
 

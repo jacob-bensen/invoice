@@ -95,6 +95,15 @@ ALTER TABLE users DROP CONSTRAINT IF EXISTS users_plan_check;
 ALTER TABLE users ADD CONSTRAINT users_plan_check
   CHECK (plan IN ('free', 'pro', 'business', 'agency'));
 
+-- Public read-only invoice share token (#43). Lazy-generated the first time a
+-- Pro user clicks "Share link" on an invoice; surfaces a tokenized
+-- /i/<token> URL the freelancer can paste into an email or DM so the client
+-- views the invoice (and the Pro payment link) without needing a DecentInvoice
+-- account. UNIQUE so the route can lookup by token directly; nullable so the
+-- column doesn't burn space on the vast majority of invoices that are never
+-- shared by link.
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS public_token VARCHAR(32) UNIQUE;
+
 CREATE INDEX IF NOT EXISTS idx_invoices_user_id ON invoices(user_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
 CREATE INDEX IF NOT EXISTS idx_invoices_payment_link_id ON invoices(payment_link_id);

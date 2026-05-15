@@ -184,6 +184,56 @@
           headline: 'Email this invoice to the client automatically',
           benefit: 'On Pro, "Mark as Sent" emails the invoice straight to the client with the pay link attached — no copy-paste, no forgotten attachments.'
         } }) %>
+        <%- include('partials/pro-lock', { proLock: {
+          feature: 'share_link',
+          icon: '🔗',
+          headline: 'Send your client a clean, branded link to this invoice',
+          benefit: 'Pro generates a tokenized /i/<token> share URL — your client opens it in their browser, sees your branding, and pays in one click. No login required.'
+        } }) %>
+      </div>
+    <% } %>
+
+    <!-- Public share link (#43) — Pro/Agency only. Tokenized /i/<token>
+         URL the freelancer can paste into a DM, email, or text so the
+         client views the invoice and pays in one click — without needing
+         a DecentInvoice account. Token is lazy-minted by a fetch() POST
+         to /invoices/:id/share on first click; subsequent clicks return
+         the cached token. -->
+    <% if (user.plan === 'pro' || user.plan === 'agency') { %>
+      <div class="border-t border-gray-100 pt-6 mb-6"
+        data-testid="public-share-section"
+        x-data="{ url: '', copied: false, loading: false, error: '' }">
+        <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Public share link</p>
+        <p class="text-gray-500 text-sm mb-3">Send your client a tokenized URL that opens this invoice in their browser — no login required. They see your branding and the pay button.</p>
+        <div class="flex items-center gap-2" x-show="!url">
+          <button type="button"
+            data-testid="public-share-generate"
+            @click="loading = true; error = ''; fetch('/invoices/<%= invoice.id %>/share', { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Accept': 'application/json' } }).then(r => r.ok ? r.json() : Promise.reject(new Error('http_' + r.status))).then(data => { url = data.url || ''; loading = false; }).catch(e => { error = 'Could not generate link — try again.'; loading = false; })"
+            class="bg-brand-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-brand-700 transition disabled:opacity-50"
+            :disabled="loading">
+            <span x-show="!loading">🔗 Generate share link</span>
+            <span x-show="loading">Generating…</span>
+          </button>
+        </div>
+        <div x-show="url" x-cloak class="flex items-center gap-2">
+          <input type="text" readonly x-bind:value="url"
+            data-testid="public-share-url"
+            class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-gray-50 font-mono" />
+          <button type="button"
+            data-testid="public-share-copy"
+            @click="navigator.clipboard.writeText(url).then(() => { copied = true; setTimeout(() => copied = false, 2000); })"
+            class="border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-gray-50 transition text-sm">
+            <span x-show="!copied">Copy</span>
+            <span x-show="copied" class="text-green-600">Copied!</span>
+          </button>
+          <a x-bind:href="url" target="_blank" rel="noopener"
+            title="Open the client view in a new tab"
+            class="border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-gray-50 transition text-sm whitespace-nowrap">
+            Preview ↗
+          </a>
+        </div>
+        <p x-show="error" x-text="error" class="text-red-600 text-xs mt-2"></p>
+        <p class="text-gray-400 text-xs mt-2">Anyone with this link can view (and pay) this invoice — share it only with your client.</p>
       </div>
     <% } %>
 

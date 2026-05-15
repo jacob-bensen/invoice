@@ -9,6 +9,7 @@ const authRoutes = require('./routes/auth');
 const invoiceRoutes = require('./routes/invoices');
 const billingRoutes = require('./routes/billing');
 const landingRoutes = require('./routes/landing');
+const shareRoutes = require('./routes/share');
 const { csrfProtection } = require('./middleware/csrf');
 const { securityHeaders } = require('./middleware/security-headers');
 const { requireAuth } = require('./middleware/auth');
@@ -92,6 +93,7 @@ app.post('/onboarding/dismiss', requireAuth, invoiceRoutes.onboardingDismissHand
 app.use('/auth', authRoutes);
 app.use('/invoices', invoiceRoutes);
 app.use('/billing', billingRoutes);
+app.use('/', shareRoutes);
 app.use('/', landingRoutes);
 
 app.get('/sitemap.xml', (req, res) => {
