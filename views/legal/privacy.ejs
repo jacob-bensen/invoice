@@ -1,0 +1,100 @@
+<%- include('../partials/head') %>
+<%- include('../partials/nav') %>
+
+<main class="max-w-3xl mx-auto px-4 py-12">
+  <h1 class="text-3xl font-bold text-gray-900 mb-2">Privacy Policy</h1>
+  <p class="text-sm text-gray-500 mb-10">Last updated: <%= lastUpdated %></p>
+
+  <div class="space-y-8 text-sm text-gray-700 leading-relaxed">
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">1. Who we are</h2>
+      <p>DecentInvoice ("we") operates the invoicing service at this domain. This policy explains what personal data we collect, why we collect it, and the rights you have under GDPR (EU/UK), CCPA (California), and similar laws.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">2. What we collect</h2>
+      <ul class="list-disc pl-5 space-y-1">
+        <li><strong>Account data:</strong> name, email, hashed password, account creation date.</li>
+        <li><strong>Billing data:</strong> Stripe customer and subscription IDs. Card details are stored by Stripe — we never see or store them.</li>
+        <li><strong>Invoice content:</strong> business profile, client names and addresses, line items, amounts, and payment status that you create in the Service.</li>
+        <li><strong>Operational data:</strong> session cookies for login, server logs (IP, user-agent, timestamps) retained briefly for security and debugging.</li>
+        <li><strong>Email events:</strong> when invoice or reminder emails are sent on your behalf, we record the recipient and timestamp.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">3. How we use your data</h2>
+      <ul class="list-disc pl-5 space-y-1">
+        <li>To provide the Service: render your invoices, send them to clients, and track payment status.</li>
+        <li>To process subscriptions and trials via Stripe.</li>
+        <li>To send transactional email — account, billing, and invoice notifications.</li>
+        <li>To detect abuse, debug errors, and keep the Service secure.</li>
+      </ul>
+      <p class="mt-2">We do not sell your data. We do not use it to train AI models or build advertising profiles.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">4. Who we share data with</h2>
+      <p>We share only what is necessary, only with these processors:</p>
+      <ul class="list-disc pl-5 space-y-1 mt-2">
+        <li><strong>Stripe</strong> — payment processing and subscription billing (PCI Level 1 certified).</li>
+        <li><strong>Postgres hosting</strong> — encrypted storage of account and invoice records.</li>
+        <li><strong>Email provider</strong> — sending transactional email on your behalf.</li>
+      </ul>
+      <p class="mt-2">We may disclose data when required by law or to protect the rights, safety, or property of users.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">5. Retention</h2>
+      <p>Account and invoice data are retained while your account is active and for a reasonable period after closure for tax, accounting, and dispute purposes. Server logs are typically purged within 30 days. You may request earlier deletion subject to legal hold requirements.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">6. Your rights</h2>
+      <p>Subject to your jurisdiction, you have the right to:</p>
+      <ul class="list-disc pl-5 space-y-1 mt-2">
+        <li>Access the personal data we hold about you.</li>
+        <li>Correct inaccurate data.</li>
+        <li>Request deletion ("right to be forgotten").</li>
+        <li>Export your data in a portable format.</li>
+        <li>Object to or restrict certain processing.</li>
+        <li>Lodge a complaint with a supervisory authority.</li>
+      </ul>
+      <p class="mt-2">To exercise any of these rights, email <a href="mailto:support@decentinvoice.com" class="text-brand-600 hover:underline">support@decentinvoice.com</a>. We respond within 30 days.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">7. Cookies</h2>
+      <p>We use a single session cookie required for login. We do not use third-party advertising or behavioral-tracking cookies. If we add an analytics tool in the future, it will be a privacy-respecting one (e.g. Plausible) and this policy will be updated.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">8. International transfers</h2>
+      <p>The Service is operated from servers that may be located outside your country. When data is transferred internationally, we rely on contractual safeguards with our processors (including Standard Contractual Clauses for EU/UK transfers).</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">9. Children</h2>
+      <p>The Service is not intended for users under 18. We do not knowingly collect data from children.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">10. Changes</h2>
+      <p>We may update this Privacy Policy. Material changes will be announced in-product or by email at least 14 days before they take effect.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">11. Contact</h2>
+      <p>Privacy questions or rights requests: <a href="mailto:support@decentinvoice.com" class="text-brand-600 hover:underline">support@decentinvoice.com</a>.</p>
+    </section>
+  </div>
+
+  <p class="mt-12 text-xs text-gray-400">
+    See also: <a href="/terms" class="hover:text-gray-600 underline-offset-2 hover:underline">Terms of Service</a> &middot; <a href="/refund" class="hover:text-gray-600 underline-offset-2 hover:underline">Refund Policy</a>
+  </p>
+</main>
+
+<%- include('../partials/footer') %>
+
+</body>
+</html>

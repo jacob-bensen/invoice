@@ -1,0 +1,53 @@
+<%- include('../partials/head') %>
+<%- include('../partials/nav') %>
+
+<main class="max-w-3xl mx-auto px-4 py-12">
+  <h1 class="text-3xl font-bold text-gray-900 mb-2">Refund &amp; Cancellation Policy</h1>
+  <p class="text-sm text-gray-500 mb-10">Last updated: <%= lastUpdated %></p>
+
+  <div class="space-y-8 text-sm text-gray-700 leading-relaxed">
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">1. 7-day free trial</h2>
+      <p>Pro starts with a 7-day free trial. No card is required to start the trial, and no charge is made until you add a payment method and the trial ends. You can stay on Free indefinitely.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">2. Cancelling your subscription</h2>
+      <p>You can cancel Pro at any time from the Customer Portal (Settings &rarr; Manage subscription), or by emailing <a href="mailto:support@decentinvoice.com" class="text-brand-600 hover:underline">support@decentinvoice.com</a>. Cancellation takes effect at the end of the current billing period. You keep Pro features until then, and you will not be charged again. Your account remains usable on the Free plan after cancellation.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">3. Refund window</h2>
+      <p>If you are charged for Pro and decide it is not for you, email us within 14 days of the charge and we will refund that payment in full. This applies to both monthly and annual plans. No reason required — we want users on Pro who are getting value from it, not stuck on it.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">4. Outside the 14-day window</h2>
+      <p>Outside of the 14-day window, monthly subscriptions are non-refundable for the current period but can be cancelled before the next renewal. Annual subscriptions may be cancelled at any time but are generally not refunded pro-rata once the 14-day window has elapsed. In genuine hardship cases (extended illness, business closure, etc.) email us — we usually make it right.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">5. Failed payments and dunning</h2>
+      <p>If your card fails to charge at renewal, Stripe attempts a series of automatic retries over up to 14 days while showing a recovery banner in DecentInvoice. If recovery fails, the subscription pauses and your account reverts to the Free plan. You can resume Pro at any time from the Customer Portal.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">6. Disputes and chargebacks</h2>
+      <p>Before disputing a charge with your bank, please email us — we resolve almost every billing question in less than a business day, and a direct refund is faster than a chargeback. If you do open a chargeback, please include enough detail that we can investigate.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">7. Contact</h2>
+      <p>Refund or billing question: <a href="mailto:support@decentinvoice.com" class="text-brand-600 hover:underline">support@decentinvoice.com</a>. Include the email on your DecentInvoice account so we can find the right subscription quickly.</p>
+    </section>
+  </div>
+
+  <p class="mt-12 text-xs text-gray-400">
+    See also: <a href="/terms" class="hover:text-gray-600 underline-offset-2 hover:underline">Terms of Service</a> &middot; <a href="/privacy" class="hover:text-gray-600 underline-offset-2 hover:underline">Privacy Policy</a>
+  </p>
+</main>
+
+<%- include('../partials/footer') %>
+
+</body>
+</html>

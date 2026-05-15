@@ -10,6 +10,3 @@ Milestone 3 (conversion intelligence).
 Tokenized share link for an invoice without login; unblocks downstream surfaces (#48 powered-by badge, #69 embed widget, #78 freelancer profile, #111 client-preview).
 Milestone 2 (locked-feature upsell stack — adds a Pro-only share surface).
 
-## #28 — Legal pages scaffolding (Terms / Privacy / Refund)
-Three EJS pages + a `views/partials/footer.ejs` linking them from every authed page. Hard requirement for Stripe ToS compliance and unblocks GDPR/PCI deliverables. Without this the trial→paid funnel risks rejection by Stripe Risk on growth.
-Milestone 1 (decision-moment surfaces — legal links sit in the pricing/checkout footer).

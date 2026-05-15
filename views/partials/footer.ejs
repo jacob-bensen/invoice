@@ -1,0 +1,22 @@
+<%
+  // Shared footer with legal links. Renders on every authed page + on
+  // /pricing + auth pages. Stripe ToS hard requirement: Terms of Service,
+  // Privacy Policy, and Refund / Cancellation Policy must be reachable from
+  // the checkout flow. Operator reviews and customizes the copy in
+  // views/legal/* before public launch — the scaffold ships functional
+  // defaults so the funnel can run today.
+%>
+<footer class="mt-12 border-t border-gray-100 bg-white" data-testid="legal-footer">
+  <div class="max-w-5xl mx-auto px-4 py-6 text-center text-xs text-gray-400">
+    <nav aria-label="Legal" class="mb-2 space-x-2">
+      <a href="/terms" class="hover:text-gray-600 underline-offset-2 hover:underline">Terms</a>
+      <span class="text-gray-300" aria-hidden="true">·</span>
+      <a href="/privacy" class="hover:text-gray-600 underline-offset-2 hover:underline">Privacy</a>
+      <span class="text-gray-300" aria-hidden="true">·</span>
+      <a href="/refund" class="hover:text-gray-600 underline-offset-2 hover:underline">Refunds</a>
+      <span class="text-gray-300" aria-hidden="true">·</span>
+      <a href="mailto:support@decentinvoice.com" class="hover:text-gray-600 underline-offset-2 hover:underline">Contact</a>
+    </nav>
+    <p>&copy; <%= new Date().getFullYear() %> DecentInvoice. Built for freelancers.</p>
+  </div>
+</footer>

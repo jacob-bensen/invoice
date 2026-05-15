@@ -1,0 +1,78 @@
+<%- include('../partials/head') %>
+<%- include('../partials/nav') %>
+
+<main class="max-w-3xl mx-auto px-4 py-12">
+  <h1 class="text-3xl font-bold text-gray-900 mb-2">Terms of Service</h1>
+  <p class="text-sm text-gray-500 mb-10">Last updated: <%= lastUpdated %></p>
+
+  <div class="space-y-8 text-sm text-gray-700 leading-relaxed">
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">1. Agreement</h2>
+      <p>By creating an account or using DecentInvoice ("the Service"), you agree to these Terms. If you do not agree, do not use the Service. These Terms form a binding contract between you and DecentInvoice ("we", "us").</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">2. The Service</h2>
+      <p>DecentInvoice is a web application that lets freelancers and small businesses create, send, and track invoices, with optional Stripe-powered payment links and automated reminders on paid plans. We may add, change, or remove features at any time.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">3. Your account</h2>
+      <p>You must provide accurate registration information and keep your password secure. You are responsible for activity on your account. You must be at least 18 years old, or the age of legal majority where you live, to use the Service.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">4. Subscriptions, trials, and billing</h2>
+      <p>The Free plan is available at no cost with a fixed invoice limit. Pro is offered at $12/month or $99/year, with a 7-day free trial requiring no card upfront. After the trial, you are charged the rate shown at checkout. Subscriptions renew automatically until you cancel. All payments are processed by Stripe; we do not store your card details. Prices may change with at least 30 days' notice.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">5. Cancellation and refunds</h2>
+      <p>You can cancel at any time from the Customer Portal or by emailing support. Refund eligibility is governed by our <a href="/refund" class="text-brand-600 hover:underline">Refund Policy</a>.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">6. Acceptable use</h2>
+      <p>You may not use DecentInvoice to: send fraudulent or misleading invoices; harass, defraud, or extort recipients; transmit malware or unlawful content; abuse rate limits or attempt to reverse-engineer the Service; or violate any applicable law. We may suspend or terminate accounts that violate these rules without notice.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">7. Your content</h2>
+      <p>You retain all rights to invoices, client data, and other content you upload. You grant us a limited license to host, process, and display that content solely to operate the Service. You are responsible for the legality of content you create and for obtaining any consents required to share it with your clients.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">8. Disclaimer</h2>
+      <p>The Service is provided "as is" and "as available" without warranties of any kind, express or implied. We do not guarantee uninterrupted availability, error-free operation, or that the Service meets your specific business or tax requirements. DecentInvoice is invoicing software, not legal, accounting, or tax advice — consult a professional for those.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">9. Limitation of liability</h2>
+      <p>To the maximum extent permitted by law, our aggregate liability for any claim arising out of the Service is limited to the amount you paid us in the 12 months preceding the claim. We are not liable for indirect, incidental, consequential, or punitive damages, including lost revenue, lost data, or business interruption.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">10. Termination</h2>
+      <p>You may close your account at any time. We may suspend or terminate access for breach of these Terms or to comply with the law. On termination, your data may be deleted after a reasonable retention window — export anything you want to keep first.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">11. Changes to these Terms</h2>
+      <p>We may update these Terms. Material changes will be announced in-product or by email at least 14 days before they take effect. Continued use after the effective date constitutes acceptance.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 mb-2">12. Contact</h2>
+      <p>Questions about these Terms: <a href="mailto:support@decentinvoice.com" class="text-brand-600 hover:underline">support@decentinvoice.com</a>.</p>
+    </section>
+  </div>
+
+  <p class="mt-12 text-xs text-gray-400">
+    See also: <a href="/privacy" class="hover:text-gray-600 underline-offset-2 hover:underline">Privacy Policy</a> &middot; <a href="/refund" class="hover:text-gray-600 underline-offset-2 hover:underline">Refund Policy</a>
+  </p>
+</main>
+
+<%- include('../partials/footer') %>
+
+</body>
+</html>

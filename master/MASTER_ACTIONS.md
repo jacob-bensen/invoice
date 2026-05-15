@@ -55,14 +55,14 @@ Unblocks INTERNAL_TODO #34 (analytics integration). Pick Plausible.io ($9/mo) or
 
 ## Legal
 
-### Publish Terms of Service (`#28`)
-Hard requirement for Stripe ToS compliance. EJS scaffold lands with #28; copy must be reviewed by the operator.
+### Review Terms of Service scaffold at `/terms` (#28 shipped)
+Hard requirement for Stripe ToS compliance. Code-side scaffold at `views/legal/terms.ejs` is live. Operator must review the copy (governing law, jurisdiction, business entity name, any vertical-specific clauses) and customise before public launch.
 
-### Publish Privacy Policy (`#28`)
-GDPR Art. 13 / CCPA §1798.100. EJS scaffold lands with #28; operator supplies the org-specific particulars (controller name, retention windows, sub-processor list).
+### Review Privacy Policy scaffold at `/privacy` (#28 shipped)
+GDPR Art. 13 / CCPA §1798.100. Code-side scaffold at `views/legal/privacy.ejs` is live with default sub-processor list (Stripe, Postgres host, email provider). Operator supplies org-specific particulars (controller name + address, retention windows, full sub-processor list, jurisdictional addenda).
 
-### Publish Refund / Cancellation Policy (`#28`)
-Stripe + card-network requirement. EJS scaffold lands with #28; operator decides the refund window.
+### Review Refund / Cancellation Policy scaffold at `/refund` (#28 shipped)
+Stripe + card-network requirement. Code-side scaffold at `views/legal/refund.ejs` is live with a 14-day refund window default. Operator confirms or adjusts the refund window before public launch.
 
 ## Store / directory listings
 

@@ -87,7 +87,8 @@ app.get('/sitemap.xml', (req, res) => {
   const lastmod = new Date().toISOString().split('T')[0];
   const staticUrls = ['/', '/auth/register', '/auth/login'];
   const nicheUrls = landingRoutes.listNiches().map((n) => n.url);
-  const urls = [...staticUrls, ...nicheUrls].map((p) => {
+  const legalUrls = landingRoutes.listLegalPages().map((p) => p.path);
+  const urls = [...staticUrls, ...nicheUrls, ...legalUrls].map((p) => {
     const priority = p === '/' ? '1.0' : '0.8';
     return `  <url>\n    <loc>${host}${p}</loc>\n    <lastmod>${lastmod}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>${priority}</priority>\n  </url>`;
   }).join('\n');

@@ -252,13 +252,43 @@ router.get(`/${GENERATOR_SLUG}`, function (req, res) {
   res.render('partials/lp-niche', buildLocals(GENERATOR_SLUG));
 });
 
+// Legal pages (#28). Stripe ToS hard requirement: Terms / Privacy / Refund
+// must be reachable from the checkout flow + footer of every authed page.
+// Pages live under views/legal/*.ejs and share the standard head + nav. The
+// scaffold ships functional defaults; operator reviews copy before public
+// launch (tracked in master/MASTER_ACTIONS.md).
+const LEGAL_LAST_UPDATED = '2026-05-15';
+const LEGAL_PAGES = [
+  { path: '/terms',   view: 'legal/terms',   title: 'Terms of Service — DecentInvoice',           description: 'The terms that govern your use of DecentInvoice — subscription, cancellation, acceptable use, and disclaimers.' },
+  { path: '/privacy', view: 'legal/privacy', title: 'Privacy Policy — DecentInvoice',             description: 'What data DecentInvoice collects, how it is used, and the rights you have under GDPR, CCPA, and similar laws.' },
+  { path: '/refund',  view: 'legal/refund',  title: 'Refund & Cancellation Policy — DecentInvoice', description: 'How to cancel your DecentInvoice Pro subscription and when refunds are available.' }
+];
+
+LEGAL_PAGES.forEach(function (page) {
+  router.get(page.path, function (req, res) {
+    res.render(page.view, {
+      title: page.title,
+      ogTitle: page.title,
+      ogDescription: page.description,
+      ogPath: page.path,
+      canonicalPath: page.path,
+      lastUpdated: LEGAL_LAST_UPDATED
+    });
+  });
+});
+
 function listNiches() {
   return Object.keys(NICHES).map(function (slug) {
     return { slug, url: publicUrls(slug), title: NICHES[slug].title };
   });
 }
 
+function listLegalPages() {
+  return LEGAL_PAGES.map(function (p) { return { path: p.path, title: p.title }; });
+}
+
 module.exports = router;
 module.exports.NICHES = NICHES;
 module.exports.listNiches = listNiches;
 module.exports.publicUrls = publicUrls;
+module.exports.listLegalPages = listLegalPages;
