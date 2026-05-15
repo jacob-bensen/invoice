@@ -491,6 +491,40 @@ const db = {
       [userId, referrerId]
     );
     return rows[0] ? rows[0].referrer_id : null;
+  },
+
+  /*
+   * Idempotent one-shot for the referrer's free-month redemption (#50). Called
+   * from the Stripe `checkout.session.completed` (mode=subscription) webhook
+   * the moment a referred user's Pro subscription is created. The CTE-style
+   * UPDATE-then-SELECT pattern stamps `referral_credited_at = NOW()` exactly
+   * once (guarded on `referral_credited_at IS NULL AND referrer_id IS NOT NULL`)
+   * and returns the referrer's `stripe_subscription_id` + email in the same
+   * round-trip. Replays of the same webhook (Stripe retries up to 16x over 3
+   * days) all see the WHERE clause fail and return `{ rows: [] }` → null,
+   * so the caller's Stripe `subscriptions.update` is never invoked twice.
+   */
+  async creditReferrerIfMissing(referredUserId) {
+    if (!referredUserId) return null;
+    const { rows } = await pool.query(
+      `WITH credited AS (
+         UPDATE users
+            SET referral_credited_at = NOW(),
+                updated_at           = NOW()
+          WHERE id = $1
+            AND referrer_id IS NOT NULL
+            AND referral_credited_at IS NULL
+          RETURNING referrer_id
+       )
+       SELECT u.id                        AS referrer_id,
+              u.stripe_subscription_id    AS referrer_subscription_id,
+              u.email                     AS referrer_email,
+              u.plan                       AS referrer_plan
+         FROM credited c
+         JOIN users u ON u.id = c.referrer_id`,
+      [referredUserId]
+    );
+    return rows[0] || null;
   }
 };
 

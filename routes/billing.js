@@ -6,6 +6,7 @@ const { isValidWebhookUrl, firePaidWebhook, buildPaidPayload } = require('../lib
 const { sendPaidNotificationEmail } = require('../lib/email');
 const { getCompetitorPricing } = require('../lib/competitor-pricing');
 const { triggerFirstPaidCelebration } = require('../lib/celebration');
+const { creditReferrerForSubscription } = require('../lib/referral');
 
 const router = express.Router();
 
@@ -60,6 +61,20 @@ router.post('/create-checkout', requireAuth, async (req, res) => {
     // gate makes the deploy safe + reversible.
     const automaticTaxEnabled = process.env.STRIPE_AUTOMATIC_TAX_ENABLED === 'true';
 
+    // Referral redemption (#50): if this user arrived via a ?ref=<code>
+    // link, attach the operator-provisioned coupon so their first Pro
+    // charge after the trial is 100% off. Stripe disallows
+    // allow_promotion_codes alongside discounts on the same session, so we
+    // surface the promo-code link only when no auto-coupon is being
+    // applied — referred users trade promo-code stacking for guaranteed
+    // free-month redemption.
+    const attachReferralCoupon = Boolean(
+      user.referrer_id && process.env.STRIPE_REFERRAL_COUPON_ID
+    );
+
+    const metadata = { billing_cycle: cycle, user_id: String(user.id) };
+    if (user.referrer_id) metadata.referrer_id = String(user.referrer_id);
+
     const sessionParams = {
       customer: customerId,
       payment_method_types: ['card'],
@@ -74,12 +89,17 @@ router.post('/create-checkout', requireAuth, async (req, res) => {
       // Surface a "Add promotion code" link on the Stripe Checkout page so
       // every coupon Master creates (Product Hunt PH50, AppSumo, newsletter
       // sponsorships, Agency cold-email 100%-off-first-month) is reachable.
-      allow_promotion_codes: true,
+      // Excluded when a referral coupon is auto-attached — see above.
+      allow_promotion_codes: !attachReferralCoupon,
       automatic_tax: { enabled: automaticTaxEnabled },
-      metadata: { billing_cycle: cycle, user_id: String(user.id) },
+      metadata,
       success_url: `${process.env.APP_URL}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.APP_URL}/billing/upgrade`
     };
+
+    if (attachReferralCoupon) {
+      sessionParams.discounts = [{ coupon: process.env.STRIPE_REFERRAL_COUPON_ID }];
+    }
 
     // Stripe Tax requires a billing address for jurisdiction lookup. Auto-
     // capture address and name onto the customer record so subsequent
@@ -254,6 +274,14 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
               console.warn('Could not fetch subscription for trial_end:', e && e.message);
             }
             await db.updateUser(parseInt(userId, 10), updates);
+            // Referral redemption (#50). Idempotent one-shot — the
+            // `referral_credited_at` guard inside db.creditReferrerIfMissing
+            // ensures Stripe webhook retries never grant the referrer more
+            // than one free month per referred user. Errors are swallowed
+            // (logged inside the helper) so a Stripe API hiccup never
+            // blocks the 200-OK we owe Stripe.
+            creditReferrerForSubscription(stripe, db, parseInt(userId, 10))
+              .catch(e => console.error('Referral credit error:', e && e.message));
           }
         } else if (session.mode === 'payment' && session.payment_link) {
           // Invoice Payment Link was paid — mark the invoice as paid.

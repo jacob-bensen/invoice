@@ -77,6 +77,12 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS is_seed BOOLEAN DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS first_paid_at TIMESTAMP;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR(32) UNIQUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS referrer_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+-- Referral redemption (#50). Stamped exactly once when a referred user's
+-- Stripe subscription is created (checkout.session.completed, mode=subscription),
+-- so the referrer's free-month coupon application is one-shot — replaying the
+-- webhook (Stripe retries up to 16 times across 3 days) must never grant more
+-- than one free month per referral.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_credited_at TIMESTAMP;
 
 -- INTERNAL_TODO H5: widen users.plan CHECK to allow 'business' and 'agency'.
 -- The CREATE TABLE above already uses the wide list for fresh installs; this
