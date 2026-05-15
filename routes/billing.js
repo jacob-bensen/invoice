@@ -5,6 +5,7 @@ const { requireAuth } = require('../middleware/auth');
 const { isValidWebhookUrl, firePaidWebhook, buildPaidPayload } = require('../lib/outbound-webhook');
 const { sendPaidNotificationEmail } = require('../lib/email');
 const { getCompetitorPricing } = require('../lib/competitor-pricing');
+const { triggerFirstPaidCelebration } = require('../lib/celebration');
 
 const router = express.Router();
 
@@ -279,6 +280,13 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
                   }
                 })
                 .catch(e => console.error('Paid notification error:', e && e.message));
+            }
+            // First-paid celebration (#49). Same idempotent one-shot the
+            // manual mark-paid flow uses — fires the referral email exactly
+            // once on the user's very first paid invoice.
+            if (owner) {
+              triggerFirstPaidCelebration(db, owner.id)
+                .catch(e => console.error('First-paid celebration error:', e && e.message));
             }
           }
         }

@@ -54,6 +54,18 @@ app.use((req, res, next) => {
   res.locals.trialCountdown = req.session.user
     ? formatTrialCountdown(req.session.user.trial_ends_at)
     : null;
+  // Referral attribution capture (#49). When a visitor arrives via
+  // `?ref=<code>`, stash the code in the session so /auth/register can
+  // attach users.referrer_id at signup. Hex-only, length-capped — anything
+  // else is ignored to avoid storing garbage in the session table. Only
+  // set when not already present, so a user clicking around multiple
+  // referral links keeps the first attribution they arrived under.
+  if (req.query && typeof req.query.ref === 'string' && !req.session.referral_code) {
+    const code = req.query.ref.trim();
+    if (/^[a-f0-9]{8,32}$/i.test(code)) {
+      req.session.referral_code = code;
+    }
+  }
   next();
 });
 

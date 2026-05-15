@@ -63,6 +63,21 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_cycle VARCHAR(20);
 -- + a one-line edit-me hint on them.
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS is_seed BOOLEAN DEFAULT false;
 
+-- First-paid celebration + referral hook (#49). first_paid_at is stamped the
+-- first time any of the user's invoices flips to status='paid' (whether
+-- via the manual mark-paid flow or the Stripe Payment Link webhook). The
+-- dashboard shows a one-shot celebration banner with a referral CTA for
+-- 7 days from this timestamp. referral_code is generated lazily at the
+-- moment the celebration banner first renders (or any explicit referral
+-- surface) so existing users without a code don't all get one written at
+-- migration time. referrer_id captures who sent a new signup our way
+-- (set at register from the ?ref=<code> attribution cookie); ON DELETE
+-- SET NULL preserves a referrer's aggregate count even if their account
+-- is wiped.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS first_paid_at TIMESTAMP;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR(32) UNIQUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS referrer_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+
 -- INTERNAL_TODO H5: widen users.plan CHECK to allow 'business' and 'agency'.
 -- The CREATE TABLE above already uses the wide list for fresh installs; this
 -- block migrates pre-existing deployments whose constraint still pins

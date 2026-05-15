@@ -35,6 +35,9 @@ Stripe Dashboard → Payment methods: enable ACH Direct Debit, SEPA, BACS as app
 ### Stripe Customer Portal config
 Enable: invoice history, tax ID collection, payment method update, plan switch (monthly ↔ annual).
 
+### Create one-month-free Stripe coupon for referrals + set `STRIPE_REFERRAL_COUPON_ID`
+Stripe Dashboard → Products → Coupons → New coupon: "Referral — 1 month free", percent_off=100, duration=once OR duration_in_months=1. Copy the coupon ID to `STRIPE_REFERRAL_COUPON_ID`. Until this is set, the first-paid celebration email (#49) still promises a free month for both sides; BACKLOG #50 ships the checkout-session metadata + post-conversion plumbing to redeem it.
+
 ## Email
 
 ### Provision Resend API key + verify sending domain

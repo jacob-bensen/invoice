@@ -1,4 +1,5 @@
 require('dotenv').config();
+const crypto = require('crypto');
 const { Pool } = require('pg');
 
 const pool = new Pool({
@@ -384,6 +385,112 @@ const db = {
     const count = parseInt(rows[0].count, 10) + 1;
     const year = new Date().getFullYear();
     return `INV-${year}-${String(count).padStart(4, '0')}`;
+  },
+
+  /*
+   * Idempotently stamps users.first_paid_at the first time a user has any
+   * invoice in status='paid' (#49 — first-paid celebration + referral hook).
+   * Safe to call on every paid-status transition (manual flip or Stripe
+   * Payment Link webhook): the WHERE first_paid_at IS NULL guard ensures the
+   * UPDATE only takes effect once per user, and the EXISTS subquery prevents
+   * the timestamp from being set if for some reason no paid invoice is
+   * actually present (e.g. a status flip raced with a delete). Returns the
+   * updated row (with first_paid_at + referral_code) when the stamp was just
+   * applied, or null when the user was already stamped / has no paid invoice.
+   * Callers use the non-null return as the "fire the celebration email now"
+   * signal so the email goes out exactly once.
+   */
+  async recordFirstPaidIfMissing(userId) {
+    const { rows } = await pool.query(
+      `UPDATE users
+          SET first_paid_at = NOW(),
+              updated_at    = NOW()
+        WHERE id = $1
+          AND first_paid_at IS NULL
+          AND EXISTS (
+                SELECT 1 FROM invoices
+                 WHERE user_id = $1 AND status = 'paid'
+              )
+        RETURNING id, email, name, plan, first_paid_at, referral_code`,
+      [userId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
+   * Lazy-generates a stable referral code on first need (#49). 8 random
+   * bytes → 16 hex chars; collision probability against the population is
+   * negligible (2^64). UNIQUE constraint on the column means a colliding
+   * INSERT would throw — caller retries on UNIQUE violation (Postgres
+   * error code 23505). The COALESCE pattern means concurrent callers race
+   * to the UPDATE but only one write lands; both see the same final code
+   * on the follow-up SELECT.
+   */
+  async getOrCreateReferralCode(userId) {
+    const existing = await pool.query(
+      'SELECT referral_code FROM users WHERE id = $1',
+      [userId]
+    );
+    const current = existing.rows[0] && existing.rows[0].referral_code;
+    if (current) return current;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const code = crypto.randomBytes(8).toString('hex');
+      try {
+        const { rows } = await pool.query(
+          `UPDATE users
+              SET referral_code = $2,
+                  updated_at    = NOW()
+            WHERE id = $1
+              AND referral_code IS NULL
+            RETURNING referral_code`,
+          [userId, code]
+        );
+        if (rows[0] && rows[0].referral_code) return rows[0].referral_code;
+        // No row returned → another writer beat us; re-read.
+        const reread = await pool.query(
+          'SELECT referral_code FROM users WHERE id = $1',
+          [userId]
+        );
+        if (reread.rows[0] && reread.rows[0].referral_code) {
+          return reread.rows[0].referral_code;
+        }
+      } catch (err) {
+        // 23505 = unique_violation. Generate a fresh code and try again.
+        if (!err || err.code !== '23505') throw err;
+      }
+    }
+    return null;
+  },
+
+  /*
+   * Attaches users.referrer_id at signup when the visitor arrived via a
+   * `?ref=<code>` link (#49). The lookup-then-set is a 2-step round-trip
+   * rather than a sub-select so callers can short-circuit on bad codes
+   * without holding a transaction. Self-referral (a user trying to claim
+   * their own code) is silently ignored. ON DELETE SET NULL on the FK
+   * preserves the historical attribution even if the referrer's account
+   * is later deleted.
+   */
+  async attachReferrerByCode(userId, code) {
+    if (!userId || !code || typeof code !== 'string') return null;
+    const trimmed = code.trim().slice(0, 32);
+    if (!/^[a-f0-9]{8,32}$/i.test(trimmed)) return null;
+    const lookup = await pool.query(
+      'SELECT id FROM users WHERE referral_code = $1',
+      [trimmed]
+    );
+    const referrerId = lookup.rows[0] && lookup.rows[0].id;
+    if (!referrerId || referrerId === userId) return null;
+    const { rows } = await pool.query(
+      `UPDATE users
+          SET referrer_id = $2,
+              updated_at  = NOW()
+        WHERE id = $1
+          AND referrer_id IS NULL
+        RETURNING referrer_id`,
+      [userId, referrerId]
+    );
+    return rows[0] ? rows[0].referrer_id : null;
   }
 };
 

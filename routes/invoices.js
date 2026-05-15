@@ -7,8 +7,9 @@ const { createInvoicePaymentLink } = stripePaymentLinkLib;
 // Test stubs may omit parsePaymentMethods — fall back to card-only.
 const parsePaymentMethods = stripePaymentLinkLib.parsePaymentMethods || (() => ['card']);
 const { firePaidWebhook, buildPaidPayload } = require('../lib/outbound-webhook');
-const { sendInvoiceEmail } = require('../lib/email');
+const { sendInvoiceEmail, sendReferralCelebrationEmail } = require('../lib/email');
 const { loadProSubscriberCount } = require('../lib/pro-subscriber-count');
+const { triggerFirstPaidCelebration, buildReferralUrl } = require('../lib/celebration');
 
 const router = express.Router();
 const FREE_LIMIT = 3;
@@ -57,14 +58,15 @@ router.get('/', requireAuth, async (req, res) => {
     const socialProof = days_left_in_trial === 1
       ? await loadProSubscriberCount(db).catch(() => null)
       : null;
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, noindex: true });
+    const celebration = await loadCelebration(user).catch(() => null);
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
       title: 'My Invoices', invoices: [], user: req.session.user || null,
       flash: null, days_left_in_trial: 0, onboarding: null,
       invoiceLimitProgress: null, recentRevenue: null,
-      annualUpgradePrompt: null, socialProof: null, noindex: true
+      annualUpgradePrompt: null, socialProof: null, celebration: null, noindex: true
     });
   }
 });
@@ -157,6 +159,39 @@ async function loadRecentRevenueStats(userId, days = 30) {
     console.error('Recent revenue stats lookup failed:', err && err.message);
     return null;
   }
+}
+
+/*
+ * Builds the first-paid celebration banner payload (#49). Returns
+ * { firstPaidAt, daysSince, referralUrl } when the user is inside the
+ * 7-day window from their first paid invoice, null otherwise. Lazy-generates
+ * the user's referral_code on first banner render so existing pre-#49 users
+ * who just got their first paid invoice also get a code attached.
+ */
+const CELEBRATION_WINDOW_DAYS = 7;
+
+async function loadCelebration(user) {
+  if (!user || !user.first_paid_at) return null;
+  const firstPaidMs = new Date(user.first_paid_at).getTime();
+  if (!Number.isFinite(firstPaidMs)) return null;
+  const ageMs = Date.now() - firstPaidMs;
+  if (ageMs < 0) return null;
+  const daysSince = Math.floor(ageMs / 86400000);
+  if (daysSince >= CELEBRATION_WINDOW_DAYS) return null;
+  let code = user.referral_code;
+  if (!code && typeof db.getOrCreateReferralCode === 'function') {
+    try {
+      code = await db.getOrCreateReferralCode(user.id);
+    } catch (err) {
+      console.error('Referral code lazy-generate failed:', err && err.message);
+    }
+  }
+  if (!code) return null;
+  return {
+    firstPaidAt: user.first_paid_at,
+    daysSince,
+    referralUrl: buildReferralUrl(code)
+  };
 }
 
 /*
@@ -437,6 +472,10 @@ router.post('/:id/status', requireAuth, async (req, res) => {
           .then(r => { if (!r.ok) console.warn(`webhook ${user.webhook_url} failed:`, r.reason || r.status); })
           .catch(e => console.error('Outbound webhook error:', e && e.message));
       }
+      // First-paid celebration + referral email (#49). Idempotent — only fires
+      // once per user, on the very first invoice flipped to paid.
+      triggerFirstPaidCelebration(db, req.session.user.id)
+        .catch(e => console.error('First-paid celebration error:', e && e.message));
     }
 
     req.session.flash = { type: 'success', message: `Invoice marked as ${newStatus}.` };

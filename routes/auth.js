@@ -58,6 +58,19 @@ router.post('/register', redirectIfAuth, authLimiter, [
       console.error('Seed invoice failed:', err && err.message);
     }
 
+    // Referral attribution (#49). The visitor arrived via `?ref=<code>` and
+    // the server.js middleware stashed the code in their session. Attach
+    // it now so users.referrer_id captures who sent them; clear the cookie
+    // either way so a self-signed-up user later can't double-attribute.
+    if (req.session.referral_code && typeof db.attachReferrerByCode === 'function') {
+      try {
+        await db.attachReferrerByCode(user.id, req.session.referral_code);
+      } catch (err) {
+        console.error('Referrer attach failed:', err && err.message);
+      }
+      delete req.session.referral_code;
+    }
+
     req.session.user = {
       id: user.id, email: user.email, name: user.name,
       plan: user.plan, invoice_count: user.invoice_count,

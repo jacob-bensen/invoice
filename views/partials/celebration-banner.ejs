@@ -1,0 +1,88 @@
+<%
+/*
+ * First-paid celebration banner (#49). Rendered on the dashboard for 7 days
+ * after the user's first invoice flips to paid. Rides the dopamine spike of
+ * "I just got paid" toward a referral — both sides get a free Pro month
+ * when the link converts.
+ *
+ * Expects `celebration` local: { firstPaidAt, referralUrl, daysSince }.
+ * The partial is a silent no-op when celebration is null/undefined so the
+ * dashboard can include it unconditionally.
+ */
+%>
+<% if (locals.celebration && celebration) { %>
+  <div
+    x-data="{ dismissed: false, copied: false,
+              async copy() {
+                try {
+                  await navigator.clipboard.writeText(this.$el.dataset.referralUrl);
+                  this.copied = true;
+                  setTimeout(() => { this.copied = false; }, 2000);
+                } catch (e) {
+                  const inp = document.createElement('input');
+                  inp.value = this.$el.dataset.referralUrl;
+                  document.body.appendChild(inp);
+                  inp.select();
+                  try { document.execCommand('copy'); this.copied = true; setTimeout(() => { this.copied = false; }, 2000); }
+                  catch (_) {}
+                  document.body.removeChild(inp);
+                }
+              } }"
+    x-show="!dismissed"
+    x-cloak
+    data-testid="celebration-banner"
+    data-referral-url="<%= celebration.referralUrl %>"
+    data-days-since="<%= celebration.daysSince %>"
+    class="mb-6 rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-green-50 px-5 py-4 print:hidden"
+    role="status"
+    aria-label="First paid invoice celebration"
+  >
+    <div class="flex items-start gap-3">
+      <div class="text-emerald-600 text-2xl leading-none mt-0.5" aria-hidden="true">🎉</div>
+      <div class="flex-1 text-sm">
+        <p class="font-semibold text-emerald-900">
+          You just got paid on your first invoice — congrats!
+        </p>
+        <p class="text-emerald-800 mt-1">
+          Know another freelancer who'd benefit? <strong>Share DecentInvoice — when they sign up, you both get a free month of Pro.</strong>
+        </p>
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+          <div class="flex items-center bg-white border border-emerald-200 rounded-lg px-2 py-1.5 text-xs flex-1 min-w-[200px]">
+            <code
+              class="text-emerald-800 font-mono truncate flex-1"
+              data-testid="celebration-referral-link"
+            ><%= celebration.referralUrl %></code>
+          </div>
+          <button
+            type="button"
+            @click="copy()"
+            class="bg-emerald-600 text-white text-xs font-semibold px-3 py-2 rounded-lg hover:bg-emerald-700 transition flex items-center gap-1.5"
+            data-testid="celebration-copy"
+            aria-label="Copy referral link"
+          >
+            <span x-show="!copied">Copy link</span>
+            <span x-show="copied" x-cloak>Copied ✓</span>
+          </button>
+          <a
+            href="https://twitter.com/intent/tweet?text=<%= encodeURIComponent('I just got paid on @DecentInvoice — invoicing built for freelancers. Sign up here and we both get a free month of Pro: ' + celebration.referralUrl) %>"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="bg-white border border-emerald-200 text-emerald-800 text-xs font-semibold px-3 py-2 rounded-lg hover:bg-emerald-50 transition"
+            data-testid="celebration-share-twitter"
+          >Share on X</a>
+          <a
+            href="mailto:?subject=<%= encodeURIComponent('You should try DecentInvoice') %>&body=<%= encodeURIComponent('I just started using DecentInvoice for invoicing and getting paid. Worth a look — sign up here and we both get a free month of Pro: ' + celebration.referralUrl) %>"
+            class="bg-white border border-emerald-200 text-emerald-800 text-xs font-semibold px-3 py-2 rounded-lg hover:bg-emerald-50 transition"
+            data-testid="celebration-share-email"
+          >Email a friend</a>
+        </div>
+      </div>
+      <button
+        type="button"
+        @click="dismissed = true"
+        class="text-emerald-500 hover:text-emerald-700 text-2xl leading-none"
+        aria-label="Dismiss celebration banner"
+      >&times;</button>
+    </div>
+  </div>
+<% } %>
