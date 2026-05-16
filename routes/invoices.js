@@ -22,10 +22,11 @@ const RECENT_REVENUE_WINDOWS = [7, 30, 90];
 
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const [invoices, user, recentRevenue] = await Promise.all([
+    const [invoices, user, recentRevenue, oldestStaleDraft] = await Promise.all([
       db.getInvoicesByUser(req.session.user.id),
       db.getUserById(req.session.user.id),
-      loadRecentRevenueStats(req.session.user.id)
+      loadRecentRevenueStats(req.session.user.id),
+      loadOldestStaleDraft(req.session.user.id)
     ]);
     const flash = req.session.flash;
     delete req.session.flash;
@@ -60,14 +61,16 @@ router.get('/', requireAuth, async (req, res) => {
       ? await loadProSubscriberCount(db).catch(() => null)
       : null;
     const celebration = await loadCelebration(user).catch(() => null);
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, noindex: true });
+    const staleDraftPrompt = buildStaleDraftPrompt(user, oldestStaleDraft);
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
       title: 'My Invoices', invoices: [], user: req.session.user || null,
       flash: null, days_left_in_trial: 0, onboarding: null,
       invoiceLimitProgress: null, recentRevenue: null,
-      annualUpgradePrompt: null, socialProof: null, celebration: null, noindex: true
+      annualUpgradePrompt: null, socialProof: null, celebration: null,
+      staleDraftPrompt: null, noindex: true
     });
   }
 });
@@ -141,6 +144,40 @@ function buildOnboardingState(user, invoices) {
   const completed = steps.filter((s) => s.done).length;
   const allDone = completed === steps.length;
   return { steps, completed, total: steps.length, allDone };
+}
+
+/*
+ * Stale-draft activation prompt — bridges the milestone-2 → milestone-3
+ * step of the activation funnel ("first invoice created → first invoice
+ * sent"). When the user has a real (non-seed) draft invoice sitting
+ * unsent for 24+ hours, the dashboard renders a yellow banner with
+ * one-click Mark-as-Sent and a deep link to the invoice. The 24-hour
+ * threshold filters out same-session edits and targets the actual
+ * stuck-in-draft cohort.
+ */
+async function loadOldestStaleDraft(userId) {
+  if (!userId || typeof db.getOldestStaleDraft !== 'function') return null;
+  try {
+    return await db.getOldestStaleDraft(userId);
+  } catch (err) {
+    console.error('Stale draft lookup failed:', err && err.message);
+    return null;
+  }
+}
+
+function buildStaleDraftPrompt(user, draft) {
+  if (!user || !draft || draft.id == null) return null;
+  const createdMs = draft.created_at ? new Date(draft.created_at).getTime() : NaN;
+  const hoursOld = Number.isFinite(createdMs)
+    ? Math.max(0, Math.floor((Date.now() - createdMs) / 3600000))
+    : 0;
+  return {
+    id: draft.id,
+    invoiceNumber: draft.invoice_number || '',
+    clientName: draft.client_name || '',
+    total: Number(draft.total) || 0,
+    hoursOld
+  };
 }
 
 async function loadRecentClients(userId) {
@@ -541,6 +578,8 @@ module.exports.buildOnboardingState = buildOnboardingState;
 module.exports.buildInvoiceLimitProgress = buildInvoiceLimitProgress;
 module.exports.buildRecentRevenueCard = buildRecentRevenueCard;
 module.exports.buildAnnualUpgradePrompt = buildAnnualUpgradePrompt;
+module.exports.buildStaleDraftPrompt = buildStaleDraftPrompt;
+module.exports.loadOldestStaleDraft = loadOldestStaleDraft;
 module.exports.onboardingDismissHandler = onboardingDismissHandler;
 module.exports.ALLOWED_INVOICE_STATUSES = ALLOWED_INVOICE_STATUSES;
 module.exports.FREE_LIMIT = FREE_LIMIT;

@@ -197,6 +197,51 @@
 
   <%- include('partials/celebration-banner') %>
 
+  <% if (locals.staleDraftPrompt && staleDraftPrompt) { %>
+    <div
+      data-testid="stale-draft-prompt"
+      data-invoice-id="<%= staleDraftPrompt.id %>"
+      data-hours-old="<%= staleDraftPrompt.hoursOld %>"
+      class="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 flex items-start gap-3 print:hidden"
+      role="region"
+      aria-label="Draft invoice waiting to be sent"
+    >
+      <div class="text-amber-500 text-xl leading-none mt-0.5" aria-hidden="true">&#128228;</div>
+      <div class="flex-1 text-sm">
+        <p class="font-semibold text-amber-900">
+          Your draft is waiting — your client can't see it yet.
+        </p>
+        <p class="text-amber-800 mt-0.5">
+          <span data-testid="stale-draft-invoice-number"><%= staleDraftPrompt.invoiceNumber %></span>
+          for
+          <strong data-testid="stale-draft-client-name"><%= staleDraftPrompt.clientName %></strong>
+          ($<span data-testid="stale-draft-total"><%= staleDraftPrompt.total.toFixed(2) %></span>)
+          has been a draft for <%= staleDraftPrompt.hoursOld %>+ hours.
+        </p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <form action="/invoices/<%= staleDraftPrompt.id %>/status" method="POST" class="inline">
+            <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+            <input type="hidden" name="status" value="sent">
+            <button
+              type="submit"
+              data-testid="stale-draft-mark-sent"
+              class="bg-amber-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-amber-700 transition text-sm"
+            >
+              &#128228; Mark as Sent
+            </button>
+          </form>
+          <a
+            href="/invoices/<%= staleDraftPrompt.id %>"
+            data-testid="stale-draft-view-link"
+            class="border border-amber-300 text-amber-800 font-semibold px-4 py-2 rounded-lg hover:bg-amber-100 transition text-sm"
+          >
+            Open invoice &rarr;
+          </a>
+        </div>
+      </div>
+    </div>
+  <% } %>
+
   <% if (locals.invoiceLimitProgress) { %>
     <div
       data-testid="invoice-limit-progress"

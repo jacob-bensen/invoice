@@ -229,6 +229,33 @@ const db = {
   },
 
   /*
+   * Returns the user's oldest real draft invoice that has been sitting
+   * unsent for at least `minAgeHours`. Powers the dashboard stale-draft
+   * "send your invoice" prompt — the bridge between activation milestones
+   * "first invoice created" and "first invoice sent" on the trial→paid
+   * funnel. The seed-on-signup sample (is_seed=true) is excluded so the
+   * banner only fires on something the user actually started.
+   */
+  async getOldestStaleDraft(userId, minAgeHours = 24) {
+    if (!userId) return null;
+    const hours = Number.isFinite(minAgeHours) && minAgeHours > 0
+      ? Math.floor(minAgeHours)
+      : 24;
+    const { rows } = await pool.query(
+      `SELECT id, invoice_number, client_name, total, created_at
+         FROM invoices
+        WHERE user_id = $1
+          AND status = 'draft'
+          AND is_seed = false
+          AND created_at <= NOW() - ($2 * INTERVAL '1 hour')
+        ORDER BY created_at ASC
+        LIMIT 1`,
+      [userId, hours]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Trial-nudge query (INTERNAL_TODO #29). Returns trial users whose
    * `trial_ends_at` falls in the day-3-to-day-5 window from now and who
    * haven't been nudged yet. The `trial_nudge_sent_at IS NULL` filter is the
