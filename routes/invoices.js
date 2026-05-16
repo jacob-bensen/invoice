@@ -62,7 +62,8 @@ router.get('/', requireAuth, async (req, res) => {
       : null;
     const celebration = await loadCelebration(user).catch(() => null);
     const staleDraftPrompt = buildStaleDraftPrompt(user, oldestStaleDraft);
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, noindex: true });
+    const firstRealInvoicePrompt = buildFirstRealInvoicePrompt(user, invoices);
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, firstRealInvoicePrompt, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
@@ -70,7 +71,7 @@ router.get('/', requireAuth, async (req, res) => {
       flash: null, days_left_in_trial: 0, onboarding: null,
       invoiceLimitProgress: null, recentRevenue: null,
       annualUpgradePrompt: null, socialProof: null, celebration: null,
-      staleDraftPrompt: null, noindex: true
+      staleDraftPrompt: null, firstRealInvoicePrompt: null, noindex: true
     });
   }
 });
@@ -163,6 +164,32 @@ async function loadOldestStaleDraft(userId) {
     console.error('Stale draft lookup failed:', err && err.message);
     return null;
   }
+}
+
+/*
+ * Persistent "Create your first real invoice" hero (Milestone 2). The
+ * signup seed (#39) gives the dashboard a populated table on day-1, but
+ * the soft "this is a sample" hint stops working the moment the user
+ * deletes or edits the seed: the dashboard then either falls back to the
+ * legacy zero-state hero (deleted case) or shows the seed-only state with
+ * no strong CTA (edited case where the seed row still reads is_seed=true).
+ *
+ * The gate is users.invoice_count === 0 — that counter only bumps on real
+ * (non-seed) createInvoice calls, so it stays at 0 throughout the entire
+ * pre-first-real-invoice cohort regardless of whether the user has the
+ * seed, edited it, or deleted it. We additionally guard on "no non-seed
+ * row in the rendered list" as defence-in-depth against data drift (a
+ * non-seed draft existing while invoice_count is still 0 means the user
+ * has already started a real invoice — the hero would hijack the wrong
+ * surface).
+ */
+function buildFirstRealInvoicePrompt(user, invoices) {
+  if (!user) return null;
+  const count = parseInt(user.invoice_count, 10);
+  if (!Number.isFinite(count) || count > 0) return null;
+  const list = Array.isArray(invoices) ? invoices : [];
+  if (list.some((i) => i && !i.is_seed)) return null;
+  return { hasSeed: list.some((i) => i && i.is_seed) };
 }
 
 function buildStaleDraftPrompt(user, draft) {
@@ -579,6 +606,7 @@ module.exports.buildInvoiceLimitProgress = buildInvoiceLimitProgress;
 module.exports.buildRecentRevenueCard = buildRecentRevenueCard;
 module.exports.buildAnnualUpgradePrompt = buildAnnualUpgradePrompt;
 module.exports.buildStaleDraftPrompt = buildStaleDraftPrompt;
+module.exports.buildFirstRealInvoicePrompt = buildFirstRealInvoicePrompt;
 module.exports.loadOldestStaleDraft = loadOldestStaleDraft;
 module.exports.onboardingDismissHandler = onboardingDismissHandler;
 module.exports.ALLOWED_INVOICE_STATUSES = ALLOWED_INVOICE_STATUSES;

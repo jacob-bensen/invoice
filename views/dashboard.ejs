@@ -302,8 +302,41 @@
     </div>
   <% } %>
 
-  <% if (invoices.length === 0) { %>
-    <!-- Empty state -->
+  <% const firstRealInvoicePrompt = locals.firstRealInvoicePrompt || null; %>
+  <% if (firstRealInvoicePrompt) { %>
+    <div
+      data-testid="first-real-invoice-prompt"
+      data-has-seed="<%= firstRealInvoicePrompt.hasSeed ? 'true' : 'false' %>"
+      class="mb-6 bg-white rounded-2xl border border-brand-200 p-10 text-center print:hidden"
+      role="region"
+      aria-label="Create your first real invoice"
+    >
+      <div class="text-5xl mb-4" aria-hidden="true">📄</div>
+      <h2 class="text-lg font-semibold text-gray-800 mb-2">Create your first real invoice</h2>
+      <p class="text-gray-500 mb-6 text-sm max-w-md mx-auto">
+        <% if (firstRealInvoicePrompt.hasSeed) { %>
+          The sample below shows what a finished invoice looks like — open it to explore, or jump straight in with a real client now.
+        <% } else { %>
+          A professional invoice in under 60 seconds. Email it, print it as a PDF, or share a Stripe pay link — all from one screen.
+        <% } %>
+      </p>
+      <a
+        href="/invoices/new"
+        data-testid="first-real-invoice-prompt-cta"
+        class="bg-brand-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-brand-700 transition inline-block"
+      >
+        Create a new invoice &rarr;
+      </a>
+      <% if (user && user.plan === 'free') { %>
+        <p class="text-xs text-gray-400 mt-6 max-w-sm mx-auto">
+          ✨ <strong>Pro adds a "Pay now" button</strong> to every invoice — clients pay in one click via Stripe.
+          <a href="/billing/upgrade" class="text-brand-600 underline hover:text-brand-700">Try Pro free for 7 days &rarr;</a>
+        </p>
+      <% } %>
+    </div>
+  <% } %>
+  <% if (invoices.length === 0 && !firstRealInvoicePrompt) { %>
+    <!-- Legacy empty-state fallback (fires only when firstRealInvoicePrompt is null — e.g. error-fallback render with no user) -->
     <div class="bg-white rounded-2xl border border-gray-200 p-16 text-center print:hidden">
       <div class="text-5xl mb-4">📄</div>
       <h2 class="text-lg font-semibold text-gray-700 mb-2">Send your first invoice today</h2>
@@ -318,7 +351,7 @@
         </p>
       <% } %>
     </div>
-  <% } else { %>
+  <% } else if (invoices.length > 0) { %>
     <!-- Stats -->
     <%
       const total = invoices.reduce((s, i) => s + parseFloat(i.total), 0);
