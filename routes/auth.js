@@ -5,6 +5,10 @@ const { db } = require('../db');
 const { redirectIfAuth } = require('../middleware/auth');
 const { authLimiter } = require('../middleware/rate-limit');
 const { triggerWelcomeEmail } = require('../lib/welcome');
+const {
+  requestPasswordReset,
+  hashToken
+} = require('../lib/password-reset');
 
 const router = express.Router();
 
@@ -129,6 +133,143 @@ router.post('/login', redirectIfAuth, authLimiter, [
     console.error('Login error:', err);
     res.render('auth/login', {
       title: 'Log In',
+      flash: { type: 'error', message: 'Something went wrong. Please try again.' },
+      noindex: true
+    });
+  }
+});
+
+// --- Password reset / magic-link sign-in -----------------------------------
+//
+// Closes Milestone 1 of the activation funnel: a brand-new user who lost
+// their session previously had no self-serve path back into the seeded
+// dashboard. The login page's old "email support@..." hint was a dead end.
+//
+// The flow:
+//   1. GET  /auth/forgot           — request-a-link form
+//   2. POST /auth/forgot           — fires the email; always renders the
+//                                    same generic success (no email enum)
+//   3. GET  /auth/reset/:token     — set-new-password form, gated on a
+//                                    valid (unconsumed + unexpired) token
+//   4. POST /auth/reset/:token     — atomic consume + password rotate, log
+//                                    the user in, redirect to dashboard
+// Tokens are stored as SHA-256 hashes only; the raw token only lives in the
+// emailed URL and the user's browser address bar.
+
+router.get('/forgot', redirectIfAuth, (req, res) => {
+  const flash = req.session.flash;
+  delete req.session.flash;
+  res.render('auth/forgot', { title: 'Reset your password', flash, noindex: true });
+});
+
+router.post('/forgot', redirectIfAuth, authLimiter, [
+  body('email').isEmail().normalizeEmail().withMessage('Valid email required')
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.render('auth/forgot', {
+      title: 'Reset your password',
+      flash: { type: 'error', message: errors.array()[0].msg },
+      values: req.body,
+      noindex: true
+    });
+  }
+  // Fire the orchestrator; we deliberately ignore success/failure detail in
+  // the user-facing response so the surface gives no signal about whether
+  // an account exists for the submitted email. Errors are logged inside the
+  // lib so a Resend outage or DB hiccup never surfaces here.
+  requestPasswordReset(db, req.body.email)
+    .catch((e) => console.error('Password reset error:', e && e.message));
+  res.render('auth/forgot', {
+    title: 'Reset your password',
+    sent: true,
+    submittedEmail: req.body.email,
+    noindex: true
+  });
+});
+
+router.get('/reset/:token', redirectIfAuth, async (req, res) => {
+  const raw = req.params.token || '';
+  let hash = null;
+  if (/^[a-f0-9]{64}$/i.test(raw)) {
+    hash = hashToken(raw);
+  }
+  let reset = null;
+  if (hash) {
+    try {
+      reset = await db.findValidPasswordResetByHash(hash);
+    } catch (err) {
+      console.error('Password reset lookup failed:', err && err.message);
+    }
+  }
+  if (!reset) {
+    return res.status(400).render('auth/reset', {
+      title: 'Reset your password',
+      token: raw,
+      invalid: true,
+      noindex: true
+    });
+  }
+  res.render('auth/reset', {
+    title: 'Reset your password',
+    token: raw,
+    invalid: false,
+    email: reset.email,
+    noindex: true
+  });
+});
+
+router.post('/reset/:token', redirectIfAuth, authLimiter, [
+  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
+], async (req, res) => {
+  const raw = req.params.token || '';
+  if (!/^[a-f0-9]{64}$/i.test(raw)) {
+    return res.status(400).render('auth/reset', {
+      title: 'Reset your password',
+      token: raw,
+      invalid: true,
+      noindex: true
+    });
+  }
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.render('auth/reset', {
+      title: 'Reset your password',
+      token: raw,
+      invalid: false,
+      flash: { type: 'error', message: errors.array()[0].msg },
+      noindex: true
+    });
+  }
+  const hash = hashToken(raw);
+  try {
+    const password_hash = await bcrypt.hash(req.body.password, 12);
+    const user = await db.consumePasswordResetAndSetPassword(hash, password_hash);
+    if (!user) {
+      return res.status(400).render('auth/reset', {
+        title: 'Reset your password',
+        token: raw,
+        invalid: true,
+        noindex: true
+      });
+    }
+    // Auto-login on the same hop so the user lands directly in their
+    // seeded dashboard — the activation funnel's whole point is to get
+    // them back in front of the app without a re-login speed bump.
+    req.session.user = {
+      id: user.id, email: user.email, name: user.name,
+      plan: user.plan, invoice_count: user.invoice_count,
+      subscription_status: user.subscription_status || null,
+      trial_ends_at: user.trial_ends_at || null
+    };
+    req.session.flash = { type: 'success', message: 'Your password has been reset.' };
+    return res.redirect('/dashboard');
+  } catch (err) {
+    console.error('Password reset consume failed:', err && err.message);
+    return res.status(500).render('auth/reset', {
+      title: 'Reset your password',
+      token: raw,
+      invalid: false,
       flash: { type: 'error', message: 'Something went wrong. Please try again.' },
       noindex: true
     });

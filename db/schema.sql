@@ -120,6 +120,25 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS public_token VARCHAR(32) UNIQUE;
 -- never gets multiple emails in one tick.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS stale_draft_email_sent_at TIMESTAMP;
 
+-- Password reset / magic-link sign-in (Milestone 1 — signup → first dashboard
+-- re-entry). A user who loses their session has to be able to get back into
+-- their seeded dashboard or the activation funnel breaks at step 1. Tokens
+-- are stored only as SHA-256 hashes — a DB leak does not give an attacker an
+-- active reset path. ON DELETE CASCADE wipes a user's outstanding reset
+-- tokens when their account is removed. consumed_at + expires_at together
+-- enforce single-use, time-boxed semantics; the index on token_hash makes
+-- the consume path O(1).
+CREATE TABLE IF NOT EXISTS password_resets (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash VARCHAR(64) NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  consumed_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_password_resets_token_hash ON password_resets(token_hash);
+CREATE INDEX IF NOT EXISTS idx_password_resets_user_id ON password_resets(user_id);
+
 CREATE INDEX IF NOT EXISTS idx_invoices_user_id ON invoices(user_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
 CREATE INDEX IF NOT EXISTS idx_invoices_payment_link_id ON invoices(payment_link_id);

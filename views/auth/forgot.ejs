@@ -1,0 +1,54 @@
+<%- include('../partials/head') %>
+<%- include('../partials/nav') %>
+
+<div class="min-h-screen flex items-center justify-center py-12 px-4">
+  <div class="w-full max-w-sm">
+    <div class="text-center mb-8">
+      <h1 class="text-2xl font-bold text-gray-900">Reset your password</h1>
+      <p class="text-gray-500 mt-1 text-sm">We'll email you a one-time link to set a new one.</p>
+    </div>
+
+    <% if (locals.flash) { %>
+      <div class="mb-4 p-3 rounded-lg text-sm <%= flash.type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200' %>">
+        <%= flash.message %>
+      </div>
+    <% } %>
+
+    <% if (locals.sent) { %>
+      <div data-testid="forgot-success" class="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 text-center">
+        <div class="text-3xl mb-2">📬</div>
+        <h2 class="text-lg font-semibold text-gray-900 mb-2">Check your inbox</h2>
+        <p class="text-sm text-gray-600">
+          If an account exists for <strong><%= locals.submittedEmail || '' %></strong>, we've sent a one-time reset link. The link is good for 60 minutes.
+        </p>
+        <p class="text-xs text-gray-400 mt-4">
+          Didn't get it? Check your spam folder, then <a href="/auth/forgot" class="text-brand-600 hover:underline">request another link</a>.
+        </p>
+      </div>
+    <% } else { %>
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
+        <form action="/auth/forgot" method="POST" class="space-y-4">
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input type="email" name="email" required autocomplete="email"
+              value="<%= locals.values ? values.email : '' %>"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent">
+          </div>
+          <button type="submit" class="w-full bg-brand-600 text-white font-semibold py-2.5 rounded-lg hover:bg-brand-700 transition">
+            Email me a reset link &rarr;
+          </button>
+        </form>
+      </div>
+    <% } %>
+
+    <p class="text-center text-sm text-gray-500 mt-6">
+      Remembered it? <a href="/auth/login" class="text-brand-600 font-medium hover:underline">Back to log in</a>
+    </p>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>
+
+</body>
+</html>
