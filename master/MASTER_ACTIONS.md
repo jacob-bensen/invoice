@@ -2,6 +2,9 @@
 
 > Items genuinely waiting on a human (credentials, payment-provider setup, asset delivery, legal, store listings). Code is in for every item below; nothing here is solved by a commit.
 
+## Set `OPERATOR_EMAIL` on production + check `/admin/activation`
+Activation funnel report (shipped 2026-05-16) is gated on `OPERATOR_EMAIL` matching the logged-in user's email. Until set, the route 404s for everyone — by design. Once set, log into the production app with that email and visit `/admin/activation` (and `/admin/activation.json`). The cohort + 5-stage table is the observable signal in PLAN.md "Done means". [PLAN-REVIEW] once a real signup cohort has flowed through the funnel: confirm day-over-day positive flow at every step, or propose the next Primary Objective if the funnel is healthy.
+
 ## Validate trial → paid loop on live Stripe
 
 Previous Primary Objective's final criterion: at least one Pro-paying user has flowed through the full code-side funnel (pricing → trial → urgency stack → checkout → first-paid celebration → referral hook) on live Stripe keys rather than sk_test_. Operator action: complete the Deploy section below, then trial + upgrade one real account end-to-end and confirm Stripe records a charge and the celebration banner fires on the dashboard.

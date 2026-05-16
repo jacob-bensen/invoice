@@ -1,0 +1,105 @@
+<%- include('../partials/head') %>
+<%- include('../partials/nav') %>
+
+<main class="max-w-4xl mx-auto px-4 py-10" data-testid="admin-activation-report">
+  <header class="mb-8">
+    <h1 class="text-2xl font-bold text-gray-900">Activation funnel</h1>
+    <p class="text-sm text-gray-500 mt-1">
+      Cohort = users who signed up in the selected date window. Each row shows how many of that cohort reached the named stage.
+    </p>
+  </header>
+
+  <form action="/admin/activation" method="GET" class="bg-white rounded-2xl border border-gray-200 p-5 mb-6 flex flex-wrap items-end gap-3" data-testid="admin-activation-form">
+    <div>
+      <label class="block text-xs font-medium text-gray-700 mb-1">From</label>
+      <input type="date" name="from" value="<%= report ? report.range.from : '' %>"
+        class="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+        data-testid="admin-activation-from">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-700 mb-1">To</label>
+      <input type="date" name="to" value="<%= report ? report.range.to : '' %>"
+        class="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+        data-testid="admin-activation-to">
+    </div>
+    <button type="submit" class="bg-brand-600 text-white font-semibold px-4 py-2 rounded-lg text-sm hover:bg-brand-700 transition">
+      Refresh
+    </button>
+    <a href="/admin/activation.json<%= report ? '?from=' + report.range.from + '&to=' + report.range.to : '' %>"
+       class="text-xs text-gray-500 underline hover:text-gray-700 ml-auto"
+       data-testid="admin-activation-json-link">
+      View as JSON
+    </a>
+  </form>
+
+  <% if (error) { %>
+    <div class="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm text-red-700" data-testid="admin-activation-error">
+      <p class="font-semibold mb-1">Could not build report</p>
+      <p>
+        <%
+          var msg;
+          switch (error) {
+            case 'invalid_from': msg = '"From" date must be in YYYY-MM-DD format.'; break;
+            case 'invalid_to': msg = '"To" date must be in YYYY-MM-DD format.'; break;
+            case 'range_out_of_order': msg = '"From" date must be on or before "To" date.'; break;
+            case 'range_too_wide': msg = 'Window cannot exceed 365 days.'; break;
+            case 'report_failed': msg = 'A database error prevented the report from rendering.'; break;
+            default: msg = error;
+          }
+        %>
+        <%= msg %>
+      </p>
+      <% if (errorMessage) { %>
+        <p class="text-xs text-red-500 mt-2 font-mono"><%= errorMessage %></p>
+      <% } %>
+    </div>
+  <% } else if (report) { %>
+    <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+      <div class="px-5 py-4 border-b border-gray-100 flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <p class="text-sm text-gray-500">Window</p>
+          <p class="text-base font-semibold text-gray-900" data-testid="admin-activation-window">
+            <%= report.range.from %> &rarr; <%= report.range.to %>
+            <span class="text-xs text-gray-400 font-normal">(<%= report.range.days %> day<%= report.range.days === 1 ? '' : 's' %>)</span>
+          </p>
+        </div>
+        <div class="text-right">
+          <p class="text-sm text-gray-500">Cohort size</p>
+          <p class="text-2xl font-bold text-gray-900" data-testid="admin-activation-cohort-size"><%= report.cohortSize.toLocaleString('en-US') %></p>
+        </div>
+      </div>
+
+      <table class="w-full text-sm" data-testid="admin-activation-table">
+        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+          <tr>
+            <th class="text-left px-5 py-2 font-medium">Stage</th>
+            <th class="text-left px-5 py-2 font-medium">Milestone</th>
+            <th class="text-right px-5 py-2 font-medium">Users</th>
+            <th class="text-right px-5 py-2 font-medium">From previous</th>
+            <th class="text-right px-5 py-2 font-medium">From cohort</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% report.stages.forEach(function (stage) { %>
+            <tr class="border-t border-gray-100" data-testid="admin-activation-stage-<%= stage.key %>">
+              <td class="px-5 py-3 font-medium text-gray-900"><%= stage.label %></td>
+              <td class="px-5 py-3 text-xs text-gray-500"><%= stage.milestone %></td>
+              <td class="px-5 py-3 text-right font-mono text-gray-900" data-testid="admin-activation-count-<%= stage.key %>"><%= stage.count.toLocaleString('en-US') %></td>
+              <td class="px-5 py-3 text-right font-mono text-gray-700" data-testid="admin-activation-prev-<%= stage.key %>"><%= formatPct(stage.conversionFromPrev) %></td>
+              <td class="px-5 py-3 text-right font-mono text-gray-700" data-testid="admin-activation-cohort-<%= stage.key %>"><%= formatPct(stage.conversionFromCohort) %></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="text-xs text-gray-400 mt-3" data-testid="admin-activation-generated-at">
+      Generated <%= report.generatedAt %>.
+    </p>
+  <% } %>
+</main>
+
+<%- include('../partials/footer') %>
+
+</body>
+</html>
