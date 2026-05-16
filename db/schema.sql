@@ -112,6 +112,14 @@ ALTER TABLE users ADD CONSTRAINT users_plan_check
 -- shared by link.
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS public_token VARCHAR(32) UNIQUE;
 
+-- Stale-draft email cooldown stamp. The daily cron picks up users with a real
+-- draft invoice 24h+ old who haven't been emailed about it in the last 7 days
+-- (and only after the welcome email has fired, so a brand-new signup gets the
+-- welcome before this nudge). One stamp per user is sufficient — the cron
+-- groups stale drafts by user and emails about the oldest, so a single user
+-- never gets multiple emails in one tick.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS stale_draft_email_sent_at TIMESTAMP;
+
 CREATE INDEX IF NOT EXISTS idx_invoices_user_id ON invoices(user_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
 CREATE INDEX IF NOT EXISTS idx_invoices_payment_link_id ON invoices(payment_link_id);

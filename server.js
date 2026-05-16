@@ -175,5 +175,14 @@ app.listen(PORT, () => {
     } catch (err) {
       console.error('[trial-nudge] startup failed:', err && err.message);
     }
+
+    try {
+      const { startStaleDraftEmailJob } = require('./jobs/stale-draft-email');
+      const s = startStaleDraftEmailJob();
+      if (s && s.ok) console.log(`[stale-draft-email] scheduled (${s.schedule})`);
+      else console.warn('[stale-draft-email] not scheduled:', s && s.reason);
+    } catch (err) {
+      console.error('[stale-draft-email] startup failed:', err && err.message);
+    }
   }
 });

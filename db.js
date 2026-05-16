@@ -291,6 +291,64 @@ const db = {
   },
 
   /*
+   * Stale-draft email cron query. Picks up one row per user whose oldest real
+   * draft (status='draft', is_seed=false) has been sitting for at least
+   * `minAgeHours` and who hasn't received a stale-draft email in the last
+   * `cooldownDays`. Welcome email must have fired (welcome_email_sent_at IS
+   * NOT NULL) so a freshly-signed-up user gets the welcome before this nudge.
+   *
+   * DISTINCT ON (i.user_id) bound to ORDER BY (user_id, created_at ASC)
+   * guarantees we surface the OLDEST draft per user — the one with the most
+   * urgency to push toward "send" — and only one row per user even if they
+   * have a backlog of multiple stale drafts.
+   */
+  async getUsersWithStaleDraftForEmail(minAgeHours = 24, cooldownDays = 7) {
+    const hours = Number.isFinite(minAgeHours) && minAgeHours > 0
+      ? Math.floor(minAgeHours)
+      : 24;
+    const cooldown = Number.isFinite(cooldownDays) && cooldownDays > 0
+      ? Math.floor(cooldownDays)
+      : 7;
+    const { rows } = await pool.query(
+      `SELECT DISTINCT ON (i.user_id)
+         i.user_id        AS user_id,
+         i.id             AS invoice_id,
+         i.invoice_number AS invoice_number,
+         i.client_name    AS client_name,
+         i.total          AS invoice_total,
+         i.created_at     AS draft_created_at,
+         u.email          AS email,
+         u.name           AS name,
+         u.business_name  AS business_name,
+         u.reply_to_email AS reply_to_email,
+         u.business_email AS business_email
+       FROM invoices i
+       JOIN users u ON u.id = i.user_id
+       WHERE i.status = 'draft'
+         AND i.is_seed = false
+         AND i.created_at <= NOW() - ($1 * INTERVAL '1 hour')
+         AND u.email IS NOT NULL
+         AND u.welcome_email_sent_at IS NOT NULL
+         AND (u.stale_draft_email_sent_at IS NULL
+              OR u.stale_draft_email_sent_at < NOW() - ($2 * INTERVAL '1 day'))
+       ORDER BY i.user_id, i.created_at ASC
+       LIMIT 500`,
+      [hours, cooldown]
+    );
+    return rows;
+  },
+
+  async markStaleDraftEmailSent(userId) {
+    if (!userId) return null;
+    const { rows } = await pool.query(
+      `UPDATE users SET stale_draft_email_sent_at = NOW(), updated_at = NOW()
+         WHERE id = $1 RETURNING id, stale_draft_email_sent_at`,
+      [userId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Recent paid-revenue stats for the dashboard "what you collected lately"
    * row (INTERNAL_TODO #107). Returns SUM(total), COUNT(*) and a count of
    * distinct paying clients (deduped on lowercased email-or-name) over a
