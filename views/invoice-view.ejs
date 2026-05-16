@@ -184,27 +184,42 @@
           headline: 'Email this invoice to the client automatically',
           benefit: 'On Pro, "Mark as Sent" emails the invoice straight to the client with the pay link attached — no copy-paste, no forgotten attachments.'
         } }) %>
-        <%- include('partials/pro-lock', { proLock: {
-          feature: 'share_link',
-          icon: '🔗',
-          headline: 'Send your client a clean, branded link to this invoice',
-          benefit: 'Pro generates a tokenized /i/<token> share URL — your client opens it in their browser, sees your branding, and pays in one click. No login required.'
-        } }) %>
       </div>
     <% } %>
 
-    <!-- Public share link (#43) — Pro/Agency only. Tokenized /i/<token>
-         URL the freelancer can paste into a DM, email, or text so the
-         client views the invoice and pays in one click — without needing
-         a DecentInvoice account. Token is lazy-minted by a fetch() POST
-         to /invoices/:id/share on first click; subsequent clicks return
-         the cached token. -->
-    <% if (user.plan === 'pro' || user.plan === 'agency') { %>
+    <!-- Public share link (#43). Tokenized /i/<token> URL the freelancer
+         can paste into a DM, email, or text so the client views the invoice
+         in their browser — no DecentInvoice account required. Open to every
+         plan: it's the activation funnel's only in-app way for a free user
+         to deliver an invoice. Token is lazy-minted by a fetch() POST to
+         /invoices/:id/share on first click; subsequent clicks return the
+         cached token. Free users see a tailored sub-line about the missing
+         pay button so the Pro upgrade pressure rides every share. -->
+    <% const _shareIsPaidOwner = user.plan === 'pro' || user.plan === 'agency'; %>
       <div class="border-t border-gray-100 pt-6 mb-6"
         data-testid="public-share-section"
+        data-owner-plan="<%= _shareIsPaidOwner ? 'paid' : 'free' %>"
         x-data="{ url: '', copied: false, loading: false, error: '' }">
         <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Public share link</p>
-        <p class="text-gray-500 text-sm mb-3">Send your client a tokenized URL that opens this invoice in their browser — no login required. They see your branding and the pay button.</p>
+        <% if (_shareIsPaidOwner) { %>
+          <p class="text-gray-500 text-sm mb-3">Send your client a tokenized URL that opens this invoice in their browser — no login required. They see your branding and the pay button.</p>
+        <% } else { %>
+          <p class="text-gray-500 text-sm mb-3">Send your client a tokenized URL that opens this invoice in their browser — no login required. They see your branding and the totals.</p>
+          <div class="bg-brand-50 border border-brand-200 rounded-lg px-4 py-3 mb-3 flex items-start gap-3" data-testid="public-share-free-nudge">
+            <span class="text-lg leading-none" aria-hidden="true">💳</span>
+            <div class="flex-1 text-sm text-gray-700">
+              <p>Your client will see the invoice <strong>without a Pay button</strong> — they'll have to pay you by check, Venmo, or bank transfer.</p>
+              <form action="/billing/create-checkout" method="POST" class="inline-flex items-center gap-2 mt-2" data-pro-lock-form>
+                <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+                <input type="hidden" name="billing_cycle" value="annual">
+                <input type="hidden" name="source" value="share-link-pay-nudge">
+                <button type="submit" class="text-brand-700 font-semibold text-sm hover:underline">
+                  Add a Stripe Pay button on Pro &rarr;
+                </button>
+              </form>
+            </div>
+          </div>
+        <% } %>
         <div class="flex items-center gap-2" x-show="!url">
           <button type="button"
             data-testid="public-share-generate"
@@ -233,9 +248,8 @@
           </a>
         </div>
         <p x-show="error" x-text="error" class="text-red-600 text-xs mt-2"></p>
-        <p class="text-gray-400 text-xs mt-2">Anyone with this link can view (and pay) this invoice — share it only with your client.</p>
+        <p class="text-gray-400 text-xs mt-2">Anyone with this link can view this invoice — share it only with your client.</p>
       </div>
-    <% } %>
 
     <!-- Payment Link (Pro) -->
     <% if (invoice.payment_link_url && user.plan === 'pro') { %>

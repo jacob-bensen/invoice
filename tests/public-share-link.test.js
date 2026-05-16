@@ -12,16 +12,17 @@
  *   - lib/share-link.buildPublicInvoiceUrl: absolute URL when APP_URL set,
  *     relative fallback when unset, empty string for bad tokens.
  *   - lib/share-link.isValidPublicToken: hex 8-32 contract.
- *   - POST /invoices/:id/share: 401 unauth, 403 free, 404 missing invoice,
- *     200 + {url, token} for Pro/Agency.
+ *   - POST /invoices/:id/share: 401 unauth, 404 missing invoice, 200 +
+ *     {url, token} for every plan (free, Pro, Agency).
  *   - GET /i/:token: 404 on bad-format token (no SQL), 404 on miss, 200 +
  *     full invoice + payment-now CTA only when owner is Pro/Agency, no
  *     owner-only edit/delete UI, noindex meta.
  *   - views/invoice-public.ejs: standalone render with payment link / without,
  *     HTML-escape of hostile owner / client / line-item fields,
  *     Powered-by-DecentInvoice attribution.
- *   - views/invoice-view.ejs: Pro/Agency surfaces public-share-section;
- *     free surfaces a share_link pro-lock; Pro does NOT surface the lock.
+ *   - views/invoice-view.ejs: every plan surfaces public-share-section;
+ *     free additionally surfaces a missing-Pay-button upgrade nudge;
+ *     Pro/Agency does NOT see that nudge.
  *
  * Run: NODE_ENV=test node tests/public-share-link.test.js
  */
@@ -346,17 +347,23 @@ async function testShareEndpointAgencyReturnsUrl() {
   assert.strictEqual(body.token, 'beefbeefbeefbeef');
 }
 
-async function testShareEndpointFreeReturns403() {
+async function testShareEndpointFreeMintsUrl() {
+  // Free users get the share URL too — it's the activation funnel's only
+  // in-app way to deliver an invoice to a client (no email-send, no
+  // Stripe payment link). The Pro upgrade pressure rides the share
+  // surface itself (no Pay button on the public page) instead of a 403.
   const app = buildShareApp({
     userPlan: 'free',
     invoiceRow: { id: 5, invoice_number: 'INV-2026-0001' },
-    token: 'whatever00000000'
+    token: 'cafef00ddeadbeef'
   });
   const r = await postShare(app, 5);
-  assert.strictEqual(r.status, 403);
+  assert.strictEqual(r.status, 200,
+    'free users must succeed — the share URL is the only delivery path on the free tier');
   const body = JSON.parse(r.body);
-  assert.strictEqual(body.error, 'pro_only',
-    'free users get a structured 403 so the UI can show the pro-lock');
+  assert.strictEqual(body.token, 'cafef00ddeadbeef');
+  assert.ok(body.url && /\/i\/cafef00ddeadbeef$/.test(body.url),
+    'response must carry the /i/<token> URL just like the Pro path');
 }
 
 async function testShareEndpointAuthRequired() {
@@ -641,7 +648,11 @@ async function testInvoiceViewExposesPublicShareSectionForAgency() {
     'Agency user must see the public-share section');
 }
 
-async function testInvoiceViewHidesPublicShareSectionForFree() {
+async function testInvoiceViewExposesPublicShareSectionForFree() {
+  // Free users see the live share-link UI — it's the activation funnel's
+  // only in-app delivery path. The share_link pro-lock card no longer
+  // exists at all; the upgrade pressure rides a tailored sub-line inside
+  // the share section that names the missing Pay button.
   const html = await ejs.renderFile(path.join(VIEWS, 'invoice-view.ejs'), {
     title: 'Invoice',
     user: { plan: 'free', email: 'free@x.com', name: 'Free', business_name: null },
@@ -649,15 +660,27 @@ async function testInvoiceViewHidesPublicShareSectionForFree() {
     csrfToken: 'csrf-share',
     flash: null
   }, { views: [VIEWS] });
-  assert.ok(!html.includes('data-testid="public-share-section"'),
-    'free user must NOT see the live share-link UI');
-  assert.ok(/data-pro-lock="share_link"/.test(html),
-    'free user must see a share_link pro-lock card as the upsell instead');
-  assert.ok(/name="source"\s+value="pro-lock-share_link"/.test(html),
-    'share_link pro-lock must tag its source for conversion attribution');
+  assert.ok(html.includes('data-testid="public-share-section"'),
+    'free user must see the live share-link UI');
+  assert.ok(/data-owner-plan="free"/.test(html),
+    'share section must tag the owner plan so the rendered copy is verifiable');
+  assert.ok(html.includes('data-testid="public-share-generate"'),
+    'free user gets the same Generate-link button as Pro');
+  assert.ok(/\/invoices\/1\/share/.test(html),
+    'free user generate button must POST to the same /invoices/:id/share endpoint');
+  assert.ok(html.includes('data-testid="public-share-free-nudge"'),
+    'free user must see the missing-Pay-button upgrade nudge inside the share section');
+  assert.ok(/name="source"\s+value="share-link-pay-nudge"/.test(html),
+    'free-nudge form must tag its source for conversion attribution');
+  assert.ok(/action="\/billing\/create-checkout"/.test(html),
+    'free-nudge upgrade CTA must POST straight into the checkout flow');
+  assert.ok(!/data-pro-lock="share_link"/.test(html),
+    'the old share_link pro-lock card must be removed; the share section replaces it');
 }
 
-async function testInvoiceViewHidesProLockShareLinkForPro() {
+async function testInvoiceViewSuppressesFreeNudgeForPro() {
+  // Pro users must NOT see the free-tier upgrade nudge inside the share
+  // section — they have the live Pay-link UI right below it.
   const html = await ejs.renderFile(path.join(VIEWS, 'invoice-view.ejs'), {
     title: 'Invoice',
     user: { plan: 'pro', email: 'pro@x.com', name: 'Pro', business_name: null },
@@ -666,8 +689,12 @@ async function testInvoiceViewHidesProLockShareLinkForPro() {
     csrfToken: 'csrf-share',
     flash: null
   }, { views: [VIEWS] });
+  assert.ok(!html.includes('data-testid="public-share-free-nudge"'),
+    'Pro user must NOT see the free-tier upgrade nudge inside the share section');
+  assert.ok(/data-owner-plan="paid"/.test(html),
+    'share section must tag the owner plan as paid for Pro users');
   assert.ok(!/data-pro-lock="share_link"/.test(html),
-    'Pro user must NOT see the share_link pro-lock — they already get the live UI');
+    'the share_link pro-lock card no longer exists for any plan');
 }
 
 // ---------- schema migration --------------------------------------------
@@ -696,7 +723,7 @@ async function run() {
     ['lib/share-link: isValidPublicToken accepts 8-32 hex only', testIsValidPublicTokenContract],
     ['POST /invoices/:id/share: Pro returns {url,token} JSON', testShareEndpointProReturnsUrl],
     ['POST /invoices/:id/share: Agency returns {url,token} JSON', testShareEndpointAgencyReturnsUrl],
-    ['POST /invoices/:id/share: free returns 403 pro_only', testShareEndpointFreeReturns403],
+    ['POST /invoices/:id/share: free returns {url,token} JSON', testShareEndpointFreeMintsUrl],
     ['POST /invoices/:id/share: requires auth', testShareEndpointAuthRequired],
     ['POST /invoices/:id/share: 404 when invoice not found', testShareEndpoint404OnMissingInvoice],
     ['GET /i/:token: renders 200 with invoice fields', testPublicViewRenders200WithInvoiceFields],
@@ -713,8 +740,8 @@ async function run() {
     ['invoice-public.ejs: falls back to owner_name when business_name missing', testPublicViewFallsBackWhenBusinessNameMissing],
     ['invoice-view.ejs: Pro user sees public-share-section', testInvoiceViewExposesPublicShareSectionForPro],
     ['invoice-view.ejs: Agency user sees public-share-section', testInvoiceViewExposesPublicShareSectionForAgency],
-    ['invoice-view.ejs: free user sees share_link pro-lock, not share section', testInvoiceViewHidesPublicShareSectionForFree],
-    ['invoice-view.ejs: Pro user does NOT see share_link pro-lock', testInvoiceViewHidesProLockShareLinkForPro],
+    ['invoice-view.ejs: free user sees public-share-section + upgrade nudge', testInvoiceViewExposesPublicShareSectionForFree],
+    ['invoice-view.ejs: Pro user does NOT see free-tier upgrade nudge', testInvoiceViewSuppressesFreeNudgeForPro],
     ['schema.sql: idempotent ALTER for invoices.public_token', testSchemaIncludesPublicTokenMigration]
   ];
   let pass = 0, fail = 0;

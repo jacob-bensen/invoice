@@ -552,21 +552,21 @@ router.post('/:id/status', requireAuth, async (req, res) => {
 });
 
 /*
- * Pro-only: lazy-mints (or returns the existing) public share token for an
- * invoice and responds with the absolute /i/<token> URL the user pastes to
- * their client (#43). Free users get a JSON 403 so the inline pro-lock card
- * — which already lives next to the share button — is the visible upsell;
- * we don't redirect through the pricing page because the client-side caller
- * is a fetch() that wants a structured response. CSRF-protected via the
- * shared middleware (POST methods require X-CSRF-Token).
+ * Lazy-mints (or returns the existing) public share token for an invoice
+ * and responds with the absolute /i/<token> URL the user pastes to their
+ * client (#43). Open to every plan: a free user has no other in-app way
+ * to deliver the invoice (no email-send, no Stripe payment link), so
+ * gating the share URL was the activation funnel's biggest dead-end on
+ * milestone 4. The public page still surfaces "Powered by DecentInvoice"
+ * + the signup CTA on every share, and the pay-button gap on free-owner
+ * pages is the upgrade pressure on every share-and-paid loop.
+ * CSRF-protected via the shared middleware (POST methods require
+ * X-CSRF-Token).
  */
 router.post('/:id/share', requireAuth, async (req, res) => {
   try {
     const user = await db.getUserById(req.session.user.id);
     if (!user) return res.status(401).json({ error: 'auth_required' });
-    if (user.plan !== 'pro' && user.plan !== 'agency') {
-      return res.status(403).json({ error: 'pro_only' });
-    }
     const invoice = await db.getInvoiceById(req.params.id, req.session.user.id);
     if (!invoice) return res.status(404).json({ error: 'not_found' });
     const token = await db.getOrCreatePublicToken(invoice.id, req.session.user.id);
