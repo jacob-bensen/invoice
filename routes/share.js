@@ -20,6 +20,16 @@ const emailLib = require('../lib/email');
 
 const router = express.Router();
 
+// Whitelist of payment methods the public payment-claim widget accepts.
+// Matches the lib/email PAYMENT_METHOD_LABELS keys; any other value coerces
+// to 'other' so a tampered form never persists arbitrary strings.
+const PAYMENT_CLAIM_METHODS = new Set([
+  'cash', 'check', 'venmo', 'zelle', 'bank_transfer', 'paypal', 'other'
+]);
+
+const PAYMENT_CLAIM_REFERENCE_MAX = 200;
+const PAYMENT_CLAIM_NOTE_MAX = 1000;
+
 router.get('/i/:token', async (req, res) => {
   const token = req.params.token || '';
   if (!isValidPublicToken(token)) {
@@ -96,11 +106,136 @@ router.get('/i/:token', async (req, res) => {
     });
   }
 
+  const claimed = req.query && req.query.claimed === '1';
   res.render('invoice-public', {
     title: `Invoice ${invoice.invoice_number} — DecentInvoice`,
     invoice,
+    paymentClaimMethods: Array.from(PAYMENT_CLAIM_METHODS),
+    paymentClaimReferenceMax: PAYMENT_CLAIM_REFERENCE_MAX,
+    paymentClaimNoteMax: PAYMENT_CLAIM_NOTE_MAX,
+    justClaimed: claimed,
     noindex: true
   });
+});
+
+/*
+ * Client-side payment-claim widget submit (Milestone 4 — sent → paid).
+ * The client on the public /i/<token> page clicks "I've sent payment",
+ * picks the method (Venmo/Zelle/bank/etc.), optionally adds a reference
+ * (transaction id / cheque number / Venmo handle), and submits. We stamp
+ * `payment_claimed_at` exactly once via a guarded UPDATE — so concurrent
+ * double-submits collapse to a single stamp — then fire an email back to
+ * the freelancer fire-and-forget so a Resend outage never blocks the
+ * client's confirmation render.
+ *
+ * Note: this is a CLIENT self-report. The freelancer still has to verify
+ * the funds landed and click Mark-as-Paid on /invoices/:id to actually
+ * flip the status. We deliberately do NOT auto-flip to status='paid' —
+ * a hostile client could otherwise mark every invoice paid without
+ * sending a cent.
+ *
+ * Already-paid invoices and already-claimed invoices both 200 redirect
+ * back to the share page with ?claimed=1 (idempotent) — a client who
+ * accidentally double-submits sees the same confirmation, not an error.
+ *
+ * CSRF is enforced by the global middleware: a session cookie was set
+ * on the first GET /i/<token> (which created session.csrfToken and rendered
+ * it into the form), so the POST round-trip carries the matching token.
+ */
+router.post('/i/:token/payment-claim', async (req, res) => {
+  const token = (req.params.token || '').trim();
+  if (!isValidPublicToken(token)) {
+    res.status(404);
+    return res.render('not-found', {
+      title: 'Invoice not found — DecentInvoice',
+      homeHref: '/',
+      homeLabel: 'Go to home page',
+      noindex: true
+    });
+  }
+
+  let invoice;
+  try {
+    invoice = await db.getInvoiceByPublicToken(token);
+  } catch (err) {
+    console.error('payment-claim: lookup failed:', err && err.message);
+    res.status(500);
+    return res.render('not-found', {
+      title: 'Invoice unavailable — DecentInvoice',
+      homeHref: '/',
+      homeLabel: 'Go to home page',
+      noindex: true
+    });
+  }
+  if (!invoice) {
+    res.status(404);
+    return res.render('not-found', {
+      title: 'Invoice not found — DecentInvoice',
+      homeHref: '/',
+      homeLabel: 'Go to home page',
+      noindex: true
+    });
+  }
+
+  // Idempotent: if the invoice is already paid OR already claimed, treat the
+  // POST as a no-op and redirect to the share page in claimed state. This
+  // protects against re-submits from the back button / refresh.
+  if (invoice.status === 'paid' || invoice.payment_claimed_at) {
+    return res.redirect(`/i/${token}?claimed=1`);
+  }
+
+  // Method whitelist — anything off-list coerces to 'other' instead of 400ing
+  // so a slightly out-of-date form (e.g. a value we deprecate later) still
+  // lands as a useful signal rather than dropping the claim on the floor.
+  const rawMethod = (req.body && req.body.method && String(req.body.method).trim().toLowerCase()) || '';
+  const method = PAYMENT_CLAIM_METHODS.has(rawMethod) ? rawMethod : 'other';
+
+  const reference = (req.body && req.body.reference)
+    ? String(req.body.reference).trim().slice(0, PAYMENT_CLAIM_REFERENCE_MAX) || null
+    : null;
+  const note = (req.body && req.body.note)
+    ? String(req.body.note).trim().slice(0, PAYMENT_CLAIM_NOTE_MAX) || null
+    : null;
+
+  let claimedRow;
+  try {
+    claimedRow = await db.recordPaymentClaim(invoice.id, { method, reference, note });
+  } catch (err) {
+    console.error('payment-claim: stamp failed:', err && err.message);
+    res.status(500);
+    return res.render('not-found', {
+      title: 'Could not record payment — DecentInvoice',
+      homeHref: '/',
+      homeLabel: 'Go to home page',
+      noindex: true
+    });
+  }
+
+  // Atomic guard lost the race (concurrent submit got there first, OR the
+  // row was flipped to paid between the lookup and the UPDATE). Treat as
+  // claimed and redirect to the same confirmation page.
+  if (!claimedRow) {
+    return res.redirect(`/i/${token}?claimed=1`);
+  }
+
+  // Fire the email back to the freelancer. Fire-and-forget so a Resend
+  // outage never breaks the client's confirmation render. Missing owner
+  // email skips silently inside sendPaymentClaimedEmail.
+  if (typeof emailLib.sendPaymentClaimedEmail === 'function' && claimedRow.owner_email) {
+    const owner = {
+      email: claimedRow.owner_email,
+      name: claimedRow.owner_name,
+      business_name: claimedRow.owner_business_name,
+      business_email: claimedRow.owner_business_email,
+      reply_to_email: claimedRow.owner_reply_to_email
+    };
+    emailLib.sendPaymentClaimedEmail(claimedRow, owner, { method, reference, note })
+      .catch((err) => {
+        console.error('sendPaymentClaimedEmail failed:', err && err.message);
+      });
+  }
+
+  return res.redirect(`/i/${token}?claimed=1`);
 });
 
 module.exports = router;

@@ -66,6 +66,110 @@
     </div>
   <% } %>
 
+  <!-- Client-side payment-claim widget (Milestone 4 — sent → paid). The
+       client who pays via Venmo/Zelle/wire (the "How to pay" instructions
+       above) clicks here to tell the freelancer the money's been sent.
+       Stamps payment_claimed_at, emails the freelancer immediately, and
+       surfaces a "💸 Client reports payment" badge on their dashboard.
+       Hidden on paid invoices and once the claim has been recorded; a
+       confirmation panel takes its place after submit. Justifies the
+       page even for free-tier users whose freelancer has no Stripe Pay
+       button — without this, the only out-of-band payment path went
+       silently from "client paid via Venmo" → "freelancer notices the
+       bank deposit days later and manually marks paid." -->
+  <% if (typeof justClaimed !== 'undefined' && justClaimed) { %>
+    <div class="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-2xl px-5 py-4 mb-6 text-sm" data-testid="payment-claim-success">
+      <p class="font-semibold">Thanks &mdash; we&rsquo;ve let <%= invoice.owner_business_name || invoice.owner_name || 'the sender' %> know.</p>
+      <p class="text-emerald-800 mt-1">They&rsquo;ll verify the funds and mark this invoice paid. You&rsquo;ll see &ldquo;Paid&rdquo; here once they confirm.</p>
+    </div>
+  <% } %>
+  <% if (invoice.payment_claimed_at && invoice.status !== 'paid') { %>
+    <div class="bg-white rounded-2xl border border-amber-200 shadow-sm p-6 mb-6" data-testid="public-payment-claimed-panel">
+      <p class="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-2">Payment reported</p>
+      <p class="text-gray-700 text-sm">
+        You&rsquo;ve already told <strong><%= invoice.owner_business_name || invoice.owner_name || 'the sender' %></strong>
+        that this invoice was paid<% if (invoice.payment_claim_method) { %> via
+        <strong data-testid="public-payment-claimed-method"><%= invoice.payment_claim_method.replace('_', ' ') %></strong><% } %>.
+        They&rsquo;ll mark the invoice paid once the funds clear on their side.
+      </p>
+    </div>
+  <% } else if ((invoice.status === 'sent' || invoice.status === 'overdue') && !invoice.payment_claimed_at) { %>
+    <% const methods = (typeof paymentClaimMethods !== 'undefined' && paymentClaimMethods) ? paymentClaimMethods : ['cash','check','venmo','zelle','bank_transfer','paypal','other']; %>
+    <% const refMax = (typeof paymentClaimReferenceMax !== 'undefined' && paymentClaimReferenceMax) || 200; %>
+    <% const noteMax = (typeof paymentClaimNoteMax !== 'undefined' && paymentClaimNoteMax) || 1000; %>
+    <% const methodLabels = { cash: 'Cash', check: 'Cheque / Check', venmo: 'Venmo', zelle: 'Zelle', bank_transfer: 'Bank transfer / ACH', paypal: 'PayPal', other: 'Other' }; %>
+    <details class="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-6 group" data-testid="public-payment-claim">
+      <summary class="flex flex-wrap items-center gap-3 cursor-pointer list-none">
+        <div class="flex-1 min-w-0">
+          <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Already paid?</p>
+          <p class="text-gray-700 text-sm">Let <strong><%= invoice.owner_business_name || invoice.owner_name || 'the sender' %></strong> know the money&rsquo;s on its way.</p>
+        </div>
+        <span class="bg-emerald-600 text-white font-semibold px-4 py-2 rounded-lg group-open:hidden whitespace-nowrap" data-testid="public-payment-claim-open">
+          I&rsquo;ve sent payment
+        </span>
+      </summary>
+
+      <form
+        method="POST"
+        action="/i/<%= invoice.public_token %>/payment-claim"
+        class="space-y-4 mt-4"
+        data-testid="public-payment-claim-form"
+      >
+        <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
+        <div>
+          <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">How did you pay?</p>
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2" data-testid="public-payment-claim-methods">
+            <% methods.forEach((m, idx) => { %>
+              <label class="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2 cursor-pointer hover:border-emerald-300 hover:bg-emerald-50 text-sm">
+                <input
+                  type="radio"
+                  name="method"
+                  value="<%= m %>"
+                  <% if (idx === 0) { %>required<% } %>
+                  class="text-emerald-600 focus:ring-emerald-500"
+                  data-testid="public-payment-claim-method-<%= m %>"
+                >
+                <span><%= methodLabels[m] || m %></span>
+              </label>
+            <% }) %>
+          </div>
+        </div>
+        <div>
+          <label for="claim-reference" class="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Reference (optional)</label>
+          <input
+            id="claim-reference"
+            type="text"
+            name="reference"
+            maxlength="<%= refMax %>"
+            placeholder="e.g. transaction ID, cheque #, Venmo @handle"
+            class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-emerald-400 focus:ring focus:ring-emerald-100 focus:outline-none"
+          >
+        </div>
+        <div>
+          <label for="claim-note" class="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Note (optional)</label>
+          <textarea
+            id="claim-note"
+            name="note"
+            rows="2"
+            maxlength="<%= noteMax %>"
+            placeholder="Anything they should know &mdash; e.g. &lsquo;sent from my business account&rsquo;"
+            class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-emerald-400 focus:ring focus:ring-emerald-100 focus:outline-none"
+          ></textarea>
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <button
+            type="submit"
+            class="bg-emerald-600 text-white font-semibold px-5 py-2 rounded-lg hover:bg-emerald-700 transition"
+            data-testid="public-payment-claim-submit"
+          >
+            Notify <%= invoice.owner_business_name || invoice.owner_name || 'the sender' %>
+          </button>
+          <p class="text-xs text-gray-400 ml-auto">DecentInvoice doesn&rsquo;t move money &mdash; the sender confirms once the funds land.</p>
+        </div>
+      </form>
+    </details>
+  <% } %>
+
   <!-- Invoice card -->
   <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 md:p-12">
     <div class="flex justify-between items-start mb-10">

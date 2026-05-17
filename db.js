@@ -791,6 +791,7 @@ const db = {
          i.items, i.subtotal, i.tax_rate, i.tax_amount, i.total, i.notes,
          i.status, i.issued_date, i.due_date,
          i.payment_link_url, i.public_token, i.is_seed,
+         i.payment_claimed_at, i.payment_claim_method, i.payment_claim_reference,
          u.id              AS owner_id,
          u.name            AS owner_name,
          u.email           AS owner_email,
@@ -832,6 +833,57 @@ const db = {
         WHERE id = $1
         RETURNING id, view_count, first_viewed_at, last_viewed_at`,
       [id]
+    );
+    return rows[0] || null;
+  },
+
+  /*
+   * Stamps a client-side payment claim from the public /i/<token> share page
+   * (Milestone 4 — sent → paid). Single atomic UPDATE guarded on
+   * `payment_claimed_at IS NULL AND status != 'paid'`, so concurrent submits
+   * race on the row lock and exactly one wins — the email-fire path can
+   * safely fire-and-forget without double-emailing the freelancer. Joins
+   * `users` so the caller composes the freelancer-facing email without a
+   * second query (mirrors getInvoiceByPublicToken's projection). The
+   * `method` argument is the small whitelist enforced at the route layer
+   * (cash|check|venmo|zelle|bank_transfer|paypal|other); reference + note
+   * are bounded scalars stored verbatim and HTML-escaped at render. Returns
+   * the joined row on first claim, null on already-claimed / paid / missing
+   * invoice.
+   */
+  async recordPaymentClaim(invoiceId, claim = {}) {
+    if (!invoiceId) return null;
+    const id = Number(invoiceId);
+    if (!Number.isInteger(id) || id <= 0) return null;
+    const method = (claim.method && String(claim.method)) || null;
+    const reference = (claim.reference && String(claim.reference)) || null;
+    const note = (claim.note && String(claim.note)) || null;
+    const { rows } = await pool.query(
+      `WITH updated AS (
+         UPDATE invoices
+            SET payment_claimed_at       = NOW(),
+                payment_claim_method     = $2,
+                payment_claim_reference  = $3,
+                payment_claim_note       = $4,
+                updated_at               = NOW()
+          WHERE id = $1
+            AND payment_claimed_at IS NULL
+            AND status <> 'paid'
+          RETURNING id, user_id, invoice_number, client_name, client_email,
+                    total, status, public_token,
+                    payment_claimed_at, payment_claim_method,
+                    payment_claim_reference, payment_claim_note
+       )
+       SELECT updated.*,
+              u.id              AS owner_id,
+              u.name            AS owner_name,
+              u.email           AS owner_email,
+              u.reply_to_email  AS owner_reply_to_email,
+              u.business_name   AS owner_business_name,
+              u.business_email  AS owner_business_email
+         FROM updated
+         JOIN users u ON u.id = updated.user_id`,
+      [id, method, reference, note]
     );
     return rows[0] || null;
   },

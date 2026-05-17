@@ -167,6 +167,23 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS no_invoice_nudge_sent_at TIMESTAMP;
 -- cooldown so a user with a chronic backlog isn't spammed daily.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS overdue_digest_sent_at TIMESTAMP;
 
+-- Client-side payment-claim widget on the public /i/<token> page (Milestone
+-- 4 — first invoice sent → first payment received). The client of a free-tier
+-- freelancer pays via Venmo/Zelle/wire/cheque (the "How to pay" instructions
+-- the freelancer wrote into their settings) and then clicks "I've sent
+-- payment" on the public page. This stamps payment_claimed_at + the
+-- structured method/reference, fires an email to the freelancer, and
+-- surfaces a "💸 Client reports payment via X" badge on the dashboard so the
+-- freelancer can verify the funds landed and one-click Mark-as-Paid. Closes
+-- the out-of-band payment loop for the free tier (no Stripe Payment Link)
+-- and gives Pro users a fallback for clients who pay by ACH/cheque instead
+-- of card. payment_claim_method is one of the small whitelist enforced at
+-- the route: cash|check|venmo|zelle|bank_transfer|paypal|other.
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_claimed_at TIMESTAMP;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_claim_method VARCHAR(40);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_claim_reference VARCHAR(200);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_claim_note TEXT;
+
 -- Password reset / magic-link sign-in (Milestone 1 — signup → first dashboard
 -- re-entry). A user who loses their session has to be able to get back into
 -- their seeded dashboard or the activation funnel breaks at step 1. Tokens

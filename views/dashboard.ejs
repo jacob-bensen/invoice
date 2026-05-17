@@ -658,6 +658,29 @@
                     <%= viewedLabel %>
                   </span>
                 <% } %>
+                <%
+                  // Client-side payment-claim badge (Milestone 4 — sent → paid).
+                  // The client clicked "I've sent payment" on the public
+                  // /i/<token> page. Surfaces verbatim on every row that has a
+                  // claim and hasn't yet been marked paid, with a method label
+                  // so the freelancer knows where to look for the deposit. A
+                  // paid invoice never shows the badge — the green Paid pill
+                  // already conveys the resolved state.
+                  const claimMethodLabels = { cash: 'Cash', check: 'Cheque', venmo: 'Venmo', zelle: 'Zelle', bank_transfer: 'Bank transfer', paypal: 'PayPal', other: 'Other' };
+                  const showClaim = !inv.is_seed && inv.payment_claimed_at && inv.status !== 'paid';
+                  const claimMethodLabel = inv.payment_claim_method ? (claimMethodLabels[inv.payment_claim_method] || 'Other') : '';
+                %>
+                <% if (showClaim) { %>
+                  <span
+                    data-testid="client-payment-claim-<%= inv.id %>"
+                    data-claim-method="<%= inv.payment_claim_method || 'other' %>"
+                    class="ml-2 inline-flex items-center gap-1 text-[11px] font-medium text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded"
+                    title="Your client reports they sent payment. Verify against your account and mark paid."
+                  >
+                    <span aria-hidden="true">&#128184;</span>
+                    Client reports paid<% if (claimMethodLabel) { %> via <%= claimMethodLabel %><% } %>
+                  </span>
+                <% } %>
               </td>
               <% if (isProUser) { %>
                 <td class="px-4 py-4 text-right print:hidden" onclick="event.stopPropagation()">
