@@ -387,6 +387,81 @@ const db = {
   },
 
   /*
+   * Overdue-invoice freelancer digest query (Milestone 4 — first invoice sent
+   * → first payment received). Aggregates one row per user whose sent
+   * invoices are past their due_date, returning counts + totals + the
+   * oldest due date so the digest email can render "you have N overdue
+   * invoices worth $X, oldest due M days ago" without a second round-trip.
+   *
+   * Gating:
+   *   - `i.status = 'sent'` only (paid + draft excluded by definition).
+   *   - `i.due_date < CURRENT_DATE` — server-side overdue check, no client
+   *     timezone leakage. CURRENT_DATE rolls over at UTC midnight, matching
+   *     the cron's UTC schedule.
+   *   - `u.welcome_email_sent_at IS NOT NULL` — activation ordering. A user
+   *     who hasn't been welcomed (legacy migration) shouldn't get an
+   *     overdue-digest before the welcome.
+   *   - `u.email IS NOT NULL` — defence-in-depth (the per-row email guard
+   *     in the orchestrator catches this too).
+   *   - Cooldown: `overdue_digest_sent_at IS NULL` OR last-sent > N days ago.
+   *     7-day default so a chronic backlog isn't spammed daily.
+   *
+   * NOT plan-gated. The freelancer-side pull-back is independent of paid
+   * status — free users get it because they have no client-side reminder
+   * cron, Pro users get it because (a) it complements client-side reminders
+   * that are skipped when client_email is missing, and (b) returning to the
+   * dashboard re-exposes them to the conversion machinery.
+   *
+   * LIMIT 500 bounds the cron tick. ORDER BY MIN(i.due_date) ASC drains the
+   * most-overdue backlog first.
+   */
+  async getUsersWithOverdueInvoicesForDigest(cooldownDays = 7) {
+    const cooldown = Number.isFinite(cooldownDays) && cooldownDays > 0
+      ? Math.floor(cooldownDays)
+      : 7;
+    const { rows } = await pool.query(
+      `SELECT
+         u.id              AS user_id,
+         u.email           AS email,
+         u.name            AS name,
+         u.business_name   AS business_name,
+         u.reply_to_email  AS reply_to_email,
+         u.business_email  AS business_email,
+         u.plan            AS plan,
+         COUNT(i.id)::int  AS overdue_count,
+         COALESCE(SUM(i.total), 0)::text AS overdue_total,
+         MIN(i.due_date)   AS oldest_due_date,
+         MAX(i.due_date)   AS newest_due_date
+       FROM users u
+       JOIN invoices i ON i.user_id = u.id
+       WHERE i.status = 'sent'
+         AND i.due_date IS NOT NULL
+         AND i.due_date < CURRENT_DATE
+         AND u.email IS NOT NULL
+         AND u.welcome_email_sent_at IS NOT NULL
+         AND (u.overdue_digest_sent_at IS NULL
+              OR u.overdue_digest_sent_at < NOW() - ($1 * INTERVAL '1 day'))
+       GROUP BY u.id, u.email, u.name, u.business_name, u.reply_to_email,
+                u.business_email, u.plan
+       ORDER BY MIN(i.due_date) ASC
+       LIMIT 500`,
+      [cooldown]
+    );
+    return rows;
+  },
+
+  async markOverdueDigestSent(userId) {
+    if (!userId) return null;
+    const { rows } = await pool.query(
+      `UPDATE users SET overdue_digest_sent_at = NOW(), updated_at = NOW()
+         WHERE id = $1
+         RETURNING id, overdue_digest_sent_at`,
+      [userId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Recent paid-revenue stats for the dashboard "what you collected lately"
    * row (INTERNAL_TODO #107). Returns SUM(total), COUNT(*) and a count of
    * distinct paying clients (deduped on lowercased email-or-name) over a

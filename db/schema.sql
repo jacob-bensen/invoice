@@ -155,6 +155,18 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS stale_draft_email_sent_at TIMESTAMP;
 -- covering the cohort that gets neither because they never created a draft.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS no_invoice_nudge_sent_at TIMESTAMP;
 
+-- Overdue-invoice freelancer digest stamp (Milestone 4 — first invoice sent →
+-- first payment received). Daily cron picks up users whose sent invoices have
+-- gone past their due_date and aggregates them into a single "you have N
+-- overdue invoices worth $X" email back to the freelancer. Distinct from
+-- jobs/reminders.js, which emails the CLIENT (Pro-only, gated on
+-- client_email). This stamp covers the freelancer-side activation pull-back:
+-- works for ALL plans (free users have no automated client reminder, so
+-- this is their only nudge), and even Pro users benefit because the
+-- client-side reminder is skipped when client_email is missing. A 7-day
+-- cooldown so a user with a chronic backlog isn't spammed daily.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS overdue_digest_sent_at TIMESTAMP;
+
 -- Password reset / magic-link sign-in (Milestone 1 — signup → first dashboard
 -- re-entry). A user who loses their session has to be able to get back into
 -- their seeded dashboard or the activation funnel breaks at step 1. Tokens

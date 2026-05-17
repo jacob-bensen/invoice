@@ -196,5 +196,14 @@ app.listen(PORT, () => {
     } catch (err) {
       console.error('[no-invoice-nudge] startup failed:', err && err.message);
     }
+
+    try {
+      const { startOverdueDigestJob } = require('./jobs/overdue-freelancer-digest');
+      const o = startOverdueDigestJob();
+      if (o && o.ok) console.log(`[overdue-digest] scheduled (${o.schedule})`);
+      else console.warn('[overdue-digest] not scheduled:', o && o.reason);
+    } catch (err) {
+      console.error('[overdue-digest] startup failed:', err && err.message);
+    }
   }
 });
