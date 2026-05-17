@@ -52,6 +52,20 @@
     </div>
   <% } %>
 
+  <!-- "How to pay" instructions (Milestone 4 — first invoice sent → first
+       payment received). When the freelancer has filled in their payment
+       methods in /billing/settings, every client opening the share link
+       sees a clear path to actually paying. Critical for free-tier users
+       who have no Stripe Pay button, and useful as a fallback for Pro
+       users whose clients prefer ACH / bank transfer over card. Hidden on
+       paid invoices — once settled the block is noise. -->
+  <% if (invoice.owner_payment_instructions && invoice.status !== 'paid') { %>
+    <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-6" data-testid="public-payment-instructions">
+      <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">How to pay</p>
+      <p class="text-gray-700 text-sm whitespace-pre-line font-mono"><%= invoice.owner_payment_instructions %></p>
+    </div>
+  <% } %>
+
   <!-- Invoice card -->
   <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 md:p-12">
     <div class="flex justify-between items-start mb-10">

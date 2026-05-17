@@ -92,6 +92,17 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_credited_at TIMESTAMP;
 -- (#50) — race-safe by SQL construction.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS welcome_email_sent_at TIMESTAMP;
 
+-- "How to pay" instructions surfaced on the public /i/<token> invoice page
+-- (Milestone 4 — first invoice sent → first payment received). Free users
+-- have no Stripe pay-button on the public page; without this field, a client
+-- who opens the share link has no in-app path to actually paying. Free-text
+-- so the user can list their preferred methods verbatim (Venmo @handle,
+-- Zelle email, bank wire instructions, cheque mailing address, PayPal.me
+-- link, crypto address). Rendered with whitespace preserved and HTML-
+-- escaped by EJS. Also useful as a fallback to the Stripe button for Pro
+-- users whose clients prefer ACH / bank transfer over card.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS payment_instructions TEXT;
+
 -- INTERNAL_TODO H5: widen users.plan CHECK to allow 'business' and 'agency'.
 -- The CREATE TABLE above already uses the wide list for fresh installs; this
 -- block migrates pre-existing deployments whose constraint still pins

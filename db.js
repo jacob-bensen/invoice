@@ -724,6 +724,7 @@ const db = {
          u.business_address AS owner_business_address,
          u.business_email   AS owner_business_email,
          u.business_phone   AS owner_business_phone,
+         u.payment_instructions AS owner_payment_instructions,
          u.plan            AS owner_plan
          FROM invoices i
          JOIN users u ON u.id = i.user_id

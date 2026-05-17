@@ -47,6 +47,13 @@
           class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
         <p class="text-xs text-gray-500 mt-1">When clients reply to invoice emails, replies go here. Defaults to your business email.</p>
       </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">How clients can pay you <span class="text-gray-400 font-normal">(optional)</span></label>
+        <textarea name="payment_instructions" rows="4" maxlength="2000" data-testid="settings-payment-instructions"
+          placeholder="Venmo @yourhandle&#10;Zelle: you@bank.com&#10;Bank: Chase, routing 021000021, acct 1234567890&#10;Cheque to: Your Name, 123 Main St"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"><%= user.payment_instructions || '' %></textarea>
+        <p class="text-xs text-gray-500 mt-1">Shown on every invoice your client opens via a share link. List the methods you accept — bank transfer, Venmo, Zelle, PayPal, cheque, anything.</p>
+      </div>
       <div class="pt-2">
         <button type="submit" class="bg-brand-600 text-white font-semibold px-6 py-2.5 rounded-lg hover:bg-brand-700 transition">
           Save Settings

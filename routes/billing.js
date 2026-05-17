@@ -399,13 +399,29 @@ router.post('/settings', requireAuth, async (req, res) => {
       }
       replyTo = replyToRaw;
     }
+    // Payment instructions render verbatim on the public /i/<token> page so
+    // a client opening a free-tier share link sees how to actually pay
+    // (Venmo, Zelle, bank transfer, cheque, PayPal.me). 2000-char cap
+    // matches typical bank-wire instructions + multiple methods listed
+    // together; values over the cap are rejected rather than truncated so
+    // the user never wonders why the tail of their bank details vanished.
+    const payInstrRaw = (req.body.payment_instructions || '').trim();
+    let payInstr = null;
+    if (payInstrRaw.length > 0) {
+      if (payInstrRaw.length > 2000) {
+        req.session.flash = { type: 'error', message: 'Payment instructions are too long (2000 character limit).' };
+        return res.redirect('/billing/settings');
+      }
+      payInstr = payInstrRaw;
+    }
     const updated = await db.updateUser(req.session.user.id, {
       name: req.body.name,
       business_name: req.body.business_name || null,
       business_address: req.body.business_address || null,
       business_phone: req.body.business_phone || null,
       business_email: req.body.business_email || null,
-      reply_to_email: replyTo
+      reply_to_email: replyTo,
+      payment_instructions: payInstr
     });
     if (!updated) return res.redirect('/auth/login');
     req.session.user = { ...req.session.user, name: updated.name };
