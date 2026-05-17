@@ -15,6 +15,7 @@
 const express = require('express');
 const { db } = require('../db');
 const { isValidPublicToken } = require('../lib/share-link');
+const { isLikelyBotUserAgent } = require('../lib/client-view');
 
 const router = express.Router();
 
@@ -51,6 +52,27 @@ router.get('/i/:token', async (req, res) => {
       noindex: true
     });
   }
+
+  /*
+   * Stamp the client view AFTER the lookup succeeded but BEFORE we
+   * render — fire-and-forget so a transient pool blip never blocks the
+   * client seeing their invoice. Bot/preview-fetcher UAs are excluded
+   * so the freelancer's dashboard badge only fires on real human
+   * opens. The owner of the invoice viewing their own /i/<token> URL
+   * (unlikely, but possible if they preview the link) is NOT excluded
+   * by IP/session — the public route is auth-less by design — so the
+   * count includes any owner self-preview. This is acceptable: the
+   * dashboard badge says "Viewed Xh ago" and even a self-preview is
+   * a useful "the link works" confirmation. Owner browser UAs (Chrome
+   * etc.) intentionally pass through.
+   */
+  if (typeof db.recordPublicInvoiceView === 'function' &&
+      !isLikelyBotUserAgent(req.get('user-agent'))) {
+    db.recordPublicInvoiceView(invoice.id).catch((err) => {
+      console.error('recordPublicInvoiceView failed:', err && err.message);
+    });
+  }
+
   res.render('invoice-public', {
     title: `Invoice ${invoice.invoice_number} — DecentInvoice`,
     invoice,

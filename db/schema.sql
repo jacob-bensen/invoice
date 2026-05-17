@@ -112,6 +112,20 @@ ALTER TABLE users ADD CONSTRAINT users_plan_check
 -- shared by link.
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS public_token VARCHAR(32) UNIQUE;
 
+-- Client-view tracking on shared invoices (Milestone 4 — sent → paid).
+-- Every successful GET /i/<token> by a non-bot user-agent increments
+-- view_count and stamps last_viewed_at; first_viewed_at is set exactly
+-- once via COALESCE so the dashboard can say "Client first opened this
+-- 3 hours ago" — a signal that pulls the freelancer back into the app
+-- (re-exposes them to the trial-urgency stack, exit-intent modal,
+-- celebration banner, and upgrade-modal surfaces). The owner never
+-- shares their own dashboard URL by accident — these stamps fire only
+-- on the public /i/<token> path, not on the authenticated /invoices/:id
+-- view, so seeing the badge is a true client-side signal.
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS view_count INTEGER DEFAULT 0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS first_viewed_at TIMESTAMP;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_viewed_at TIMESTAMP;
+
 -- Stale-draft email cooldown stamp. The daily cron picks up users with a real
 -- draft invoice 24h+ old who haven't been emailed about it in the last 7 days
 -- (and only after the welcome email has fired, so a brand-new signup gets the

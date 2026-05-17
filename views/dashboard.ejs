@@ -571,6 +571,30 @@
     <!-- Invoice table -->
     <% const isProUser = user && (user.plan === 'pro' || user.plan === 'agency'); %>
     <% const onlySeedInvoices = invoices.length > 0 && invoices.every((i) => i.is_seed); %>
+    <%
+      // Inline mirror of lib/client-view.formatViewedAgo — EJS doesn't expose
+      // require, and the lib helper is unit-tested in isolation; keeping a
+      // tight inline copy here means the dashboard render has zero require
+      // surface. Identical bucket boundaries (60s / 60m / 24h / 30d / 365d).
+      function dashboardViewedLabel(inv) {
+        if (!inv || inv.is_seed || !inv.first_viewed_at) return null;
+        const first = new Date(inv.first_viewed_at);
+        if (!Number.isFinite(first.getTime())) return null;
+        const last = inv.last_viewed_at ? new Date(inv.last_viewed_at) : first;
+        const ref = Number.isFinite(last.getTime()) ? last : first;
+        const delta = Math.max(0, Date.now() - ref.getTime());
+        const sec = Math.floor(delta / 1000);
+        let ago;
+        if (sec < 60) ago = 'just now';
+        else if (sec < 3600) ago = Math.floor(sec / 60) + 'm ago';
+        else if (sec < 86400) ago = Math.floor(sec / 3600) + 'h ago';
+        else if (sec < 86400 * 30) ago = Math.floor(sec / 86400) + 'd ago';
+        else if (sec < 86400 * 365) ago = Math.floor(sec / (86400 * 30)) + 'mo ago';
+        else ago = Math.floor(sec / (86400 * 365)) + 'y ago';
+        const count = Number(inv.view_count || 1) || 1;
+        return count > 1 ? `Viewed ${count}× (last ${ago})` : `Viewed ${ago}`;
+      }
+    %>
     <% if (onlySeedInvoices) { %>
       <div
         data-testid="seed-invoice-hint"
@@ -622,6 +646,18 @@
                 <span class="inline-block text-xs font-semibold px-2.5 py-0.5 rounded-full <%= statusColors[inv.status] || 'bg-gray-100 text-gray-600' %>">
                   <%= inv.status.charAt(0).toUpperCase() + inv.status.slice(1) %>
                 </span>
+                <% const viewedLabel = dashboardViewedLabel(inv); %>
+                <% if (viewedLabel) { %>
+                  <span
+                    data-testid="client-viewed-<%= inv.id %>"
+                    data-view-count="<%= inv.view_count || 1 %>"
+                    class="ml-2 inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded"
+                    title="Your client opened the shared invoice link"
+                  >
+                    <span aria-hidden="true">&#128064;</span>
+                    <%= viewedLabel %>
+                  </span>
+                <% } %>
               </td>
               <% if (isProUser) { %>
                 <td class="px-4 py-4 text-right print:hidden" onclick="event.stopPropagation()">
