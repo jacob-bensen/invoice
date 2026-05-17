@@ -16,6 +16,7 @@ const express = require('express');
 const { db } = require('../db');
 const { isValidPublicToken } = require('../lib/share-link');
 const { isLikelyBotUserAgent } = require('../lib/client-view');
+const emailLib = require('../lib/email');
 
 const router = express.Router();
 
@@ -68,7 +69,29 @@ router.get('/i/:token', async (req, res) => {
    */
   if (typeof db.recordPublicInvoiceView === 'function' &&
       !isLikelyBotUserAgent(req.get('user-agent'))) {
-    db.recordPublicInvoiceView(invoice.id).catch((err) => {
+    db.recordPublicInvoiceView(invoice.id).then((row) => {
+      // On the very first non-bot view, pull the freelancer back into the
+      // app with a notification email. The atomic UPDATE in
+      // recordPublicInvoiceView guarantees exactly one concurrent caller
+      // observes view_count = 1, so the email fires once per invoice
+      // even under racing parallel opens. Seed invoices are excluded
+      // defensively (they never carry a public_token in practice, so
+      // this is belt-and-braces).
+      if (!row || Number(row.view_count) !== 1) return;
+      if (invoice.is_seed) return;
+      if (!invoice.owner_email) return;
+      if (typeof emailLib.sendClientViewedEmail !== 'function') return;
+      const owner = {
+        email: invoice.owner_email,
+        name: invoice.owner_name,
+        business_name: invoice.owner_business_name,
+        business_email: invoice.owner_business_email,
+        reply_to_email: invoice.owner_reply_to_email
+      };
+      emailLib.sendClientViewedEmail(invoice, owner).catch((err) => {
+        console.error('sendClientViewedEmail failed:', err && err.message);
+      });
+    }).catch((err) => {
       console.error('recordPublicInvoiceView failed:', err && err.message);
     });
   }
