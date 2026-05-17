@@ -349,6 +349,44 @@ const db = {
   },
 
   /*
+   * No-invoice-nudge cron query. Picks up users who got the welcome email,
+   * are at least `minAgeHours` past signup, still have `invoice_count = 0`
+   * (the seed insert deliberately skips that bump, so this is a clean "no
+   * real invoice ever created" gate), and haven't been nudged yet. Bounded
+   * batch so a backlog of legacy users doesn't blast SMTP on a single tick.
+   */
+  async getUsersForNoInvoiceNudge(minAgeHours = 48) {
+    const hours = Number.isFinite(minAgeHours) && minAgeHours > 0
+      ? Math.floor(minAgeHours)
+      : 48;
+    const { rows } = await pool.query(
+      `SELECT id, email, name, business_name, reply_to_email, business_email, created_at
+         FROM users
+        WHERE invoice_count = 0
+          AND email IS NOT NULL
+          AND welcome_email_sent_at IS NOT NULL
+          AND no_invoice_nudge_sent_at IS NULL
+          AND created_at <= NOW() - ($1 * INTERVAL '1 hour')
+        ORDER BY created_at ASC
+        LIMIT 500`,
+      [hours]
+    );
+    return rows;
+  },
+
+  async markNoInvoiceNudgeSent(userId) {
+    if (!userId) return null;
+    const { rows } = await pool.query(
+      `UPDATE users SET no_invoice_nudge_sent_at = NOW(), updated_at = NOW()
+         WHERE id = $1
+           AND no_invoice_nudge_sent_at IS NULL
+         RETURNING id, no_invoice_nudge_sent_at`,
+      [userId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Recent paid-revenue stats for the dashboard "what you collected lately"
    * row (INTERNAL_TODO #107). Returns SUM(total), COUNT(*) and a count of
    * distinct paying clients (deduped on lowercased email-or-name) over a

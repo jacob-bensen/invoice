@@ -120,6 +120,16 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS public_token VARCHAR(32) UNIQUE;
 -- never gets multiple emails in one tick.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS stale_draft_email_sent_at TIMESTAMP;
 
+-- No-invoice nudge stamp. The daily cron picks up users who got the welcome
+-- email, are at least 48h past signup, and still have invoice_count = 0
+-- (the seed insert deliberately skips that bump, so this column is a clean
+-- "no real invoice ever created" gate). One-shot per user: once stamped, the
+-- nudge never fires again — this is the signup→first-real-invoice activation
+-- step, and a user who ignores it twice will not be moved by a third send.
+-- Sits between the welcome email (t=0) and the stale-draft email (t=draft+24h),
+-- covering the cohort that gets neither because they never created a draft.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS no_invoice_nudge_sent_at TIMESTAMP;
+
 -- Password reset / magic-link sign-in (Milestone 1 — signup → first dashboard
 -- re-entry). A user who loses their session has to be able to get back into
 -- their seeded dashboard or the activation funnel breaks at step 1. Tokens

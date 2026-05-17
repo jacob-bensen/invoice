@@ -187,5 +187,14 @@ app.listen(PORT, () => {
     } catch (err) {
       console.error('[stale-draft-email] startup failed:', err && err.message);
     }
+
+    try {
+      const { startNoInvoiceNudgeJob } = require('./jobs/no-invoice-nudge');
+      const n = startNoInvoiceNudgeJob();
+      if (n && n.ok) console.log(`[no-invoice-nudge] scheduled (${n.schedule})`);
+      else console.warn('[no-invoice-nudge] not scheduled:', n && n.reason);
+    } catch (err) {
+      console.error('[no-invoice-nudge] startup failed:', err && err.message);
+    }
   }
 });
