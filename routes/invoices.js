@@ -10,7 +10,7 @@ const { firePaidWebhook, buildPaidPayload } = require('../lib/outbound-webhook')
 const { sendInvoiceEmail, sendReferralCelebrationEmail } = require('../lib/email');
 const { loadProSubscriberCount } = require('../lib/pro-subscriber-count');
 const { triggerFirstPaidCelebration, buildReferralUrl } = require('../lib/celebration');
-const { buildPublicInvoiceUrl } = require('../lib/share-link');
+const { buildPublicInvoiceUrl, buildPublicShareIntents } = require('../lib/share-link');
 
 const router = express.Router();
 const FREE_LIMIT = 3;
@@ -571,8 +571,16 @@ router.post('/:id/share', requireAuth, async (req, res) => {
     if (!invoice) return res.status(404).json({ error: 'not_found' });
     const token = await db.getOrCreatePublicToken(invoice.id, req.session.user.id);
     if (!token) return res.status(500).json({ error: 'token_failed' });
+    const url = buildPublicInvoiceUrl(token);
+    const shareIntents = buildPublicShareIntents({
+      invoiceNumber: invoice.invoice_number,
+      total: invoice.total,
+      clientName: invoice.client_name,
+      clientEmail: invoice.client_email,
+      url
+    });
     res.set('Cache-Control', 'no-store');
-    res.json({ token, url: buildPublicInvoiceUrl(token) });
+    res.json({ token, url, shareIntents });
   } catch (err) {
     console.error('Share-link mint error:', err && err.message);
     res.status(500).json({ error: 'server_error' });

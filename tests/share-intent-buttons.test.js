@@ -145,21 +145,24 @@ async function testMailtoOmitsRecipientWhenClientEmailEmpty() {
     'mailto must render as `mailto:?subject=...` when client_email is empty; got ' + match[1]);
 }
 
-async function testFreeUserSeesNoShareButtons() {
-  // Free users don't get a payment_link_url, so the entire Payment Link card
-  // (which now contains the share buttons) must not render.
+async function testFreeUserSeesNoPayLinkShareButtons() {
+  // Free users don't get a payment_link_url, so the Stripe-pay-link share
+  // intents (server-rendered with static `href="https://wa.me/..."`) must
+  // not render. Free users DO get the public-share-intent buttons (with
+  // `x-bind:href` against Alpine state, gated on the post-fetch `intents`
+  // payload) — those are the activation lever covered separately in
+  // tests/public-share-intents.test.js. This test asserts the *pay-link*
+  // share path stays Pro-only.
   const html = await render(
     baseInvoice({ payment_link_url: null, payment_link_id: null }),
     baseUser('free')
   );
-  assert.ok(!html.includes('data-share="whatsapp"'),
-    'WhatsApp share must NOT render for free users');
-  assert.ok(!html.includes('data-share="sms"'),
-    'SMS share must NOT render for free users');
-  assert.ok(!html.includes('data-share="email"'),
-    'Email share must NOT render for free users');
-  assert.ok(!html.includes('Send to client'),
-    'Share section header must NOT render for free users');
+  assert.ok(!/href="https:\/\/wa\.me\/\?text=/.test(html),
+    'Pay-link WhatsApp anchor (static https://wa.me href) must NOT render for free users');
+  assert.ok(!/href="sms:\?&body=/.test(html),
+    'Pay-link SMS anchor (static sms: href) must NOT render for free users');
+  assert.ok(!/href="mailto:[^"]*\?subject=/.test(html),
+    'Pay-link mailto anchor (static mailto: href) must NOT render for free users');
 }
 
 async function testShareMessageIncludesGreetingFromClientName() {
@@ -214,11 +217,18 @@ async function testShareUrlEncodesSpecialChars() {
     'Two-step decode (HTML entity → URL) must recover apostrophe + ampersand + comma; got: ' + decoded);
 }
 
-async function testShareSectionHeaderRendersOnce() {
+async function testShareSectionHeaderRendersTwiceForProWithPayLink() {
+  // Pro users with a pay link now have two distinct "Send to client"
+  // surfaces: one inside the Stripe Payment Link card (pay-link share
+  // intents, static hrefs) and one inside the Public Share Link section
+  // (server-computed shareIntents bound to Alpine state after the fetch
+  // resolves). Both are legitimate — pay-link share is one-tap-pay, and
+  // public-share is "view this invoice in their browser". They show up
+  // independently in the markup so the user can pick the right delivery.
   const html = await render(baseInvoice(), baseUser('pro'));
   const occurrences = html.split('Send to client').length - 1;
-  assert.strictEqual(occurrences, 1,
-    'The "Send to client" section header must render exactly once; got ' + occurrences);
+  assert.strictEqual(occurrences, 2,
+    'Pro+pay-link renders the "Send to client" header twice — once for the pay-link card, once for the public-share section; got ' + occurrences);
 }
 
 async function testShareLinksHaveSafeRelOnExternal() {
@@ -306,11 +316,11 @@ async function run() {
     ['SMS href uses sms: scheme with body param', testSmsHrefUsesSmsScheme],
     ['mailto href includes client recipient + subject', testMailtoHrefIncludesRecipientAndSubject],
     ['mailto omits recipient when client_email empty', testMailtoOmitsRecipientWhenClientEmailEmpty],
-    ['Free user sees no share buttons (no payment-link card)', testFreeUserSeesNoShareButtons],
+    ['Free user sees no pay-link share buttons (free has no pay link)', testFreeUserSeesNoPayLinkShareButtons],
     ['Share message opens with "Hi <client_name>,"', testShareMessageIncludesGreetingFromClientName],
     ['Share message falls back to "Hi," when client_name empty', testShareMessageFallsBackWhenClientNameEmpty],
     ['Share URL encodes apostrophe / ampersand / comma / spaces', testShareUrlEncodesSpecialChars],
-    ['"Send to client" section header renders exactly once', testShareSectionHeaderRendersOnce],
+    ['"Send to client" header renders twice on Pro+pay-link (pay-link card + public-share card)', testShareSectionHeaderRendersTwiceForProWithPayLink],
     ['WhatsApp anchor carries target="_blank" + rel="noopener"', testShareLinksHaveSafeRelOnExternal],
     ['mailto recipient is percent-encoded (no injection of cc=/to= via malformed email)', testMailtoRecipientIsPercentEncodedAgainstInjection],
     ['Notes section still renders after share block', testNotesSectionStillRendersAfterShareSection]
