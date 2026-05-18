@@ -10,7 +10,7 @@ const { firePaidWebhook, buildPaidPayload } = require('../lib/outbound-webhook')
 const { sendInvoiceEmail, sendReferralCelebrationEmail } = require('../lib/email');
 const { loadProSubscriberCount } = require('../lib/pro-subscriber-count');
 const { triggerFirstPaidCelebration, buildReferralUrl } = require('../lib/celebration');
-const { buildPublicInvoiceUrl, buildPublicShareIntents, buildFollowUpShareIntents } = require('../lib/share-link');
+const { buildShareSurfaceForInvoice } = require('../lib/share-link');
 
 const router = express.Router();
 const FREE_LIMIT = 3;
@@ -415,12 +415,33 @@ router.get('/:id', requireAuth, async (req, res) => {
     const flash = req.session.flash;
     delete req.session.flash;
     const paymentMethods = parsePaymentMethods(process.env.STRIPE_PAYMENT_METHODS);
+
+    // Eagerly mint the public share token + build the share-intent surface so
+    // the public-share-section on the rendered page shows the WhatsApp / SMS /
+    // Email buttons immediately — no "Generate share link" click required.
+    // Cuts the most common freelancer-side path through Milestones 3-4 from
+    // 2 clicks to 1. Wrapped in try/catch so a transient mint failure does NOT
+    // break the page render — the Generate button is still in the DOM as a
+    // fallback (gated on x-show="!url") and will run the legacy lazy-mint.
+    let prefetchedShare = null;
+    try {
+      const token = await db.getOrCreatePublicToken(invoice.id, req.session.user.id);
+      if (token) {
+        prefetchedShare = buildShareSurfaceForInvoice(
+          Object.assign({}, invoice, { public_token: token })
+        );
+      }
+    } catch (err) {
+      console.error('Share-link prefetch failed:', err && err.message);
+    }
+
     res.render('invoice-view', {
       title: `Invoice ${invoice.invoice_number}`,
       invoice,
       user,
       flash,
       paymentMethods,
+      prefetchedShare,
       noindex: true
     });
   } catch (err) {
@@ -571,34 +592,17 @@ router.post('/:id/share', requireAuth, async (req, res) => {
     if (!invoice) return res.status(404).json({ error: 'not_found' });
     const token = await db.getOrCreatePublicToken(invoice.id, req.session.user.id);
     if (!token) return res.status(500).json({ error: 'token_failed' });
-    const url = buildPublicInvoiceUrl(token);
-    const shareIntents = buildPublicShareIntents({
-      invoiceNumber: invoice.invoice_number,
-      total: invoice.total,
-      clientName: invoice.client_name,
-      clientEmail: invoice.client_email,
-      url
-    });
-    // Follow-up nudge intents (Milestone 4). Always returned alongside the
-    // first-send intents; the view decides whether to surface them based on
-    // invoice.status (sent / overdue only). daysOverdue softens or sharpens
-    // the wording — derived here from invoice.due_date vs. the request's
-    // "now" so the response stays deterministic per-request without leaking
-    // a clock dependency into the lib.
-    const dueDate = invoice.due_date ? new Date(invoice.due_date) : null;
-    const daysOverdue = (dueDate && Number.isFinite(dueDate.getTime()))
-      ? Math.floor((Date.now() - dueDate.getTime()) / 86400000)
-      : 0;
-    const followUpIntents = buildFollowUpShareIntents({
-      invoiceNumber: invoice.invoice_number,
-      total: invoice.total,
-      clientName: invoice.client_name,
-      clientEmail: invoice.client_email,
-      url,
-      daysOverdue
-    });
+    const surface = buildShareSurfaceForInvoice(
+      Object.assign({}, invoice, { public_token: token })
+    );
+    if (!surface) return res.status(500).json({ error: 'token_failed' });
     res.set('Cache-Control', 'no-store');
-    res.json({ token, url, shareIntents, followUpIntents });
+    res.json({
+      token,
+      url: surface.url,
+      shareIntents: surface.shareIntents,
+      followUpIntents: surface.followUpIntents
+    });
   } catch (err) {
     console.error('Share-link mint error:', err && err.message);
     res.status(500).json({ error: 'server_error' });

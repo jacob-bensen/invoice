@@ -191,15 +191,32 @@
          can paste into a DM, email, or text so the client views the invoice
          in their browser — no DecentInvoice account required. Open to every
          plan: it's the activation funnel's only in-app way for a free user
-         to deliver an invoice. Token is lazy-minted by a fetch() POST to
-         /invoices/:id/share on first click; subsequent clicks return the
-         cached token. Free users see a tailored sub-line about the missing
-         pay button so the Pro upgrade pressure rides every share. -->
+         to deliver an invoice. The token is eagerly minted server-side in
+         GET /invoices/:id (Milestone 3) and the surface is prefilled below
+         via data-prefetch-* attributes — Alpine reads them in x-init so the
+         share-intent buttons render on first paint, no Generate click. The
+         Generate button stays in the DOM as a fallback in case the prefetch
+         fails (rare) or the page is rendered without the prefetched share.
+         Free users see a tailored sub-line about the missing pay button so
+         the Pro upgrade pressure rides every share. -->
     <% const _shareIsPaidOwner = user.plan === 'pro' || user.plan === 'agency'; %>
+    <%
+      const _prefShare = (locals.prefetchedShare && typeof locals.prefetchedShare === 'object'
+        && locals.prefetchedShare.url) ? locals.prefetchedShare : null;
+      const _prefUrl = _prefShare ? _prefShare.url : '';
+      const _prefIntentsJson = (_prefShare && _prefShare.shareIntents)
+        ? JSON.stringify(_prefShare.shareIntents) : '';
+      const _prefFollowUpJson = (_prefShare && _prefShare.followUpIntents)
+        ? JSON.stringify(_prefShare.followUpIntents) : '';
+    %>
       <div class="border-t border-gray-100 pt-6 mb-6"
         data-testid="public-share-section"
         data-owner-plan="<%= _shareIsPaidOwner ? 'paid' : 'free' %>"
-        x-data="{ url: '', copied: false, loading: false, error: '', intents: null, followUpIntents: null, fireIntent(kind) { try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: kind }) }).catch(() => {}); } catch (e) {} } }">
+        data-prefetch-url="<%= _prefUrl %>"
+        data-prefetch-intents="<%= _prefIntentsJson %>"
+        data-prefetch-followup="<%= _prefFollowUpJson %>"
+        x-data="{ url: '', copied: false, loading: false, error: '', intents: null, followUpIntents: null, fireIntent(kind) { try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: kind }) }).catch(() => {}); } catch (e) {} } }"
+        x-init="try { if ($el.dataset.prefetchUrl) { url = $el.dataset.prefetchUrl; } if ($el.dataset.prefetchIntents) { intents = JSON.parse($el.dataset.prefetchIntents); } if ($el.dataset.prefetchFollowup) { followUpIntents = JSON.parse($el.dataset.prefetchFollowup); } } catch (e) {}">
         <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Public share link</p>
         <% if (_shareIsPaidOwner) { %>
           <p class="text-gray-500 text-sm mb-3">Send your client a tokenized URL that opens this invoice in their browser — no login required. They see your branding and the pay button.</p>
