@@ -376,7 +376,9 @@ async function testViewClickHandlerAssignsIntents() {
   // successful mint.
   assert.ok(/intents\s*=\s*data\.shareIntents/.test(html),
     'fetch resolver assigns data.shareIntents into the Alpine `intents` state');
-  assert.ok(/x-data="\{\s*url:[^}]*intents:\s*null\s*\}"/.test(html),
+  // x-data may now host nested object literals (e.g. the fireIntent helper
+  // method that fires the share-intent ping); match across them.
+  assert.ok(/x-data="\{[\s\S]*?\burl:[\s\S]*?\bintents:\s*null/.test(html),
     'Alpine x-data declares an initial `intents: null`');
 }
 

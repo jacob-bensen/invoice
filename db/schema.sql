@@ -153,6 +153,21 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_viewed_at TIMESTAMP;
 -- view never races with a status read.
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS sent_via_share_view_at TIMESTAMP;
 
+-- Auto-transition draft → sent the moment the freelancer clicks a
+-- share-intent button (WhatsApp/SMS/Email) or Copy on /invoices/:id
+-- (Milestone 3 — first invoice created → first invoice sent). Pairs with
+-- sent_via_share_view_at: that one fires when the CLIENT opens the link,
+-- which never happens if the client never opens it. This one fires the
+-- moment the freelancer takes the unambiguous "send to client" gesture in
+-- the app, closing the gap where a share-and-never-opened invoice stayed
+-- draft on the freelancer's dashboard, kept tripping stale-draft prompts
+-- + emails, and was invisible to the activation-funnel report's `sent_one`
+-- counter. Same atomic CASE-guard pattern as sent_via_share_view_at — the
+-- stamp is set only on a real draft→sent flip; non-draft statuses
+-- (sent / paid / overdue) flow through the ELSE branch untouched so a
+-- paid-up-front invoice never regresses.
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS sent_via_share_intent_at TIMESTAMP;
+
 -- Stale-draft email cooldown stamp. The daily cron picks up users with a real
 -- draft invoice 24h+ old who haven't been emailed about it in the last 7 days
 -- (and only after the welcome email has fired, so a brand-new signup gets the

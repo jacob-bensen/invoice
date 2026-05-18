@@ -587,6 +587,44 @@ router.post('/:id/share', requireAuth, async (req, res) => {
   }
 });
 
+/*
+ * Records that the freelancer clicked a share-intent button
+ * (WhatsApp / SMS / Email / Copy) on /invoices/:id and atomically flips
+ * the invoice from 'draft' to 'sent' if applicable (Milestone 3 — first
+ * invoice created → first invoice sent). Counterpart to the client-view
+ * auto-flip in recordPublicInvoiceView: the client-view path only fires
+ * when the client opens the link, so any share that never gets opened
+ * left the invoice stuck in 'draft' indefinitely — invisible to the
+ * activation-funnel `sent_one` counter, kept tripping the stale-draft
+ * prompt + email cron, and lied to the freelancer's dashboard about the
+ * invoice's real state. The intent click is the strongest in-app
+ * "definitely sent" signal we can observe on the freelancer side.
+ * CSRF-protected via the shared middleware; intent kind is on a small
+ * whitelist so a tampered request can't write arbitrary strings.
+ * Idempotent — clicking a second time on an already-sent invoice is a
+ * no-op success.
+ */
+const SHARE_INTENT_KINDS = new Set(['whatsapp', 'sms', 'email', 'copy']);
+router.post('/:id/share-intent', requireAuth, async (req, res) => {
+  try {
+    const intent = (req.body && typeof req.body.intent === 'string')
+      ? req.body.intent.trim().toLowerCase() : '';
+    if (!SHARE_INTENT_KINDS.has(intent)) {
+      return res.status(400).json({ error: 'invalid_intent' });
+    }
+    const invoice = await db.getInvoiceById(req.params.id, req.session.user.id);
+    if (!invoice) return res.status(404).json({ error: 'not_found' });
+    const row = await db.markInvoiceSentFromShareIntent(invoice.id, req.session.user.id);
+    if (!row) return res.status(500).json({ error: 'update_failed' });
+    const flipped = invoice.status === 'draft' && row.status === 'sent';
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, status: row.status, flipped, intent });
+  } catch (err) {
+    console.error('Share-intent record error:', err && err.message);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
 router.post('/:id/delete', requireAuth, async (req, res) => {
   try {
     await db.deleteInvoice(req.params.id, req.session.user.id);

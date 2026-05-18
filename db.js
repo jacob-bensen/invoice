@@ -859,6 +859,45 @@ const db = {
   },
 
   /*
+   * Freelancer-side counterpart to recordPublicInvoiceView's auto-transition
+   * (Milestone 3 — first invoice created → first invoice sent). Fires from
+   * POST /invoices/:id/share-intent when the freelancer clicks a
+   * WhatsApp/SMS/Email/Copy button on /invoices/:id. The client-view path
+   * only flips the invoice once the recipient actually opens the link — many
+   * shares never get opened (client busy, link routed to spam, freelancer
+   * shared on a channel the client doesn't check), and those invoices used
+   * to be stuck in 'draft' forever: stale-draft prompts kept firing,
+   * activation-funnel `sent_one` counter missed them, freelancer dashboard
+   * lied about the invoice state. The intent click is the strongest in-app
+   * "definitely sent" signal we can observe on the freelancer side.
+   *
+   * Single atomic UPDATE with the same CASE-guard pattern as
+   * recordPublicInvoiceView: status flips draft → sent only when the OLD
+   * row's status is 'draft', the stamp is set only on that flip, and any
+   * other status flows through the ELSE branch untouched. Race-safe against
+   * concurrent flips from the client-view auto-transition or an explicit
+   * Mark-as-Sent — whichever lands first owns the row, the others no-op.
+   * user_id in the WHERE clause guards against cross-tenant invocation.
+   */
+  async markInvoiceSentFromShareIntent(invoiceId, userId) {
+    if (!invoiceId || !userId) return null;
+    const id = Number(invoiceId);
+    const uid = Number(userId);
+    if (!Number.isInteger(id) || id <= 0) return null;
+    if (!Number.isInteger(uid) || uid <= 0) return null;
+    const { rows } = await pool.query(
+      `UPDATE invoices
+          SET status                    = CASE WHEN status = 'draft' THEN 'sent' ELSE status END,
+              sent_via_share_intent_at  = CASE WHEN status = 'draft' THEN NOW() ELSE sent_via_share_intent_at END,
+              updated_at                = NOW()
+        WHERE id = $1 AND user_id = $2
+        RETURNING id, status, sent_via_share_intent_at`,
+      [id, uid]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Stamps a client-side payment claim from the public /i/<token> share page
    * (Milestone 4 — sent → paid). Single atomic UPDATE guarded on
    * `payment_claimed_at IS NULL AND status != 'paid'`, so concurrent submits
