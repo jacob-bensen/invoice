@@ -811,15 +811,33 @@ const db = {
   },
 
   /*
-   * Stamps a client-side view on a shared invoice (Milestone 4 — sent → paid).
-   * Single atomic UPDATE: increments view_count, COALESCE-sets first_viewed_at
-   * on the first hit (so concurrent first views from a forwarded email both
-   * resolve to the earliest server-clock NOW() rather than racing), and
-   * always advances last_viewed_at. Bot/owner exclusion happens in the
-   * caller — by the time we get here the view is real client activity worth
-   * counting. Returns the new row state so the caller can decide if a
-   * just-now first-view event should fan out (e.g. an email/webhook); the
-   * comparison is `view_count === 1` after the update.
+   * Stamps a client-side view on a shared invoice (Milestone 4 — sent → paid)
+   * AND atomically auto-transitions the invoice from 'draft' → 'sent' the
+   * first time a real client opens the public /i/<token> URL (Milestone 3 —
+   * first invoice created → first invoice sent). The auto-transition closes
+   * the activation-funnel gap where a user generates the share link, sends
+   * it via WhatsApp/SMS/Email, and never clicks Mark-as-Sent — the
+   * dashboard then shows the invoice as 'draft', stale-draft prompts keep
+   * firing on already-shared invoices, and the operator activation-funnel
+   * report's `sent_one` counter misses the conversion. The CLIENT opening
+   * the link is the strongest server-observable "definitely sent" signal
+   * there is; bot/owner exclusion in the caller means by the time we get
+   * here the view is real human activity worth counting + acting on.
+   *
+   * Single atomic UPDATE: increments view_count, COALESCE-sets
+   * first_viewed_at on the first hit (so concurrent first views from a
+   * forwarded email both resolve to the earliest server-clock NOW() rather
+   * than racing), always advances last_viewed_at, flips status from 'draft'
+   * to 'sent' (and only from 'draft' — 'sent'/'overdue'/'paid' are left
+   * untouched so a paid-first-then-viewed invoice never regresses), and
+   * stamps sent_via_share_view_at on the auto-flip so the dashboard +
+   * activation report can distinguish explicit Mark-as-Sent clicks from
+   * client-view auto-transitions. PostgreSQL evaluates the CASE
+   * expressions against the OLD row before any SET clause is applied, so
+   * the guards are race-safe against concurrent updates. Returns the new
+   * row state including status + sent_via_share_view_at so the caller can
+   * fan out follow-on events (the existing view_count === 1 → email
+   * trigger still fires unchanged).
    */
   async recordPublicInvoiceView(invoiceId) {
     if (!invoiceId) return null;
@@ -827,11 +845,14 @@ const db = {
     if (!Number.isInteger(id) || id <= 0) return null;
     const { rows } = await pool.query(
       `UPDATE invoices
-          SET view_count       = COALESCE(view_count, 0) + 1,
-              first_viewed_at  = COALESCE(first_viewed_at, NOW()),
-              last_viewed_at   = NOW()
+          SET view_count             = COALESCE(view_count, 0) + 1,
+              first_viewed_at        = COALESCE(first_viewed_at, NOW()),
+              last_viewed_at         = NOW(),
+              status                 = CASE WHEN status = 'draft' THEN 'sent' ELSE status END,
+              sent_via_share_view_at = CASE WHEN status = 'draft' THEN NOW() ELSE sent_via_share_view_at END,
+              updated_at             = NOW()
         WHERE id = $1
-        RETURNING id, view_count, first_viewed_at, last_viewed_at`,
+        RETURNING id, view_count, first_viewed_at, last_viewed_at, status, sent_via_share_view_at`,
       [id]
     );
     return rows[0] || null;

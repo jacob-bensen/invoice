@@ -137,6 +137,22 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS view_count INTEGER DEFAULT 0;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS first_viewed_at TIMESTAMP;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_viewed_at TIMESTAMP;
 
+-- Auto-transition draft → sent the first time a client opens the public
+-- /i/<token> share URL (Milestone 3 — first invoice created → first invoice
+-- sent). Before this stamp, a user who generated the public share link and
+-- shared it via WhatsApp/SMS/Email without explicitly clicking "Mark as
+-- Sent" left the invoice in 'draft' on the freelancer's dashboard — the
+-- stale-draft prompt and email both kept firing on already-shared invoices,
+-- and the operator activation-funnel report's `sent_one` counter
+-- (status IN ('sent','paid','overdue')) missed these real conversions
+-- entirely. The CLIENT opening the link is the strongest server-observable
+-- "this was definitely sent" signal there is. The stamp itself is the
+-- analytics signal — distinguishes "explicit mark-as-sent" from "auto-sent
+-- when the client opened the link" — and the status flip is atomic with
+-- the view-count bump in the single recordPublicInvoiceView UPDATE so a
+-- view never races with a status read.
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS sent_via_share_view_at TIMESTAMP;
+
 -- Stale-draft email cooldown stamp. The daily cron picks up users with a real
 -- draft invoice 24h+ old who haven't been emailed about it in the last 7 days
 -- (and only after the welcome email has fired, so a brand-new signup gets the
