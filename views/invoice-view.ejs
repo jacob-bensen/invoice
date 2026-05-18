@@ -199,7 +199,7 @@
       <div class="border-t border-gray-100 pt-6 mb-6"
         data-testid="public-share-section"
         data-owner-plan="<%= _shareIsPaidOwner ? 'paid' : 'free' %>"
-        x-data="{ url: '', copied: false, loading: false, error: '', intents: null, fireIntent(kind) { try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: kind }) }).catch(() => {}); } catch (e) {} } }">
+        x-data="{ url: '', copied: false, loading: false, error: '', intents: null, followUpIntents: null, fireIntent(kind) { try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: kind }) }).catch(() => {}); } catch (e) {} } }">
         <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Public share link</p>
         <% if (_shareIsPaidOwner) { %>
           <p class="text-gray-500 text-sm mb-3">Send your client a tokenized URL that opens this invoice in their browser — no login required. They see your branding and the pay button.</p>
@@ -223,7 +223,7 @@
         <div class="flex items-center gap-2" x-show="!url">
           <button type="button"
             data-testid="public-share-generate"
-            @click="loading = true; error = ''; fetch('/invoices/<%= invoice.id %>/share', { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Accept': 'application/json' } }).then(r => r.ok ? r.json() : Promise.reject(new Error('http_' + r.status))).then(data => { url = data.url || ''; intents = data.shareIntents || null; loading = false; }).catch(e => { error = 'Could not generate link — try again.'; loading = false; })"
+            @click="loading = true; error = ''; fetch('/invoices/<%= invoice.id %>/share', { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Accept': 'application/json' } }).then(r => r.ok ? r.json() : Promise.reject(new Error('http_' + r.status))).then(data => { url = data.url || ''; intents = data.shareIntents || null; followUpIntents = data.followUpIntents || null; loading = false; }).catch(e => { error = 'Could not generate link — try again.'; loading = false; })"
             class="bg-brand-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-brand-700 transition disabled:opacity-50"
             :disabled="loading">
             <span x-show="!loading">🔗 Generate share link</span>
@@ -285,6 +285,54 @@
           </div>
           <p class="text-gray-400 text-xs mt-2">Each button opens your native app with the message prefilled — review and hit send.</p>
         </div>
+        <!-- Follow-up share intents (Milestone 4 — sent → paid). Visible
+             only when the invoice has been sent (status='sent' or 'overdue')
+             AND the user has just generated / opened the share link in this
+             page load. The buttons pre-fill a softer "just checking in"
+             message instead of the original "here's invoice X" copy, so
+             the freelancer has a one-tap nudge path for clients who saw
+             the first message but haven't paid yet. Click is tracked via
+             the existing /share-intent endpoint — repeat clicks are
+             idempotent (the route does its own atomic guard). -->
+        <% const _isSentOrOverdue = invoice.status === 'sent' || invoice.status === 'overdue'; %>
+        <% if (_isSentOrOverdue) { %>
+          <div x-show="url && followUpIntents" x-cloak class="mt-4 pt-4 border-t border-gray-100"
+            data-testid="public-share-followup">
+            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Send a follow-up</p>
+            <p class="text-gray-500 text-xs mb-3">Already sent it? Tap to nudge — the message says "just checking in" instead of resending the invoice cold.</p>
+            <div class="flex flex-wrap gap-2">
+              <a x-bind:href="followUpIntents && followUpIntents.whatsapp" target="_blank" rel="noopener"
+                data-share="followup-whatsapp"
+                @click="fireIntent('whatsapp')"
+                title="Open WhatsApp with a follow-up message"
+                class="inline-flex items-center gap-2 border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-green-50 hover:border-green-300 transition text-sm">
+                <span aria-hidden="true">💬</span>
+                <span>WhatsApp follow-up</span>
+              </a>
+              <a x-bind:href="followUpIntents && followUpIntents.sms"
+                data-share="followup-sms"
+                @click="fireIntent('sms')"
+                title="Open Messages with a follow-up SMS"
+                class="inline-flex items-center gap-2 border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition text-sm">
+                <span aria-hidden="true">📱</span>
+                <span>SMS follow-up</span>
+              </a>
+              <a x-bind:href="followUpIntents && followUpIntents.mailto"
+                data-share="followup-email"
+                @click="fireIntent('email')"
+                title="Open your email client with a follow-up message"
+                class="inline-flex items-center gap-2 border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-indigo-50 hover:border-indigo-300 transition text-sm">
+                <span aria-hidden="true">✉️</span>
+                <span>Email follow-up</span>
+              </a>
+            </div>
+            <p x-show="followUpIntents && followUpIntents.overdue" x-cloak
+              data-testid="public-share-followup-overdue"
+              class="mt-2 text-xs text-amber-700">
+              This invoice is past its due date — the message also flags it as overdue.
+            </p>
+          </div>
+        <% } %>
         <p class="text-gray-400 text-xs mt-2">Anyone with this link can view this invoice — share it only with your client.</p>
       </div>
 

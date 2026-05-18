@@ -10,7 +10,7 @@ const { firePaidWebhook, buildPaidPayload } = require('../lib/outbound-webhook')
 const { sendInvoiceEmail, sendReferralCelebrationEmail } = require('../lib/email');
 const { loadProSubscriberCount } = require('../lib/pro-subscriber-count');
 const { triggerFirstPaidCelebration, buildReferralUrl } = require('../lib/celebration');
-const { buildPublicInvoiceUrl, buildPublicShareIntents } = require('../lib/share-link');
+const { buildPublicInvoiceUrl, buildPublicShareIntents, buildFollowUpShareIntents } = require('../lib/share-link');
 
 const router = express.Router();
 const FREE_LIMIT = 3;
@@ -579,8 +579,26 @@ router.post('/:id/share', requireAuth, async (req, res) => {
       clientEmail: invoice.client_email,
       url
     });
+    // Follow-up nudge intents (Milestone 4). Always returned alongside the
+    // first-send intents; the view decides whether to surface them based on
+    // invoice.status (sent / overdue only). daysOverdue softens or sharpens
+    // the wording — derived here from invoice.due_date vs. the request's
+    // "now" so the response stays deterministic per-request without leaking
+    // a clock dependency into the lib.
+    const dueDate = invoice.due_date ? new Date(invoice.due_date) : null;
+    const daysOverdue = (dueDate && Number.isFinite(dueDate.getTime()))
+      ? Math.floor((Date.now() - dueDate.getTime()) / 86400000)
+      : 0;
+    const followUpIntents = buildFollowUpShareIntents({
+      invoiceNumber: invoice.invoice_number,
+      total: invoice.total,
+      clientName: invoice.client_name,
+      clientEmail: invoice.client_email,
+      url,
+      daysOverdue
+    });
     res.set('Cache-Control', 'no-store');
-    res.json({ token, url, shareIntents });
+    res.json({ token, url, shareIntents, followUpIntents });
   } catch (err) {
     console.error('Share-link mint error:', err && err.message);
     res.status(500).json({ error: 'server_error' });
