@@ -15,7 +15,29 @@
   const statusLabel = invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1);
 %>
 
-<header class="bg-white border-b border-gray-200 px-4 py-3">
+<%
+  // Print stylesheet for client-side "Save as PDF" via window.print(). The
+  // public /i/<token> page is wrapped in marketing chrome (header, attribution,
+  // payment-claim widget, pay-now CTA, payment instructions) that's helpful in
+  // the live browser flow but pollutes a print-to-PDF artifact a client would
+  // file with their accounting team. The chrome elements each carry the
+  // Tailwind `print:hidden` utility so they disappear from the printed sheet;
+  // this @media block sets the page geometry + strips the invoice card's
+  // browser-only border / shadow so it sits flush on the letter-size page.
+%>
+<style data-testid="public-print-styles">
+  @media print {
+    @page { size: letter; margin: 0.5in; }
+    html, body { background: #ffffff !important; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .print-invoice-wrap { padding: 0 !important; max-width: 100% !important; }
+    .print-invoice-card {
+      border: none !important; box-shadow: none !important; padding: 0 !important;
+    }
+  }
+</style>
+
+<header class="bg-white border-b border-gray-200 px-4 py-3 print:hidden">
   <div class="max-w-4xl mx-auto flex items-center justify-between">
     <div class="text-sm text-gray-600">
       <span class="font-semibold text-gray-900"><%= ownerBusinessName %></span>
@@ -27,10 +49,30 @@
   </div>
 </header>
 
-<div class="max-w-4xl mx-auto px-4 py-10" data-testid="public-invoice">
+<div class="max-w-4xl mx-auto px-4 py-10 print-invoice-wrap" data-testid="public-invoice">
+  <!-- Save-as-PDF action bar (Milestone 4 — sent → paid). The client opens
+       the share link, sees the invoice in-browser, and one tap saves a clean
+       letter-size PDF (no marketing chrome) they can file with their
+       accounting team or forward to AP. Lifts perceived professionalism of
+       the share link and removes the "I can't archive this" friction that
+       silently delays payment cycles. Works for every owner plan since the
+       print path is purely client-side. Hidden on print itself via the
+       @media-print rule above so the button doesn't end up on the PDF. -->
+  <div class="flex justify-end mb-4 print:hidden" data-testid="public-print-bar">
+    <button
+      type="button"
+      onclick="window.print()"
+      data-testid="public-print-button"
+      class="border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-gray-50 transition text-sm flex items-center gap-2"
+      aria-label="Download this invoice as a PDF"
+    >
+      <span aria-hidden="true">📄</span>
+      Save as PDF
+    </button>
+  </div>
   <!-- Pay-now hero (Pro/Agency owner with an attached Stripe payment link) -->
   <% if (invoice.payment_link_url && ownerIsPaid && invoice.status !== 'paid') { %>
-    <div class="bg-white rounded-2xl border border-brand-200 shadow-sm p-6 mb-6 flex flex-wrap items-center gap-4" data-testid="public-pay-cta">
+    <div class="bg-white rounded-2xl border border-brand-200 shadow-sm p-6 mb-6 flex flex-wrap items-center gap-4 print:hidden" data-testid="public-pay-cta">
       <div class="flex-1 min-w-0">
         <p class="text-xs font-semibold text-brand-700 uppercase tracking-wide mb-1">Pay this invoice</p>
         <p class="text-gray-700 text-sm">
@@ -60,7 +102,7 @@
        users whose clients prefer ACH / bank transfer over card. Hidden on
        paid invoices — once settled the block is noise. -->
   <% if (invoice.owner_payment_instructions && invoice.status !== 'paid') { %>
-    <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-6" data-testid="public-payment-instructions">
+    <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-6 print:hidden" data-testid="public-payment-instructions">
       <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">How to pay</p>
       <p class="text-gray-700 text-sm whitespace-pre-line font-mono"><%= invoice.owner_payment_instructions %></p>
     </div>
@@ -78,13 +120,13 @@
        silently from "client paid via Venmo" → "freelancer notices the
        bank deposit days later and manually marks paid." -->
   <% if (typeof justClaimed !== 'undefined' && justClaimed) { %>
-    <div class="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-2xl px-5 py-4 mb-6 text-sm" data-testid="payment-claim-success">
+    <div class="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-2xl px-5 py-4 mb-6 text-sm print:hidden" data-testid="payment-claim-success">
       <p class="font-semibold">Thanks &mdash; we&rsquo;ve let <%= invoice.owner_business_name || invoice.owner_name || 'the sender' %> know.</p>
       <p class="text-emerald-800 mt-1">They&rsquo;ll verify the funds and mark this invoice paid. You&rsquo;ll see &ldquo;Paid&rdquo; here once they confirm.</p>
     </div>
   <% } %>
   <% if (invoice.payment_claimed_at && invoice.status !== 'paid') { %>
-    <div class="bg-white rounded-2xl border border-amber-200 shadow-sm p-6 mb-6" data-testid="public-payment-claimed-panel">
+    <div class="bg-white rounded-2xl border border-amber-200 shadow-sm p-6 mb-6 print:hidden" data-testid="public-payment-claimed-panel">
       <p class="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-2">Payment reported</p>
       <p class="text-gray-700 text-sm">
         You&rsquo;ve already told <strong><%= invoice.owner_business_name || invoice.owner_name || 'the sender' %></strong>
@@ -98,7 +140,7 @@
     <% const refMax = (typeof paymentClaimReferenceMax !== 'undefined' && paymentClaimReferenceMax) || 200; %>
     <% const noteMax = (typeof paymentClaimNoteMax !== 'undefined' && paymentClaimNoteMax) || 1000; %>
     <% const methodLabels = { cash: 'Cash', check: 'Cheque / Check', venmo: 'Venmo', zelle: 'Zelle', bank_transfer: 'Bank transfer / ACH', paypal: 'PayPal', other: 'Other' }; %>
-    <details class="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-6 group" data-testid="public-payment-claim">
+    <details class="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-6 group print:hidden" data-testid="public-payment-claim">
       <summary class="flex flex-wrap items-center gap-3 cursor-pointer list-none">
         <div class="flex-1 min-w-0">
           <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Already paid?</p>
@@ -171,7 +213,7 @@
   <% } %>
 
   <!-- Invoice card -->
-  <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 md:p-12">
+  <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 md:p-12 print-invoice-card">
     <div class="flex justify-between items-start mb-10">
       <div>
         <h2 class="text-2xl font-bold text-gray-900"><%= ownerBusinessName %></h2>
@@ -268,7 +310,7 @@
   <!-- Powered-by attribution footer (#48 hook). Surfaces DecentInvoice to
        every client who receives a Pro user's share link — a passive
        acquisition channel that compounds with every invoice sent. -->
-  <p class="text-center text-xs text-gray-400 mt-8" data-testid="public-attribution">
+  <p class="text-center text-xs text-gray-400 mt-8 print:hidden" data-testid="public-attribution">
     Sent via <a href="/" class="font-semibold text-brand-600 hover:underline">⚡ DecentInvoice</a> —
     <a href="/auth/register" class="hover:underline">send your own invoice in 60 seconds</a>.
   </p>
