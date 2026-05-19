@@ -734,7 +734,7 @@ router.post('/:id/share', requireAuth, async (req, res) => {
  * Idempotent — clicking a second time on an already-sent invoice is a
  * no-op success.
  */
-const SHARE_INTENT_KINDS = new Set(['whatsapp', 'sms', 'email', 'copy']);
+const SHARE_INTENT_KINDS = new Set(['whatsapp', 'sms', 'email', 'copy', 'native']);
 router.post('/:id/share-intent', requireAuth, async (req, res) => {
   try {
     const intent = (req.body && typeof req.body.intent === 'string')

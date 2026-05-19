@@ -224,8 +224,8 @@
         data-prefetch-url="<%= _prefUrl %>"
         data-prefetch-intents="<%= _prefIntentsJson %>"
         data-prefetch-followup="<%= _prefFollowUpJson %>"
-        x-data="{ url: '', copied: false, loading: false, error: '', intents: null, followUpIntents: null, fireIntent(kind) { try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: kind }) }).catch(() => {}); } catch (e) {} } }"
-        x-init="try { if ($el.dataset.prefetchUrl) { url = $el.dataset.prefetchUrl; } if ($el.dataset.prefetchIntents) { intents = JSON.parse($el.dataset.prefetchIntents); } if ($el.dataset.prefetchFollowup) { followUpIntents = JSON.parse($el.dataset.prefetchFollowup); } } catch (e) {}">
+        x-data="{ url: '', copied: false, loading: false, error: '', intents: null, followUpIntents: null, nativeShareSupported: false, fireIntent(kind) { try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: kind }) }).catch(() => {}); } catch (e) {} }, nativeShare(data) { try { if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') { navigator.share(data).catch(() => {}); } } catch (e) {} } }"
+        x-init="try { if ($el.dataset.prefetchUrl) { url = $el.dataset.prefetchUrl; } if ($el.dataset.prefetchIntents) { intents = JSON.parse($el.dataset.prefetchIntents); } if ($el.dataset.prefetchFollowup) { followUpIntents = JSON.parse($el.dataset.prefetchFollowup); } if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') { nativeShareSupported = true; } } catch (e) {}">
         <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Public share link</p>
         <% if (_shareIsPaidOwner) { %>
           <p class="text-gray-500 text-sm mb-3">Send your client a tokenized URL that opens this invoice in their browser — no login required. They see your branding and the pay button.</p>
@@ -308,6 +308,17 @@
               <span aria-hidden="true">✉️</span>
               <span>Email</span>
             </a>
+            <button type="button"
+              x-show="nativeShareSupported"
+              x-cloak
+              data-share="native"
+              data-testid="public-share-native"
+              @click="fireIntent('native'); nativeShare({ title: (intents && intents.subject) || '', text: (intents && intents.body) || '', url: url })"
+              title="Open your device's share menu — pick Telegram, Signal, Slack, Messenger, and more"
+              class="inline-flex items-center gap-2 border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-purple-50 hover:border-purple-300 transition text-sm">
+              <span aria-hidden="true">📤</span>
+              <span>Share via…</span>
+            </button>
           </div>
           <p class="text-gray-400 text-xs mt-2">Each button opens your native app with the message prefilled — review and hit send.</p>
         </div>
@@ -394,7 +405,9 @@
           '?subject=' + encodeURIComponent(shareSubject) +
           '&body=' + encodeURIComponent(shareBody);
       %>
-      <div class="border-t border-gray-100 pt-6 mb-6" x-data="{ copied: false, fireIntent(kind) { try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: kind }) }).catch(() => {}); } catch (e) {} } }">
+      <div class="border-t border-gray-100 pt-6 mb-6"
+        x-data="{ copied: false, nativeShareSupported: false, fireIntent(kind) { try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: kind }) }).catch(() => {}); } catch (e) {} }, nativeShare(data) { try { if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') { navigator.share(data).catch(() => {}); } } catch (e) {} } }"
+        x-init="try { if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') { nativeShareSupported = true; } } catch (e) {}">
         <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Payment Link</p>
         <p class="text-gray-500 text-sm mb-1">Send this secure Stripe link to your client so they can pay in one click.</p>
         <p class="text-gray-400 text-xs mb-3">Clients can pay via <%= methodCopy %>.</p>
@@ -447,6 +460,17 @@
               <span aria-hidden="true">✉️</span>
               <span>Email</span>
             </a>
+            <button type="button"
+              x-show="nativeShareSupported"
+              x-cloak
+              data-share="native"
+              data-testid="pay-link-share-native"
+              @click="fireIntent('native'); nativeShare({ title: <%= JSON.stringify(shareSubject) %>, text: <%= JSON.stringify(shareBody) %>, url: <%= JSON.stringify(invoice.payment_link_url) %> })"
+              title="Open your device's share menu — pick Telegram, Signal, Slack, Messenger, and more"
+              class="inline-flex items-center gap-2 border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-purple-50 hover:border-purple-300 transition text-sm">
+              <span aria-hidden="true">📤</span>
+              <span>Share via…</span>
+            </button>
           </div>
           <p class="text-gray-400 text-xs mt-2">Each button opens your native app with the message prefilled — review and hit send.</p>
         </div>
