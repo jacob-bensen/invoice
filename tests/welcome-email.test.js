@@ -84,8 +84,10 @@ async function testBuildWelcomeHtmlEscapesAndRendersCtas() {
     'raw name must not appear unescaped (XSS guard)');
   assert.ok(html.includes('&lt;script&gt;'),
     'name must appear HTML-escaped');
-  assert.ok(html.includes('https://invoice.example.com/invoices/new'),
-    'first-invoice CTA must point at APP_URL-prefixed /invoices/new');
+  assert.ok(html.includes('https://invoice.example.com/invoices/quick'),
+    'first-invoice CTA must point at APP_URL-prefixed /invoices/quick (the 3-field express form — lowest-friction Milestone 2 path)');
+  assert.ok(!/href="https:\/\/invoice\.example\.com\/invoices\/new"/.test(html),
+    'legacy /invoices/new must no longer be the welcome CTA target (replaced by /invoices/quick)');
   assert.ok(html.includes('https://invoice.example.com/billing/upgrade'),
     'pro-trial CTA must point at APP_URL-prefixed /billing/upgrade');
   assert.ok(/trial/i.test(html),
@@ -103,8 +105,10 @@ async function testBuildWelcomeTextIncludesBothCtas() {
   process.env.APP_URL = oldAppUrl;
   assert.ok(text.length > 50, 'text body must be non-trivial');
   assert.ok(text.includes('Bob'), 'text body must personalise');
-  assert.ok(text.includes('https://invoice.example.com/invoices/new'),
-    'plaintext must include the first-invoice URL');
+  assert.ok(text.includes('https://invoice.example.com/invoices/quick'),
+    'plaintext must include the first-invoice URL pointing at /invoices/quick (the 3-field express form)');
+  assert.ok(!text.includes('https://invoice.example.com/invoices/new'),
+    'legacy /invoices/new must no longer be the plaintext CTA target');
   assert.ok(text.includes('https://invoice.example.com/billing/upgrade'),
     'plaintext must include the trial URL');
   assert.ok(!text.includes('<') && !text.includes('>'),

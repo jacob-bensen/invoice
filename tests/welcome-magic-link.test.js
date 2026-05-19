@@ -9,9 +9,11 @@
  *
  * Coverage:
  *  1.  lib/magic-login.safeNextPath: allow-list accepts known logged-in
- *      landing pages and rejects everything else (absolute URLs,
- *      protocol-relative `//evil.com`, `javascript:`, control characters,
- *      unknown app paths, non-strings, empty strings).
+ *      landing pages (including /invoices/quick — the welcome email's primary
+ *      first-invoice CTA target since the 3-field express form ship) and
+ *      rejects everything else (absolute URLs, protocol-relative `//evil.com`,
+ *      `javascript:`, control characters, unknown app paths, non-strings,
+ *      empty strings).
  *  2.  lib/magic-login.mintMagicLoginToken: db_unavailable when the db has
  *      no createPasswordResetToken; no_user when userId is falsy.
  *  3.  lib/magic-login.mintMagicLoginToken: persists with kind='login' and
@@ -20,7 +22,7 @@
  *  5.  lib/magic-login.mintMagicLoginToken: soft-fails on createPasswordResetToken
  *      throw with reason='db_error' (never bubbles).
  *  6.  lib/email.buildWelcomeHtml with opts.magicLoginUrl embeds the magic
- *      URL with `?next=/invoices/new` on the primary CTA and
+ *      URL with `?next=/invoices/quick` on the primary CTA and
  *      `?next=/billing/upgrade` on the secondary CTA.
  *  7.  lib/email.buildWelcomeText with opts.magicLoginUrl embeds the magic
  *      URL on both CTAs in plaintext form.
@@ -30,15 +32,16 @@
  *      markWelcomeEmailSent and passes the URL into sendWelcomeEmail.
  * 10.  lib/welcome.triggerWelcomeEmail still sends the email when the mint
  *      fails (graceful degradation: send goes out with plain CTAs).
- * 11.  routes/auth GET /auth/magic/:token honours ?next=/invoices/new and
+ * 11.  routes/auth GET /auth/magic/:token honours ?next=/invoices/quick and
  *      redirects there after consume; session is written.
  * 12.  routes/auth GET /auth/magic/:token with an off-list ?next=
  *      (https://evil.com) falls back to /dashboard (open-redirect guard).
  * 13.  routes/auth GET /auth/magic/:token with no ?next= redirects to
  *      /dashboard (backward compat).
  * 14.  routes/auth GET /auth/magic/:token for an already-authed user with
- *      ?next=/invoices/new redirects to /invoices/new without consuming the
- *      token (so the welcome CTA works from the same browser used for signup).
+ *      ?next=/invoices/quick redirects to /invoices/quick without consuming
+ *      the token (so the welcome CTA works from the same browser used for
+ *      signup).
  * 15.  routes/auth GET /auth/magic/:token with a CRLF-injection ?next= falls
  *      back to /dashboard (header-injection guard).
  *
@@ -62,6 +65,8 @@ async function testSafeNextAllowList() {
   assert.strictEqual(safeNextPath('/dashboard'), '/dashboard');
   assert.strictEqual(safeNextPath('/invoices'), '/invoices');
   assert.strictEqual(safeNextPath('/invoices/new'), '/invoices/new');
+  assert.strictEqual(safeNextPath('/invoices/quick'), '/invoices/quick',
+    '/invoices/quick must be on the allow-list — the welcome email\'s primary CTA targets it');
   assert.strictEqual(safeNextPath('/billing/upgrade'), '/billing/upgrade');
   assert.strictEqual(safeNextPath('/settings'), '/settings');
 }
@@ -191,16 +196,17 @@ async function testBuildHtmlWithMagicLoginUrl() {
   const magicLoginUrl = 'https://invoice.example.com/auth/magic/' + 'a'.repeat(64);
   const html = email.buildWelcomeHtml({ name: 'Alice', email: 'a@x.com' }, { magicLoginUrl });
   process.env.APP_URL = oldAppUrl;
-  // Primary CTA → /invoices/new via magic-link
-  assert.ok(html.includes(`${magicLoginUrl}?next=/invoices/new`),
-    'primary CTA href must wrap the magic-login URL with ?next=/invoices/new');
+  // Primary CTA → /invoices/quick via magic-link (the 3-field express form —
+  // lowest-friction Milestone 2 path).
+  assert.ok(html.includes(`${magicLoginUrl}?next=/invoices/quick`),
+    'primary CTA href must wrap the magic-login URL with ?next=/invoices/quick');
   // Secondary CTA → /billing/upgrade via magic-link
   assert.ok(html.includes(`${magicLoginUrl}?next=/billing/upgrade`),
     'pro-trial CTA href must wrap the magic-login URL with ?next=/billing/upgrade');
   // The bare APP_URL paths must NOT be present as CTA hrefs — the magic URL
   // is the single source of truth for the clickable target.
-  assert.ok(!/href="https:\/\/invoice\.example\.com\/invoices\/new"/.test(html),
-    'plain /invoices/new href must be replaced by the magic-link URL on the primary CTA');
+  assert.ok(!/href="https:\/\/invoice\.example\.com\/invoices\/quick"/.test(html),
+    'plain /invoices/quick href must be replaced by the magic-link URL on the primary CTA');
   assert.ok(!/href="https:\/\/invoice\.example\.com\/billing\/upgrade"/.test(html),
     'plain /billing/upgrade href must be replaced by the magic-link URL on the pro CTA');
 }
@@ -213,8 +219,8 @@ async function testBuildTextWithMagicLoginUrl() {
   const magicLoginUrl = 'https://invoice.example.com/auth/magic/' + 'b'.repeat(64);
   const text = email.buildWelcomeText({ name: 'Bob', email: 'b@x.com' }, { magicLoginUrl });
   process.env.APP_URL = oldAppUrl;
-  assert.ok(text.includes(`${magicLoginUrl}?next=/invoices/new`),
-    'plaintext must include the magic-link URL with ?next=/invoices/new');
+  assert.ok(text.includes(`${magicLoginUrl}?next=/invoices/quick`),
+    'plaintext must include the magic-link URL with ?next=/invoices/quick');
   assert.ok(text.includes(`${magicLoginUrl}?next=/billing/upgrade`),
     'plaintext must include the magic-link URL with ?next=/billing/upgrade');
 }
@@ -226,8 +232,8 @@ async function testBuildHtmlWithoutOptsKeepsLegacyLinks() {
   const email = require('../lib/email');
   const html = email.buildWelcomeHtml({ name: 'Alice', email: 'a@x.com' });
   process.env.APP_URL = oldAppUrl;
-  assert.ok(html.includes('https://invoice.example.com/invoices/new'),
-    'absent opts.magicLoginUrl must fall back to the plain /invoices/new path');
+  assert.ok(html.includes('https://invoice.example.com/invoices/quick'),
+    'absent opts.magicLoginUrl must fall back to the plain /invoices/quick path');
   assert.ok(html.includes('https://invoice.example.com/billing/upgrade'),
     'absent opts.magicLoginUrl must fall back to the plain /billing/upgrade path');
   assert.ok(!html.includes('/auth/magic/'),
@@ -277,13 +283,13 @@ async function testTriggerWelcomePassesMagicUrlIntoSend() {
   const payload = sends[0];
   assert.ok(payload.html.includes('/auth/magic/'),
     'sent HTML must embed the magic-login token URL');
-  assert.ok(payload.html.includes('?next=/invoices/new'),
-    'sent HTML primary CTA must carry ?next=/invoices/new');
+  assert.ok(payload.html.includes('?next=/invoices/quick'),
+    'sent HTML primary CTA must carry ?next=/invoices/quick');
   assert.ok(payload.html.includes('?next=/billing/upgrade'),
     'sent HTML pro CTA must carry ?next=/billing/upgrade');
   assert.ok(payload.text.includes('/auth/magic/'),
     'plaintext must also embed the magic-link URL');
-  assert.ok(payload.text.includes('?next=/invoices/new'));
+  assert.ok(payload.text.includes('?next=/invoices/quick'));
 }
 
 async function testTriggerWelcomeMintFailureStillSends() {
@@ -315,8 +321,8 @@ async function testTriggerWelcomeMintFailureStillSends() {
     'orchestrator must surface null magicLoginUrl when the mint failed');
   assert.strictEqual(sends.length, 1, 'email still sent exactly once');
   const payload = sends[0];
-  assert.ok(payload.html.includes('https://invoice.example.com/invoices/new'),
-    'fallback HTML must use the plain /invoices/new path when the mint failed');
+  assert.ok(payload.html.includes('https://invoice.example.com/invoices/quick'),
+    'fallback HTML must use the plain /invoices/quick path when the mint failed');
   assert.ok(!payload.html.includes('/auth/magic/'),
     'fallback HTML must NOT contain a /auth/magic/ URL when the mint failed');
 }
@@ -446,6 +452,10 @@ function buildApp(preloadedSessionUser) {
     if (!req.session.user) return res.status(401).send('unauth');
     res.send(`new-invoice:${req.session.user.id}`);
   });
+  app.get('/invoices/quick', (req, res) => {
+    if (!req.session.user) return res.status(401).send('unauth');
+    res.send(`quick-invoice:${req.session.user.id}`);
+  });
   app.get('/billing/upgrade', (req, res) => {
     if (!req.session.user) return res.status(401).send('unauth');
     res.send(`upgrade:${req.session.user.id}`);
@@ -489,13 +499,13 @@ async function testNextHonouredOnHappyPath() {
   seedToken({ userId: u.id, tokenHash: hash, kind: 'login' });
   const app = buildApp();
   const jar = {};
-  const res = await request(app, 'GET', `/auth/magic/${raw}?next=/invoices/new`, null, jar);
+  const res = await request(app, 'GET', `/auth/magic/${raw}?next=/invoices/quick`, null, jar);
   assert.strictEqual(res.status, 302, 'happy-path consume must redirect');
-  assert.strictEqual(res.headers.location, '/invoices/new',
+  assert.strictEqual(res.headers.location, '/invoices/quick',
     'consume must redirect to ?next= when on the allow-list');
-  const followed = await request(app, 'GET', '/invoices/new', null, jar);
-  assert.strictEqual(followed.status, 200, 'session must be set so /invoices/new resolves');
-  assert.strictEqual(followed.body, `new-invoice:${u.id}`);
+  const followed = await request(app, 'GET', '/invoices/quick', null, jar);
+  assert.strictEqual(followed.status, 200, 'session must be set so /invoices/quick resolves');
+  assert.strictEqual(followed.body, `quick-invoice:${u.id}`);
   const row = tokensByHash.get(hash);
   assert.ok(row && row.consumed_at, 'token must be consumed on the next-honoured path');
 }
@@ -534,16 +544,16 @@ async function testAuthedUserClickingWelcomeCtaLandsAtNext() {
   resetStore();
   // User was just signed up + is still in-session on the same browser when
   // they hop over to their inbox and click the welcome email CTA. They
-  // should land on /invoices/new, not bounce to /dashboard, and we must NOT
+  // should land on /invoices/quick, not bounce to /dashboard, and we must NOT
   // consume the still-valid token (so they can click the CTA again later).
   const u = seedUser({ id: 804, email: 'authed@x.com' });
   const raw = crypto.randomBytes(32).toString('hex');
   const hash = require('../lib/magic-login').hashToken(raw);
   seedToken({ userId: u.id, tokenHash: hash, kind: 'login' });
   const app = buildApp({ id: u.id, email: u.email, name: u.name, plan: u.plan });
-  const res = await request(app, 'GET', `/auth/magic/${raw}?next=/invoices/new`);
+  const res = await request(app, 'GET', `/auth/magic/${raw}?next=/invoices/quick`);
   assert.strictEqual(res.status, 302);
-  assert.strictEqual(res.headers.location, '/invoices/new',
+  assert.strictEqual(res.headers.location, '/invoices/quick',
     'authed user with allowed ?next= must be forwarded there');
   const row = tokensByHash.get(hash);
   assert.ok(row && !row.consumed_at,
@@ -585,7 +595,7 @@ async function testCrlfInjectionInNextRejected() {
     ['lib/email: buildWelcomeHtml without opts falls back to plain links', testBuildHtmlWithoutOptsKeepsLegacyLinks],
     ['lib/welcome: triggerWelcomeEmail bakes magic URL into the send', testTriggerWelcomePassesMagicUrlIntoSend],
     ['lib/welcome: triggerWelcomeEmail still sends when the mint fails', testTriggerWelcomeMintFailureStillSends],
-    ['GET /auth/magic/:token?next=/invoices/new redirects there', testNextHonouredOnHappyPath],
+    ['GET /auth/magic/:token?next=/invoices/quick redirects there', testNextHonouredOnHappyPath],
     ['GET /auth/magic/:token?next=https://evil.com falls back to /dashboard', testNextOpenRedirectGuard],
     ['GET /auth/magic/:token (no next) redirects /dashboard', testNextAbsentBackwardCompat],
     ['GET /auth/magic/:token authed-user with ?next= forwards without consume', testAuthedUserClickingWelcomeCtaLandsAtNext],
