@@ -9,6 +9,10 @@ const {
   requestPasswordReset,
   hashToken
 } = require('../lib/password-reset');
+const {
+  requestMagicLink,
+  hashToken: hashMagicToken
+} = require('../lib/magic-login');
 
 const router = express.Router();
 
@@ -274,6 +278,91 @@ router.post('/reset/:token', redirectIfAuth, authLimiter, [
       noindex: true
     });
   }
+});
+
+// --- Magic-link sign-in ---------------------------------------------------
+//
+// Password-less counterpart to /auth/forgot. The user types their email, we
+// email a one-tap sign-in URL. Clicking the URL consumes the token atomically
+// and writes the session — no password choice in between.
+//
+//   1. GET  /auth/magic               — request-a-link form
+//   2. POST /auth/magic               — fires the email; always renders the
+//                                       same generic success (no enumeration)
+//   3. GET  /auth/magic/:token        — atomic consume + session-write + 302
+//                                       to /dashboard, or render an
+//                                       "invalid/expired" page on a bad token
+// Tokens share the password_resets table via kind='login'; the consume path
+// filters on kind='login' so a leaked password-reset hash cannot be replayed
+// here.
+
+router.get('/magic', redirectIfAuth, (req, res) => {
+  const flash = req.session.flash;
+  delete req.session.flash;
+  res.render('auth/magic', { title: 'Email me a sign-in link', flash, noindex: true });
+});
+
+router.post('/magic', redirectIfAuth, authLimiter, [
+  body('email').isEmail().normalizeEmail().withMessage('Valid email required')
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.render('auth/magic', {
+      title: 'Email me a sign-in link',
+      flash: { type: 'error', message: errors.array()[0].msg },
+      values: req.body,
+      noindex: true
+    });
+  }
+  // Same enumeration-resistance pattern as /auth/forgot: fire and forget,
+  // render the same generic "check your inbox" regardless of whether the
+  // address resolves to an account.
+  requestMagicLink(db, req.body.email)
+    .catch((e) => console.error('Magic-link error:', e && e.message));
+  res.render('auth/magic', {
+    title: 'Email me a sign-in link',
+    sent: true,
+    submittedEmail: req.body.email,
+    noindex: true
+  });
+});
+
+router.get('/magic/:token', redirectIfAuth, authLimiter, async (req, res) => {
+  const raw = req.params.token || '';
+  if (!/^[a-f0-9]{64}$/i.test(raw)) {
+    return res.status(400).render('auth/magic', {
+      title: 'Sign-in link',
+      invalid: true,
+      noindex: true
+    });
+  }
+  const hash = hashMagicToken(raw);
+  let user = null;
+  try {
+    user = await db.consumeMagicLoginToken(hash);
+  } catch (err) {
+    console.error('Magic-link consume failed:', err && err.message);
+    return res.status(500).render('auth/magic', {
+      title: 'Sign-in link',
+      flash: { type: 'error', message: 'Something went wrong. Please try again.' },
+      noindex: true
+    });
+  }
+  if (!user) {
+    return res.status(400).render('auth/magic', {
+      title: 'Sign-in link',
+      invalid: true,
+      noindex: true
+    });
+  }
+  req.session.user = {
+    id: user.id, email: user.email, name: user.name,
+    plan: user.plan, invoice_count: user.invoice_count,
+    subscription_status: user.subscription_status || null,
+    trial_ends_at: user.trial_ends_at || null
+  };
+  req.session.flash = { type: 'success', message: "You're signed in." };
+  return res.redirect('/dashboard');
 });
 
 router.post('/logout', (req, res) => {

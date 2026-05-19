@@ -229,10 +229,22 @@ CREATE TABLE IF NOT EXISTS password_resets (
   token_hash VARCHAR(64) NOT NULL,
   expires_at TIMESTAMP NOT NULL,
   consumed_at TIMESTAMP,
-  created_at TIMESTAMP DEFAULT NOW()
+  created_at TIMESTAMP DEFAULT NOW(),
+  kind VARCHAR(20) NOT NULL DEFAULT 'reset' CHECK (kind IN ('reset', 'login'))
 );
 CREATE INDEX IF NOT EXISTS idx_password_resets_token_hash ON password_resets(token_hash);
 CREATE INDEX IF NOT EXISTS idx_password_resets_user_id ON password_resets(user_id);
+
+-- Magic-link sign-in shares the password_resets table via a `kind` column.
+-- 'reset' tokens rotate the password on consume (consumePasswordResetAndSetPassword);
+-- 'login' tokens just consume + log in (consumeMagicLoginToken), no password
+-- change. Default 'reset' so existing rows backfill cleanly on idempotent
+-- migration. CHECK constraint stops a typo from producing an
+-- unrecognisable-kind row that neither flow would consume.
+ALTER TABLE password_resets ADD COLUMN IF NOT EXISTS kind VARCHAR(20) NOT NULL DEFAULT 'reset';
+ALTER TABLE password_resets DROP CONSTRAINT IF EXISTS password_resets_kind_check;
+ALTER TABLE password_resets ADD CONSTRAINT password_resets_kind_check
+  CHECK (kind IN ('reset', 'login'));
 
 CREATE INDEX IF NOT EXISTS idx_invoices_user_id ON invoices(user_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);

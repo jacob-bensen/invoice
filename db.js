@@ -959,16 +959,17 @@ const db = {
    * the link from another device after a coffee break still works, short
    * enough that a leaked-then-rotated mailbox can't be replayed weeks later.
    */
-  async createPasswordResetToken(userId, tokenHash, ttlMinutes = 60) {
+  async createPasswordResetToken(userId, tokenHash, ttlMinutes = 60, kind = 'reset') {
     if (!userId || !tokenHash || typeof tokenHash !== 'string') return null;
     const minutes = Number.isFinite(ttlMinutes) && ttlMinutes > 0
       ? Math.floor(ttlMinutes)
       : 60;
+    const safeKind = (kind === 'login') ? 'login' : 'reset';
     const { rows } = await pool.query(
-      `INSERT INTO password_resets (user_id, token_hash, expires_at)
-       VALUES ($1, $2, NOW() + ($3 * INTERVAL '1 minute'))
-       RETURNING id, expires_at`,
-      [userId, tokenHash, minutes]
+      `INSERT INTO password_resets (user_id, token_hash, expires_at, kind)
+       VALUES ($1, $2, NOW() + ($3 * INTERVAL '1 minute'), $4)
+       RETURNING id, expires_at, kind`,
+      [userId, tokenHash, minutes, safeKind]
     );
     return rows[0] || null;
   },
@@ -998,6 +999,7 @@ const db = {
          FROM password_resets pr
          JOIN users u ON u.id = pr.user_id
         WHERE pr.token_hash  = $1
+          AND pr.kind        = 'reset'
           AND pr.consumed_at IS NULL
           AND pr.expires_at  > NOW()
         LIMIT 1`,
@@ -1028,6 +1030,7 @@ const db = {
          UPDATE password_resets
             SET consumed_at = NOW()
           WHERE token_hash  = $1
+            AND kind        = 'reset'
             AND consumed_at IS NULL
             AND expires_at  > NOW()
           RETURNING user_id
@@ -1041,6 +1044,71 @@ const db = {
        )
        SELECT * FROM rotated`,
       [tokenHash, newPasswordHash]
+    );
+    return rows[0] || null;
+  },
+
+  /*
+   * Magic-link sign-in lookup — kind='login' counterpart to
+   * findValidPasswordResetByHash. Same shape (joined user fields so the
+   * route can write the post-login session without a second SELECT), but
+   * filters on kind='login' so a reset token cannot be replayed as a
+   * magic-login (or vice versa). Returns null on any of: bad hash shape,
+   * no matching row, expired, already-consumed, wrong kind.
+   */
+  async findValidMagicLoginByHash(tokenHash) {
+    if (!tokenHash || typeof tokenHash !== 'string') return null;
+    if (!/^[a-f0-9]{64}$/i.test(tokenHash)) return null;
+    const { rows } = await pool.query(
+      `SELECT pr.id            AS reset_id,
+              pr.user_id        AS user_id,
+              pr.expires_at     AS expires_at,
+              u.email           AS email,
+              u.name            AS name,
+              u.plan            AS plan,
+              u.invoice_count   AS invoice_count,
+              u.subscription_status AS subscription_status,
+              u.trial_ends_at   AS trial_ends_at
+         FROM password_resets pr
+         JOIN users u ON u.id = pr.user_id
+        WHERE pr.token_hash  = $1
+          AND pr.kind        = 'login'
+          AND pr.consumed_at IS NULL
+          AND pr.expires_at  > NOW()
+        LIMIT 1`,
+      [tokenHash]
+    );
+    return rows[0] || null;
+  },
+
+  /*
+   * Atomically consume a magic-login token AND return the joined user row
+   * in a single SQL round-trip. No password rotation — the entire point of
+   * the magic-link flow is that the user signs in without typing or
+   * choosing a password. The UPDATE is guarded on `consumed_at IS NULL
+   * AND expires_at > NOW() AND kind='login'`, so a concurrent double-click
+   * (or a link prefetcher and the user both following the URL) consumes
+   * exactly once. The CTE chain ensures the user SELECT only fires on the
+   * winning consume — replays return null.
+   */
+  async consumeMagicLoginToken(tokenHash) {
+    if (!tokenHash || typeof tokenHash !== 'string') return null;
+    if (!/^[a-f0-9]{64}$/i.test(tokenHash)) return null;
+    const { rows } = await pool.query(
+      `WITH consumed AS (
+         UPDATE password_resets
+            SET consumed_at = NOW()
+          WHERE token_hash  = $1
+            AND kind        = 'login'
+            AND consumed_at IS NULL
+            AND expires_at  > NOW()
+          RETURNING user_id
+       )
+       SELECT u.id, u.email, u.name, u.plan, u.invoice_count,
+              u.subscription_status, u.trial_ends_at
+         FROM consumed c
+         JOIN users u ON u.id = c.user_id`,
+      [tokenHash]
     );
     return rows[0] || null;
   },
