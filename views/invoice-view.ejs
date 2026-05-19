@@ -84,6 +84,75 @@
     </form>
   </div>
 
+  <!-- Draft "send now" banner. Renders only for status='draft' invoices with a
+       prefetched share surface — surfaces WhatsApp / SMS / Email / Copy share
+       intents above the invoice preview card so the unmistakable next action
+       after creating an invoice (sending it to the client) is one tap away,
+       not a scroll-and-hunt below the invoice preview. Server-rendered hrefs
+       so the buttons work without JS; the onclick handler additionally fires
+       POST /share-intent so the draft auto-flips to 'sent' regardless of
+       which channel the user picked (mirrors the existing public-share
+       section's fireIntent path). Advances Milestone 3 — first invoice
+       created → first invoice sent — for the brand-new-user cohort landing
+       here from /invoices/quick. -->
+  <% if (invoice.status === 'draft' && locals.prefetchedShare && prefetchedShare.shareIntents) { %>
+    <%
+      const _bannerIntents = prefetchedShare.shareIntents;
+      const _bannerShareUrl = prefetchedShare.url || '';
+      const _bannerClient = invoice.client_name ? String(invoice.client_name).trim() : '';
+    %>
+    <div
+      data-testid="draft-send-banner"
+      class="mb-6 rounded-2xl border border-brand-200 bg-brand-50 px-5 py-5 print:hidden"
+      role="region"
+      aria-label="Send this invoice to your client"
+    >
+      <p class="text-base font-semibold text-gray-800">
+        📤 Ready to send<% if (_bannerClient) { %> to <%= _bannerClient %><% } %>?
+      </p>
+      <p class="text-sm text-gray-600 mt-1 mb-3">
+        Tap a channel — we&rsquo;ll mark this invoice as Sent automatically.
+      </p>
+      <div class="flex flex-wrap gap-2">
+        <a href="<%= _bannerIntents.whatsapp %>"
+          target="_blank" rel="noopener"
+          data-share="whatsapp"
+          data-testid="draft-send-banner-whatsapp"
+          onclick="try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'whatsapp' }) }).catch(function(){}); } catch (e) {}"
+          class="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-green-50 hover:border-green-300 transition text-sm">
+          <span aria-hidden="true">💬</span><span>WhatsApp</span>
+        </a>
+        <a href="<%= _bannerIntents.sms %>"
+          data-share="sms"
+          data-testid="draft-send-banner-sms"
+          onclick="try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'sms' }) }).catch(function(){}); } catch (e) {}"
+          class="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition text-sm">
+          <span aria-hidden="true">📱</span><span>SMS</span>
+        </a>
+        <a href="<%= _bannerIntents.mailto %>"
+          data-share="email"
+          data-testid="draft-send-banner-email"
+          onclick="try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'email' }) }).catch(function(){}); } catch (e) {}"
+          class="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-indigo-50 hover:border-indigo-300 transition text-sm">
+          <span aria-hidden="true">✉️</span><span>Email</span>
+        </a>
+        <% if (_bannerShareUrl) { %>
+          <button type="button"
+            data-share="copy"
+            data-testid="draft-send-banner-copy"
+            data-share-url="<%= _bannerShareUrl %>"
+            onclick="(function(btn){ try { var u = btn.getAttribute('data-share-url') || ''; fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'copy' }) }).catch(function(){}); if (u && typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') { navigator.clipboard.writeText(u).then(function(){ var prev = btn.innerHTML; btn.innerHTML = '<span>Copied!</span>'; setTimeout(function(){ btn.innerHTML = prev; }, 2000); }).catch(function(){}); } } catch (e) {} })(this)"
+            class="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-gray-100 transition text-sm">
+            <span aria-hidden="true">🔗</span><span>Copy link</span>
+          </button>
+        <% } %>
+      </div>
+      <p class="text-xs text-gray-500 mt-3">
+        <a href="#public-share-section" class="underline hover:text-brand-700" data-testid="draft-send-banner-more">↓ More share options</a>
+      </p>
+    </div>
+  <% } %>
+
   <!-- Invoice preview card -->
   <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 md:p-12">
     <!-- Header -->
@@ -218,7 +287,8 @@
       const _prefFollowUpJson = (_prefShare && _prefShare.followUpIntents)
         ? JSON.stringify(_prefShare.followUpIntents) : '';
     %>
-      <div class="border-t border-gray-100 pt-6 mb-6"
+      <div class="border-t border-gray-100 pt-6 mb-6 scroll-mt-6"
+        id="public-share-section"
         data-testid="public-share-section"
         data-owner-plan="<%= _shareIsPaidOwner ? 'paid' : 'free' %>"
         data-prefetch-url="<%= _prefUrl %>"
