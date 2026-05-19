@@ -325,6 +325,114 @@ router.get('/api/recent-revenue', requireAuth, async (req, res) => {
   }
 });
 
+/*
+ * "Quick invoice" express form (Milestone 2). The full /invoices/new form is
+ * the highest-friction surface in the activation funnel: client name + email
+ * + address + line-items array + qty + unit price + tax rate + notes + dates
+ * is a lot of typing to produce the very first invoice. The Duplicate button
+ * helps repeat clients and seed-duplicators, but a brand-new user with no
+ * past invoices still hits the blank-form wall.
+ *
+ * Quick takes three fields — client name, description, amount — and fills in
+ * everything else with sensible defaults (today's date, 30-day terms, single
+ * line item with qty=1, no tax, no notes, next auto-generated invoice
+ * number). On submit the user lands on /invoices/:id where the share-intent
+ * buttons are already prefetched and visible on first paint, so the path
+ * from "I want to bill someone" to "I sent them an invoice" collapses to
+ * a single form + a single share tap.
+ *
+ * Same FREE_LIMIT gate as POST /invoices/new (3-invoice cap on the free
+ * tier). Validation mirrors the same express-validator pattern. The view
+ * is plan-agnostic; free, Pro, and Agency owners all see the same form.
+ */
+router.get('/quick', requireAuth, async (req, res) => {
+  const user = await db.getUserById(req.session.user.id);
+  if (!user) return res.redirect('/auth/login');
+  if (user.plan === 'free' && user.invoice_count >= FREE_LIMIT) {
+    return res.redirect('/invoices?limit_hit=1');
+  }
+  res.render('invoice-quick', {
+    title: 'Quick invoice',
+    user,
+    flash: null,
+    noindex: true
+  });
+});
+
+router.post('/quick', requireAuth, [
+  body('client_name').trim().notEmpty().withMessage('Client name is required'),
+  body('description').trim().notEmpty().withMessage('Describe what you did so the client recognises the bill'),
+  body('amount').isFloat({ gt: 0 }).withMessage('Amount must be greater than $0')
+], async (req, res) => {
+  const user = await db.getUserById(req.session.user.id);
+  if (!user) return res.redirect('/auth/login');
+  if (user.plan === 'free' && user.invoice_count >= FREE_LIMIT) {
+    return res.redirect('/invoices?limit_hit=1');
+  }
+
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.render('invoice-quick', {
+      title: 'Quick invoice',
+      user,
+      flash: { type: 'error', message: errors.array()[0].msg },
+      submitted: {
+        client_name: req.body.client_name || '',
+        client_email: req.body.client_email || '',
+        description: req.body.description || '',
+        amount: req.body.amount || ''
+      },
+      noindex: true
+    });
+  }
+
+  try {
+    const amount = parseFloat(req.body.amount);
+    const description = String(req.body.description).trim();
+    const today = new Date();
+    const issued_date = today.toISOString().split('T')[0];
+    const due_date = new Date(today.getTime() + 30 * 86400000).toISOString().split('T')[0];
+    const invoice_number = await db.getNextInvoiceNumber(req.session.user.id);
+
+    const invoice = await db.createInvoice({
+      user_id: req.session.user.id,
+      invoice_number,
+      client_name: String(req.body.client_name).trim(),
+      client_email: req.body.client_email ? String(req.body.client_email).trim() : null,
+      client_address: null,
+      items: [{ description, quantity: 1, unit_price: amount }],
+      subtotal: amount,
+      tax_rate: 0,
+      tax_amount: 0,
+      total: amount,
+      notes: null,
+      issued_date,
+      due_date
+    });
+
+    req.session.user.invoice_count = (req.session.user.invoice_count || 0) + 1;
+    req.session.flash = {
+      type: 'success',
+      message: 'Invoice created — share it with your client below to mark it as sent.'
+    };
+    return res.redirect(`/invoices/${invoice.id}`);
+  } catch (err) {
+    console.error('Quick invoice create error:', err && err.message);
+    return res.render('invoice-quick', {
+      title: 'Quick invoice',
+      user,
+      flash: { type: 'error', message: 'Failed to save invoice. Please try again.' },
+      submitted: {
+        client_name: req.body.client_name || '',
+        client_email: req.body.client_email || '',
+        description: req.body.description || '',
+        amount: req.body.amount || ''
+      },
+      noindex: true
+    });
+  }
+});
+
 router.get('/new', requireAuth, async (req, res) => {
   const user = await db.getUserById(req.session.user.id);
   if (!user) return res.redirect('/auth/login');

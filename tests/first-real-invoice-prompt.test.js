@@ -179,9 +179,15 @@ function testDashboardRendersPromptForEmptyState() {
     'hero headline must read "Create your first real invoice"');
   assert.ok(html.includes('data-testid="first-real-invoice-prompt-cta"'),
     'CTA must carry the testid hook');
-  // Confirm the href and testid live on the same <a> tag.
-  assert.ok(/<a\s[^>]*href="\/invoices\/new"[^>]*data-testid="first-real-invoice-prompt-cta"/.test(html),
-    'CTA anchor must carry href="/invoices/new" and the testid attribute');
+  // Confirm the href and testid live on the same <a> tag. Primary CTA now
+  // points at the express /invoices/quick form (3 fields, 30-second path)
+  // since the blank /invoices/new form is the largest Milestone-2 drop-off.
+  assert.ok(/<a\s[^>]*href="\/invoices\/quick"[^>]*data-testid="first-real-invoice-prompt-cta"/.test(html),
+    'primary CTA must point at the express /invoices/quick form');
+  // Secondary "advanced form" link must still point at /invoices/new so
+  // power users with line items / tax / custom dates aren't blocked.
+  assert.ok(/<a\s[^>]*href="\/invoices\/new"[^>]*data-testid="first-real-invoice-prompt-advanced"/.test(html),
+    'secondary advanced-form link must carry href="/invoices/new" and the advanced testid');
   assert.ok(html.includes('data-has-seed="false"'),
     'data-has-seed must reflect the prompt payload');
 }

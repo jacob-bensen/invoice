@@ -321,12 +321,16 @@
         <% } %>
       </p>
       <a
-        href="/invoices/new"
+        href="/invoices/quick"
         data-testid="first-real-invoice-prompt-cta"
         class="bg-brand-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-brand-700 transition inline-block"
       >
         Create a new invoice &rarr;
       </a>
+      <p class="text-xs text-gray-400 mt-3">
+        Need line items, tax or custom dates?
+        <a href="/invoices/new" data-testid="first-real-invoice-prompt-advanced" class="text-brand-600 underline hover:text-brand-700">Use the advanced form &rarr;</a>
+      </p>
       <% if (user && user.plan === 'free') { %>
         <p class="text-xs text-gray-400 mt-6 max-w-sm mx-auto">
           ✨ <strong>Pro adds a "Pay now" button</strong> to every invoice — clients pay in one click via Stripe.
@@ -341,9 +345,13 @@
       <div class="text-5xl mb-4">📄</div>
       <h2 class="text-lg font-semibold text-gray-700 mb-2">Send your first invoice today</h2>
       <p class="text-gray-400 mb-6 text-sm">A professional invoice in under 60 seconds. Email it, print it as a PDF, or share a Stripe pay link — all from one screen.</p>
-      <a href="/invoices/new" class="bg-brand-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-brand-700 transition inline-block">
+      <a href="/invoices/quick" class="bg-brand-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-brand-700 transition inline-block">
         Create your first invoice &rarr;
       </a>
+      <p class="text-xs text-gray-400 mt-3">
+        Need line items, tax or custom dates?
+        <a href="/invoices/new" class="text-brand-600 underline hover:text-brand-700">Use the advanced form &rarr;</a>
+      </p>
       <% if (user && user.plan === 'free') { %>
         <p class="text-xs text-gray-400 mt-6 max-w-sm mx-auto">
           ✨ <strong>Pro adds a "Pay now" button</strong> to every invoice — clients pay in one click via Stripe.
