@@ -120,6 +120,64 @@ const db = {
     return rows[0];
   },
 
+  /*
+   * Atomically duplicates an owned invoice as a fresh draft so a freelancer
+   * can one-click clone the seed sample (Milestone 2) or any past invoice
+   * for a repeat client (Milestone 3/4) instead of re-entering line items,
+   * notes, and tax-rate by hand. Owner-gated by user_id in the INSERT…SELECT
+   * WHERE clause; a cross-tenant id returns null without any write.
+   *
+   * The copy preserves the parts a freelancer almost always wants again
+   * (client_name, client_email, client_address, items, subtotal, tax_rate,
+   * tax_amount, total, notes) and resets the lifecycle bookkeeping the new
+   * draft must start clean on (status='draft', is_seed=false,
+   * payment_link_url/_id, public_token, view_count/first_viewed_at/
+   * last_viewed_at, sent_via_share_*_at, payment_claim_*, last_reminder_sent_at).
+   * issued_date + due_date come from the caller so a duplicate of a
+   * 6-month-old invoice doesn't show up dated to last spring.
+   *
+   * The invoice_count bump runs in the same transaction so a partial-failure
+   * (insert succeeds, count update throws) doesn't strand the user with an
+   * un-counted real invoice — both go through together or neither does.
+   */
+  async duplicateInvoice(sourceId, userId, { invoice_number, issued_date, due_date }) {
+    if (!sourceId || !userId || !invoice_number) return null;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query(
+        `INSERT INTO invoices (
+           user_id, invoice_number, client_name, client_email, client_address,
+           items, subtotal, tax_rate, tax_amount, total, notes,
+           issued_date, due_date, status, is_seed
+         )
+         SELECT
+           user_id, $3, client_name, client_email, client_address,
+           items, subtotal, tax_rate, tax_amount, total, notes,
+           $4, $5, 'draft', false
+         FROM invoices
+         WHERE id = $1 AND user_id = $2
+         RETURNING *`,
+        [sourceId, userId, invoice_number, issued_date, due_date]
+      );
+      if (!rows[0]) {
+        await client.query('ROLLBACK');
+        return null;
+      }
+      await client.query(
+        'UPDATE users SET invoice_count = invoice_count + 1 WHERE id = $1',
+        [userId]
+      );
+      await client.query('COMMIT');
+      return rows[0];
+    } catch (err) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      throw err;
+    } finally {
+      client.release();
+    }
+  },
+
   async updateInvoice(id, userId, data) {
     const {
       client_name, client_email, client_address,

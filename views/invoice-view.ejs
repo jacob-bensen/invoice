@@ -51,6 +51,15 @@
       class="border border-gray-300 text-gray-700 font-semibold px-5 py-2.5 rounded-lg hover:bg-gray-50 transition">
       ✏️ Edit
     </a>
+    <form action="/invoices/<%= invoice.id %>/duplicate" method="POST" class="inline" data-testid="invoice-duplicate-form">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <button type="submit"
+        data-testid="invoice-duplicate-button"
+        class="border border-gray-300 text-gray-700 font-semibold px-5 py-2.5 rounded-lg hover:bg-gray-50 transition"
+        title="<%= invoice.is_seed ? 'Use this sample as a starting point — items and notes copy across, you just swap the client.' : 'Reuse this invoice for the same client or a similar job — starts a fresh draft with the items already filled in.' %>">
+        🗐 Duplicate<% if (invoice.is_seed) { %> as draft<% } %>
+      </button>
+    </form>
     <% if (invoice.status !== 'paid') { %>
       <form action="/invoices/<%= invoice.id %>/status" method="POST" class="inline">
         <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">

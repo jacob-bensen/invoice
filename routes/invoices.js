@@ -657,6 +657,52 @@ router.post('/:id/delete', requireAuth, async (req, res) => {
   }
 });
 
+/*
+ * One-click duplicate: clones an owned invoice as a fresh draft so the
+ * user can start from a populated form (client/items/notes/tax) instead
+ * of a blank page. Most-leverage on Milestone 2 (the seed sample is the
+ * obvious thing to clone-and-customize for a real client) and on repeat
+ * invoicing (same client, slightly different work — the second invoice
+ * onward is dramatically faster). Redirects to /edit so the user lands
+ * directly in the form, customizes, and saves.
+ *
+ * Free-tier limit applies — duplicating a 3rd-real-invoice on the free
+ * plan bounces to the limit page exactly like POST /invoices/new.
+ * Cross-tenant ids no-op at the DB layer (INSERT…SELECT WHERE user_id
+ * filter) and surface as a /dashboard redirect.
+ */
+router.post('/:id/duplicate', requireAuth, async (req, res) => {
+  try {
+    const user = await db.getUserById(req.session.user.id);
+    if (!user) return res.redirect('/auth/login');
+    if (user.plan === 'free' && user.invoice_count >= FREE_LIMIT) {
+      return res.redirect('/invoices?limit_hit=1');
+    }
+    const source = await db.getInvoiceById(req.params.id, req.session.user.id);
+    if (!source) return res.redirect('/dashboard');
+
+    const invoice_number = await db.getNextInvoiceNumber(req.session.user.id);
+    const today = new Date();
+    const issued_date = today.toISOString().split('T')[0];
+    const due_date = new Date(today.getTime() + 30 * 86400000).toISOString().split('T')[0];
+
+    const created = await db.duplicateInvoice(source.id, req.session.user.id, {
+      invoice_number, issued_date, due_date
+    });
+    if (!created) return res.redirect('/dashboard');
+
+    req.session.user.invoice_count = (req.session.user.invoice_count || 0) + 1;
+    req.session.flash = {
+      type: 'success',
+      message: 'Duplicated as a new draft — update the client and items, then mark it sent.'
+    };
+    return res.redirect(`/invoices/${created.id}/edit`);
+  } catch (err) {
+    console.error('Duplicate invoice error:', err && err.message);
+    return res.redirect(`/invoices/${req.params.id}`);
+  }
+});
+
 async function onboardingDismissHandler(req, res) {
   try {
     if (!req.session || !req.session.user) return res.redirect('/auth/login');
