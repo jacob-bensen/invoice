@@ -11,7 +11,8 @@ const {
 } = require('../lib/password-reset');
 const {
   requestMagicLink,
-  hashToken: hashMagicToken
+  hashToken: hashMagicToken,
+  safeNextPath
 } = require('../lib/magic-login');
 
 const router = express.Router();
@@ -327,7 +328,17 @@ router.post('/magic', redirectIfAuth, authLimiter, [
   });
 });
 
-router.get('/magic/:token', redirectIfAuth, authLimiter, async (req, res) => {
+// The consume route deliberately skips the `redirectIfAuth` middleware that
+// the request-form routes use: a user who is already signed in and clicks the
+// welcome-email CTA with `?next=/invoices/new` should still land on that
+// page, not bounce to /dashboard. When `next` is absent and the user is
+// already authed we forward to /dashboard inline, matching the pre-existing
+// behaviour without consuming a still-valid token.
+router.get('/magic/:token', authLimiter, async (req, res) => {
+  const next = safeNextPath(req.query && req.query.next);
+  if (req.session.user) {
+    return res.redirect(next || '/dashboard');
+  }
   const raw = req.params.token || '';
   if (!/^[a-f0-9]{64}$/i.test(raw)) {
     return res.status(400).render('auth/magic', {
@@ -362,7 +373,7 @@ router.get('/magic/:token', redirectIfAuth, authLimiter, async (req, res) => {
     trial_ends_at: user.trial_ends_at || null
   };
   req.session.flash = { type: 'success', message: "You're signed in." };
-  return res.redirect('/dashboard');
+  return res.redirect(next || '/dashboard');
 });
 
 router.post('/logout', (req, res) => {
