@@ -66,12 +66,18 @@ process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || 'sk_test_dummy'
 
 const users = new Map();
 const createCalls = [];
+const markSentCalls = [];
+const emailSendCalls = [];
 let nextInvoiceId = 100;
+let emailSendImpl = async () => ({ ok: true, id: 'em_quick' });
 
 function resetStore() {
   users.clear();
   createCalls.length = 0;
+  markSentCalls.length = 0;
+  emailSendCalls.length = 0;
   nextInvoiceId = 100;
+  emailSendImpl = async () => ({ ok: true, id: 'em_quick' });
 }
 
 function buildDbStub() {
@@ -99,6 +105,10 @@ function buildDbStub() {
         if (u) u.invoice_count = (u.invoice_count || 0) + 1;
         return row;
       },
+      async markInvoiceSentFromShareIntent(invoiceId, userId) {
+        markSentCalls.push({ invoiceId, userId });
+        return { id: invoiceId, status: 'sent', sent_via_share_intent_at: new Date() };
+      },
       async getOrCreatePublicToken() { return null; },
       async getOldestStaleDraft() { return null; },
       async getRecentRevenueStats() { return null; }
@@ -122,6 +132,21 @@ function installDbStub() {
       createInvoicePaymentLink: async () => null,
       parsePaymentMethods: () => ['card']
     }
+  };
+  // Real email lib first, then proxy sendInvoiceEmail through a test-controlled
+  // impl so we can assert call shape + simulate ok / not_configured / failure.
+  delete require.cache[require.resolve('../lib/email')];
+  const realEmail = require('../lib/email');
+  require.cache[require.resolve('../lib/email')] = {
+    id: require.resolve('../lib/email'),
+    filename: require.resolve('../lib/email'),
+    loaded: true,
+    exports: Object.assign({}, realEmail, {
+      sendInvoiceEmail: async (invoice, owner) => {
+        emailSendCalls.push({ invoice, owner });
+        return emailSendImpl(invoice, owner);
+      }
+    })
   };
   delete require.cache[require.resolve('../routes/invoices')];
   return require('../routes/invoices');
@@ -422,6 +447,215 @@ async function testPostRepopulatesFormOnValidationError() {
 }
 
 // ============================================================================
+// Layer 2b — POST /invoices/quick with action=create_and_email (Pro/Agency)
+// ============================================================================
+//
+// Collapses the create → land on /:id → click "Send by email" two-step into a
+// single submit. Hard-gated on Pro/Agency plan + present client_email; free
+// users tampering with the form payload fall through to the create-only path
+// without an email send (defence-in-depth against the view-side hide).
+
+async function testPostCreateAndEmailProHappyPath() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'pro', invoice_count: 0, name: 'Alice', email: 'a@x.com' });
+  emailSendImpl = async () => ({ ok: true, id: 'em_happy' });
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'pro', invoice_count: 0 }, routes);
+
+  const res = await request(app, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    client_email: 'pay@acme.com',
+    description: 'Brand work',
+    amount: '500',
+    action: 'create_and_email'
+  });
+  assert.strictEqual(res.status, 302, 'create_and_email must redirect');
+  assert.ok(/^\/invoices\/\d+$/.test(res.headers.location),
+    `must redirect to /invoices/<id>, got ${res.headers.location}`);
+  assert.strictEqual(createCalls.length, 1, 'createInvoice still fires');
+  assert.strictEqual(emailSendCalls.length, 1, 'sendInvoiceEmail fires exactly once on create_and_email');
+  assert.strictEqual(emailSendCalls[0].invoice.client_email, 'pay@acme.com',
+    'sendInvoiceEmail receives the just-created invoice with the typed email');
+  assert.strictEqual(emailSendCalls[0].owner.id, 1, 'sendInvoiceEmail receives the owner user');
+  assert.strictEqual(markSentCalls.length, 1,
+    'markInvoiceSentFromShareIntent flips draft → sent after a successful send');
+  assert.strictEqual(markSentCalls[0].userId, 1,
+    'flip carries the session user id (defence vs cross-tenant flip)');
+}
+
+async function testPostCreateAndEmailFlashOnSuccess() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'pro', invoice_count: 0, name: 'Alice', email: 'a@x.com' });
+  emailSendImpl = async () => ({ ok: true, id: 'em_ok' });
+  const routes = installDbStub();
+  // Capture the session flash by attaching middleware that exposes it.
+  const sessionCaptured = { user: { id: 1, plan: 'pro', invoice_count: 0 }, flash: null };
+  const customApp = express();
+  customApp.set('view engine', 'ejs');
+  customApp.set('views', path.join(__dirname, '..', 'views'));
+  customApp.use(express.urlencoded({ extended: true }));
+  customApp.use(express.json());
+  customApp.use((req, _res, next) => { req.session = sessionCaptured; next(); });
+  customApp.use((req, res, next) => { res.locals.csrfToken = 'tkn'; next(); });
+  customApp.use('/invoices', routes);
+
+  await request(customApp, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    client_email: 'pay@acme.com',
+    description: 'Brand work',
+    amount: '500',
+    action: 'create_and_email'
+  });
+  assert.ok(sessionCaptured.flash, 'session flash must be set on success');
+  assert.strictEqual(sessionCaptured.flash.type, 'success', 'success flash on create+email happy path');
+  assert.ok(/pay@acme\.com/.test(sessionCaptured.flash.message),
+    'success flash must name the email address the invoice was sent to');
+  assert.ok(/emailed/i.test(sessionCaptured.flash.message),
+    'success flash must say "emailed" so the user knows it actually shipped');
+}
+
+async function testPostCreateAndEmailFreeUserDefenceInDepth() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com' });
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'free', invoice_count: 0 }, routes);
+
+  const res = await request(app, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    client_email: 'pay@acme.com',
+    description: 'Brand work',
+    amount: '500',
+    action: 'create_and_email'
+  });
+  assert.strictEqual(res.status, 302, 'free user must still get the invoice created');
+  assert.strictEqual(createCalls.length, 1, 'createInvoice still fires');
+  assert.strictEqual(emailSendCalls.length, 0,
+    'free user MUST NOT trigger an email send even if action=create_and_email is forged in the payload');
+  assert.strictEqual(markSentCalls.length, 0,
+    'free user MUST NOT have the invoice auto-flipped to sent');
+}
+
+async function testPostCreateAndEmailMissingEmailNoSend() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'pro', invoice_count: 0, name: 'Alice', email: 'a@x.com' });
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'pro', invoice_count: 0 }, routes);
+
+  const res = await request(app, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    client_email: '',
+    description: 'Brand work',
+    amount: '500',
+    action: 'create_and_email'
+  });
+  assert.strictEqual(res.status, 302, 'invoice still creates on missing email');
+  assert.strictEqual(createCalls.length, 1);
+  assert.strictEqual(emailSendCalls.length, 0,
+    'no client_email → no email send (sendInvoiceEmail would return no_client_email but we short-circuit earlier)');
+  assert.strictEqual(markSentCalls.length, 0, 'no email send → no draft→sent flip');
+}
+
+async function testPostCreateAndEmailNotConfiguredKeepsDraft() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'pro', invoice_count: 0, name: 'Alice', email: 'a@x.com' });
+  emailSendImpl = async () => ({ ok: false, reason: 'not_configured' });
+  const routes = installDbStub();
+  const sessionCaptured = { user: { id: 1, plan: 'pro', invoice_count: 0 }, flash: null };
+  const customApp = express();
+  customApp.set('view engine', 'ejs');
+  customApp.set('views', path.join(__dirname, '..', 'views'));
+  customApp.use(express.urlencoded({ extended: true }));
+  customApp.use(express.json());
+  customApp.use((req, _res, next) => { req.session = sessionCaptured; next(); });
+  customApp.use((req, res, next) => { res.locals.csrfToken = 'tkn'; next(); });
+  customApp.use('/invoices', routes);
+
+  const res = await request(customApp, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    client_email: 'pay@acme.com',
+    description: 'Brand work',
+    amount: '500',
+    action: 'create_and_email'
+  });
+  assert.strictEqual(res.status, 302, 'still redirect to /invoices/:id even on email send failure');
+  assert.strictEqual(createCalls.length, 1, 'invoice still created on send failure (graceful degrade)');
+  assert.strictEqual(emailSendCalls.length, 1, 'send was attempted');
+  assert.strictEqual(markSentCalls.length, 0,
+    'failed send must NOT flip status (dashboard truthfully shows draft so the user retries)');
+  assert.ok(sessionCaptured.flash, 'flash must be set');
+  assert.strictEqual(sessionCaptured.flash.type, 'error',
+    'send failure must surface as an error flash, not a silent fallback');
+  assert.ok(/configured|not yet/i.test(sessionCaptured.flash.message),
+    'flash copy must explain the not-configured cause so the user knows why');
+}
+
+async function testPostCreateAndEmailGenericFailureKeepsDraft() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'pro', invoice_count: 0, name: 'Alice', email: 'a@x.com' });
+  emailSendImpl = async () => ({ ok: false, reason: 'error', error: 'boom' });
+  const routes = installDbStub();
+  const sessionCaptured = { user: { id: 1, plan: 'pro', invoice_count: 0 }, flash: null };
+  const customApp = express();
+  customApp.set('view engine', 'ejs');
+  customApp.set('views', path.join(__dirname, '..', 'views'));
+  customApp.use(express.urlencoded({ extended: true }));
+  customApp.use(express.json());
+  customApp.use((req, _res, next) => { req.session = sessionCaptured; next(); });
+  customApp.use((req, res, next) => { res.locals.csrfToken = 'tkn'; next(); });
+  customApp.use('/invoices', routes);
+
+  await request(customApp, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    client_email: 'pay@acme.com',
+    description: 'Brand work',
+    amount: '500',
+    action: 'create_and_email'
+  });
+  assert.strictEqual(createCalls.length, 1, 'invoice still created on Resend send error');
+  assert.strictEqual(markSentCalls.length, 0, 'no status flip on send error');
+  assert.strictEqual(sessionCaptured.flash.type, 'error', 'error flash');
+  assert.ok(/share buttons/i.test(sessionCaptured.flash.message),
+    'flash must point user at the share buttons as a fallback path');
+}
+
+async function testPostCreateOnlyExplicitActionDoesNotSend() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'pro', invoice_count: 0, name: 'Alice', email: 'a@x.com' });
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'pro', invoice_count: 0 }, routes);
+
+  await request(app, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    client_email: 'pay@acme.com',
+    description: 'Brand work',
+    amount: '500',
+    action: 'create_only'
+  });
+  assert.strictEqual(createCalls.length, 1);
+  assert.strictEqual(emailSendCalls.length, 0,
+    'create_only must NOT trigger email even when client_email is present');
+  assert.strictEqual(markSentCalls.length, 0, 'create_only leaves status as draft');
+}
+
+async function testPostAgencyParity() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'agency', invoice_count: 0, name: 'Alice', email: 'a@x.com' });
+  emailSendImpl = async () => ({ ok: true, id: 'em_agency' });
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'agency', invoice_count: 0 }, routes);
+
+  await request(app, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    client_email: 'pay@acme.com',
+    description: 'Brand work',
+    amount: '500',
+    action: 'create_and_email'
+  });
+  assert.strictEqual(emailSendCalls.length, 1, 'agency plan gets create+email parity with pro');
+  assert.strictEqual(markSentCalls.length, 1, 'agency plan gets the auto-flip too');
+}
+
+// ============================================================================
 // Layer 3 — invoice-quick.ejs render shape
 // ============================================================================
 
@@ -491,6 +725,47 @@ async function testViewRepopulatesSubmitted() {
   assert.ok(html.includes('value="275.50"'), 'amount sticky after re-render');
 }
 
+async function testViewRendersEmailButtonForPro() {
+  const html = await renderQuickView({
+    user: { id: 1, plan: 'pro', invoice_count: 0, name: 'Alice', email: 'a@x.com' }
+  });
+  assert.ok(html.includes('data-testid="invoice-quick-submit-draft"'),
+    'pro user must see the "Save as draft" secondary button');
+  assert.ok(html.includes('data-action="create_and_email"'),
+    'pro user must see the create_and_email button');
+  assert.ok(html.includes('value="create_and_email"'),
+    'create_and_email button must POST action=create_and_email');
+  assert.ok(html.includes('value="create_only"'),
+    'draft button must POST action=create_only');
+  assert.ok(html.includes('data-testid="invoice-quick-email-hint"'),
+    'pro user must see the one-tap email hint');
+  // Alpine binding gates the email button on a non-empty client_email
+  assert.ok(/:disabled="!clientEmail/.test(html),
+    'email button must disable when client_email is empty (Alpine binding)');
+}
+
+async function testViewHidesEmailButtonForFree() {
+  const html = await renderQuickView({
+    user: { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com' }
+  });
+  assert.ok(!html.includes('value="create_and_email"'),
+    'free user MUST NOT see the create_and_email button (server hard-rejects anyway)');
+  assert.ok(!html.includes('data-testid="invoice-quick-submit-draft"'),
+    'free user sees a single "Create invoice" button, not the dual draft/email pair');
+  assert.ok(!html.includes('data-testid="invoice-quick-email-hint"'),
+    'free user must not see the Pro-only "email to client" hint');
+  assert.ok(html.includes('data-testid="invoice-quick-submit"'),
+    'free user still gets the primary submit button');
+}
+
+async function testViewRendersEmailButtonForAgency() {
+  const html = await renderQuickView({
+    user: { id: 1, plan: 'agency', invoice_count: 0, name: 'Alice', email: 'a@x.com' }
+  });
+  assert.ok(html.includes('value="create_and_email"'),
+    'agency users get parity with pro on the create+email surface');
+}
+
 // ============================================================================
 // Layer 4 — dashboard wiring
 // ============================================================================
@@ -535,10 +810,21 @@ async function run() {
     ['POST /invoices/quick: missing amount re-renders form', testPostMissingAmountRerenders],
     ['POST /invoices/quick: free user at limit → /invoices?limit_hit=1', testPostFreeUserAtLimit],
     ['POST /invoices/quick: validation error re-populates submitted fields', testPostRepopulatesFormOnValidationError],
+    ['POST /invoices/quick: action=create_and_email (Pro+email) → send + flip', testPostCreateAndEmailProHappyPath],
+    ['POST /invoices/quick: action=create_and_email success flash names the recipient', testPostCreateAndEmailFlashOnSuccess],
+    ['POST /invoices/quick: action=create_and_email (Free) → no send, no flip (defence-in-depth)', testPostCreateAndEmailFreeUserDefenceInDepth],
+    ['POST /invoices/quick: action=create_and_email without email → no send, no flip', testPostCreateAndEmailMissingEmailNoSend],
+    ['POST /invoices/quick: action=create_and_email, Resend not configured → draft kept + error flash', testPostCreateAndEmailNotConfiguredKeepsDraft],
+    ['POST /invoices/quick: action=create_and_email, Resend generic failure → draft kept + error flash', testPostCreateAndEmailGenericFailureKeepsDraft],
+    ['POST /invoices/quick: action=create_only on Pro with email → invoice only, no send', testPostCreateOnlyExplicitActionDoesNotSend],
+    ['POST /invoices/quick: action=create_and_email (Agency) → send + flip parity with Pro', testPostAgencyParity],
     ['view: invoice-quick.ejs form shape', testViewFormShape],
     ['view: flash message renders when supplied', testViewFlashRenders],
     ['view: flash container omitted when null', testViewOmitsFlashWhenNull],
     ['view: submitted values re-populate sticky form', testViewRepopulatesSubmitted],
+    ['view: Pro sees the "Create & email to client" button + draft + hint', testViewRendersEmailButtonForPro],
+    ['view: Free user does NOT see the create_and_email surface', testViewHidesEmailButtonForFree],
+    ['view: Agency sees the "Create & email to client" button (parity with Pro)', testViewRendersEmailButtonForAgency],
     ['dashboard: primary CTA at /invoices/quick + advanced link at /invoices/new', testDashboardPrimaryCtaPointsAtQuick]
   ];
   let passed = 0;

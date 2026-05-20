@@ -394,11 +394,12 @@ router.post('/quick', requireAuth, [
     const due_date = new Date(today.getTime() + 30 * 86400000).toISOString().split('T')[0];
     const invoice_number = await db.getNextInvoiceNumber(req.session.user.id);
 
+    const client_email = req.body.client_email ? String(req.body.client_email).trim() : null;
     const invoice = await db.createInvoice({
       user_id: req.session.user.id,
       invoice_number,
       client_name: String(req.body.client_name).trim(),
-      client_email: req.body.client_email ? String(req.body.client_email).trim() : null,
+      client_email,
       client_address: null,
       items: [{ description, quantity: 1, unit_price: amount }],
       subtotal: amount,
@@ -411,6 +412,46 @@ router.post('/quick', requireAuth, [
     });
 
     req.session.user.invoice_count = (req.session.user.invoice_count || 0) + 1;
+
+    // Combined create+send path: the freelancer ticked "Create & email to
+    // client" on the form, which collapses the create → land on /:id →
+    // click "Send by email" two-step into a single action. Gated on
+    // Pro/Agency plan + a populated client_email — the view hides the
+    // button otherwise; the server hard-gates here as defence-in-depth so
+    // a free-tier client tampering with the form payload cannot bypass the
+    // pro-lock email surface.
+    const sendEmail = req.body.action === 'create_and_email'
+      && (user.plan === 'pro' || user.plan === 'agency')
+      && !!client_email;
+
+    if (sendEmail) {
+      let sendResult = null;
+      try {
+        sendResult = await sendInvoiceEmail(invoice, user);
+      } catch (e) {
+        console.error('Quick invoice email send threw:', e && e.message);
+      }
+      if (sendResult && sendResult.ok === true) {
+        // Atomic draft → sent flip, matching the share-intent + /:id/email-client surfaces.
+        try {
+          await db.markInvoiceSentFromShareIntent(invoice.id, req.session.user.id);
+        } catch (e) {
+          console.error('Quick invoice status flip failed:', e && e.message);
+        }
+        req.session.flash = {
+          type: 'success',
+          message: `Invoice created and emailed to ${client_email}.`
+        };
+      } else {
+        const reason = (sendResult && sendResult.reason) || 'send_failed';
+        const copy = reason === 'not_configured'
+          ? 'Invoice created, but email delivery is not configured yet. Use the share buttons below to send it.'
+          : 'Invoice created, but the email could not be sent. Use the share buttons below to send it.';
+        req.session.flash = { type: 'error', message: copy };
+      }
+      return res.redirect(`/invoices/${invoice.id}`);
+    }
+
     req.session.flash = {
       type: 'success',
       message: 'Invoice created — share it with your client below to mark it as sent.'
