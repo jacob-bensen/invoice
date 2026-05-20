@@ -384,6 +384,56 @@ router.post('/webhook-url', requireAuth, async (req, res) => {
   }
 });
 
+// Inline "How to pay" capture from /invoices/:id (Milestone 4 — first
+// invoice sent → first payment received). Free-tier users have no Stripe
+// Pay button, so the public /i/<token> share page their client opens
+// shows the invoice but no payment path unless users.payment_instructions
+// is set. Asking them to navigate to /billing/settings to fill it in at
+// activation time is the documented drop-off — this endpoint accepts a
+// single-field POST from a prompt that renders at the share moment, then
+// redirects back to the originating invoice page with a success flash.
+// `return_to` is hard-whitelisted against /invoices/<positive-int> as
+// defence-in-depth against open-redirect tampering; anything else
+// (including /admin, http(s)://…, //evil, /invoices/0) falls back to
+// /billing/settings.
+const PAYMENT_INSTRUCTIONS_RETURN_TO_RE = /^\/invoices\/[1-9][0-9]*$/;
+
+router.post('/payment-instructions', requireAuth, async (req, res) => {
+  const rawReturnTo = (req.body && typeof req.body.return_to === 'string')
+    ? req.body.return_to.trim() : '';
+  const returnTo = PAYMENT_INSTRUCTIONS_RETURN_TO_RE.test(rawReturnTo)
+    ? rawReturnTo : '/billing/settings';
+  try {
+    const raw = (req.body && typeof req.body.payment_instructions === 'string')
+      ? req.body.payment_instructions.trim() : '';
+    if (raw.length === 0) {
+      req.session.flash = {
+        type: 'error',
+        message: 'Add at least one way clients can pay you (Venmo, Zelle, bank, etc.).'
+      };
+      return res.redirect(returnTo);
+    }
+    if (raw.length > 2000) {
+      req.session.flash = {
+        type: 'error',
+        message: 'Payment instructions are too long (2000 character limit).'
+      };
+      return res.redirect(returnTo);
+    }
+    const updated = await db.updateUser(req.session.user.id, { payment_instructions: raw });
+    if (!updated) return res.redirect('/auth/login');
+    req.session.flash = {
+      type: 'success',
+      message: 'Saved — your client will see these payment instructions on every invoice share link.'
+    };
+    return res.redirect(returnTo);
+  } catch (err) {
+    console.error('Inline payment-instructions save error:', err && err.message);
+    req.session.flash = { type: 'error', message: 'Could not save payment instructions.' };
+    return res.redirect(returnTo);
+  }
+});
+
 router.post('/settings', requireAuth, async (req, res) => {
   try {
     const replyToRaw = (req.body.reply_to_email || '').trim();
