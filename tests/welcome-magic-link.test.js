@@ -71,6 +71,19 @@ async function testSafeNextAllowList() {
   assert.strictEqual(safeNextPath('/settings'), '/settings');
 }
 
+async function testSafeNextInvoiceIdPattern() {
+  clearReq('../lib/magic-login');
+  const { safeNextPath } = require('../lib/magic-login');
+  // Specific-invoice deep-links must pass so the stale-draft email CTA can
+  // land users straight on their own draft after auto-sign-in (instead of the
+  // /dashboard fallback, which loses the deep-link).
+  assert.strictEqual(safeNextPath('/invoices/1'), '/invoices/1',
+    'single-digit invoice id must pass — the stale-draft reminder targets one row');
+  assert.strictEqual(safeNextPath('/invoices/7'), '/invoices/7');
+  assert.strictEqual(safeNextPath('/invoices/12345'), '/invoices/12345',
+    'multi-digit invoice id must pass');
+}
+
 async function testSafeNextRejectsEverythingElse() {
   clearReq('../lib/magic-login');
   const { safeNextPath } = require('../lib/magic-login');
@@ -90,8 +103,29 @@ async function testSafeNextRejectsEverythingElse() {
     'unknown app paths must NOT be honoured even if they start with /');
   assert.strictEqual(safeNextPath('/auth/login'), null);
   assert.strictEqual(safeNextPath('/'), null);
-  assert.strictEqual(safeNextPath('/invoices/123'), null,
-    'paths with route params off the allow-list must be rejected');
+  // Invoice-id pattern boundaries — must NOT match anything but a bare
+  // positive integer. These are the easy widening mistakes a refactor could
+  // make (sub-routes, leading zeros, negatives, decimals, non-digit suffix).
+  assert.strictEqual(safeNextPath('/invoices/0'), null,
+    '/invoices/0 must be rejected — SERIAL starts at 1, 0 is never a real id');
+  assert.strictEqual(safeNextPath('/invoices/-1'), null,
+    'negative ids must be rejected');
+  assert.strictEqual(safeNextPath('/invoices/01'), null,
+    'leading-zero ids must be rejected (no path-normalisation ambiguity)');
+  assert.strictEqual(safeNextPath('/invoices/1.5'), null,
+    'decimal ids must be rejected');
+  assert.strictEqual(safeNextPath('/invoices/abc'), null,
+    'non-numeric ids must be rejected');
+  assert.strictEqual(safeNextPath('/invoices/1abc'), null,
+    'mixed alpha-numeric ids must be rejected');
+  assert.strictEqual(safeNextPath('/invoices/1/edit'), null,
+    'sub-routes off the invoice id must be rejected — pattern is strictly /invoices/<id> with no trailing segment');
+  assert.strictEqual(safeNextPath('/invoices/1?foo=bar'), null,
+    'query strings must be rejected — bake them into the magic URL itself, not the next path');
+  assert.strictEqual(safeNextPath('/invoices/1#frag'), null,
+    'fragments must be rejected');
+  assert.strictEqual(safeNextPath('/invoices//1'), null,
+    'double-slash must be rejected');
   // Bad types / empty
   assert.strictEqual(safeNextPath(''), null);
   assert.strictEqual(safeNextPath(null), null);
@@ -104,6 +138,8 @@ async function testSafeNextRejectsEverythingElse() {
     'CRLF injection must be rejected before allow-list lookup');
   assert.strictEqual(safeNextPath('/dashboard\nfoo'), null);
   assert.strictEqual(safeNextPath('/dashboard\tfoo'), null);
+  assert.strictEqual(safeNextPath('/invoices/1\r\nLocation: x'), null,
+    'CRLF injection against the invoice-id pattern must be rejected too');
 }
 
 // ---------- mintMagicLoginToken ---------------------------------------------
@@ -584,6 +620,7 @@ async function testCrlfInjectionInNextRejected() {
 (async () => {
   const tests = [
     ['lib/magic-login: safeNextPath accepts allow-list paths', testSafeNextAllowList],
+    ['lib/magic-login: safeNextPath accepts /invoices/<positive-int> deep-link', testSafeNextInvoiceIdPattern],
     ['lib/magic-login: safeNextPath rejects everything else', testSafeNextRejectsEverythingElse],
     ['lib/magic-login: mintMagicLoginToken db_unavailable on missing method', testMintNoDb],
     ['lib/magic-login: mintMagicLoginToken no_user on falsy userId', testMintNoUser],

@@ -8,7 +8,17 @@
  * in-app stale-draft dashboard prompt — it closes the activation gap for users
  * who never come back to the app on their own.
  *
- * Design mirrors jobs/trial-nudge.js and jobs/reminders.js:
+ * Magic-login bake-in (Milestone 3): for each cohort row we mint a 7-day
+ * magic-login token (lib/magic-login.mintMagicLoginToken) and bake the
+ * auto-sign-in URL into the "Open draft & send" CTA with
+ * `?next=/invoices/<invoice_id>`. A user who clicks the reminder 24h+ later —
+ * likely on a different device or with an expired session — lands signed-in
+ * directly on the draft invoice instead of bouncing at /auth/login and losing
+ * the deep-link. Mint failures soft-fail to the plain APP_URL CTA; the email
+ * is never sacrificed to a mint hiccup.
+ *
+ * Design mirrors jobs/trial-nudge.js, jobs/no-invoice-nudge.js, and
+ * jobs/reminders.js:
  *   - `processStaleDraftEmails({ db, sendEmail, now, log })` is the pure
  *     orchestrator. Dependency-injected, no module state. Returns a structured
  *     summary { found, sent, skipped, errors, notConfigured } so tests can
@@ -29,10 +39,17 @@
 const { db: realDb } = require('../db');
 const { sendEmail: realSendEmail } = require('../lib/email');
 const { escapeHtml, formatMoney } = require('../lib/html');
+const { mintMagicLoginToken: realMintMagicLoginToken } = require('../lib/magic-login');
 
 const DEFAULT_MIN_AGE_HOURS = 24;
 const DEFAULT_COOLDOWN_DAYS = 7;
 const DEFAULT_SCHEDULE = '0 11 * * *'; // 11:00 UTC daily (after trial-nudge at 10:00)
+// 7 days — matches the TTL the welcome email and 48h-nudge use. The reminder
+// fires for a draft that's already been sitting 24h+; the recipient may not
+// click for several more days, especially over a weekend. A 7-day window is
+// loose enough to still auto-sign-in then, tight enough that the token rotates
+// well before any practical mailbox-leak horizon.
+const STALE_DRAFT_TTL_MINUTES = 7 * 24 * 60;
 
 function hoursOld(draftCreatedAt, now = new Date()) {
   if (!draftCreatedAt) return 0;
@@ -51,9 +68,21 @@ function resolveReplyTo(row) {
   return row.reply_to_email || row.business_email || row.email || null;
 }
 
-function ctaUrl(row) {
+function ctaUrl(row, opts) {
+  if (!row || row.invoice_id == null) return '';
+  // When a one-shot magic-login URL is supplied (processStaleDraftEmails mints
+  // one per cohort row), bake it into the primary CTA with
+  // `?next=/invoices/<id>` so the click auto-signs-in and lands on the user's
+  // draft. Falls back to the plain APP_URL deep-link if no magic URL is
+  // available (mint failed, no DB, etc.) so the email is still actionable —
+  // the user just has to authenticate manually first.
+  const magicLoginUrl = opts && typeof opts.magicLoginUrl === 'string'
+    ? opts.magicLoginUrl.trim() : '';
+  if (magicLoginUrl) {
+    return `${magicLoginUrl}?next=/invoices/${row.invoice_id}`;
+  }
   const base = (process.env.APP_URL || '').replace(/\/+$/, '');
-  if (!base || !row || row.invoice_id == null) return '';
+  if (!base) return '';
   return `${base}/invoices/${row.invoice_id}`;
 }
 
@@ -66,13 +95,13 @@ function buildStaleDraftSubject(row, now = new Date()) {
   return `${number} has been a draft for ${bucket}+ hours — send it?`;
 }
 
-function buildStaleDraftHtml(row, now = new Date()) {
+function buildStaleDraftHtml(row, now = new Date(), opts) {
   const number = (row && row.invoice_number) || '';
   const clientName = (row && row.client_name) || 'your client';
   const total = formatMoney(row && row.invoice_total);
   const hours = hoursOld(row && row.draft_created_at, now);
   const greeting = greetingName(row);
-  const url = ctaUrl(row);
+  const url = ctaUrl(row, opts);
   const ctaButton = url
     ? `<p style="margin:24px 0;"><a href="${escapeHtml(url)}" style="background:#4f46e5;color:#fff;text-decoration:none;font-weight:600;padding:12px 20px;border-radius:8px;display:inline-block;">Open draft &amp; send</a></p>`
     : '';
@@ -97,13 +126,13 @@ function buildStaleDraftHtml(row, now = new Date()) {
 </body></html>`;
 }
 
-function buildStaleDraftText(row, now = new Date()) {
+function buildStaleDraftText(row, now = new Date(), opts) {
   const number = (row && row.invoice_number) || '';
   const clientName = (row && row.client_name) || 'your client';
   const total = formatMoney(row && row.invoice_total);
   const hours = hoursOld(row && row.draft_created_at, now);
   const greeting = greetingName(row);
-  const url = ctaUrl(row);
+  const url = ctaUrl(row, opts);
   const lines = [
     `Hi ${greeting},`,
     '',
@@ -122,9 +151,13 @@ function buildStaleDraftText(row, now = new Date()) {
 async function processStaleDraftEmails(opts = {}) {
   const db = opts.db || realDb;
   const sendEmail = opts.sendEmail || realSendEmail;
+  const mintMagicLoginToken = opts.mintMagicLoginToken || realMintMagicLoginToken;
   const now = opts.now || new Date();
   const minAgeHours = opts.minAgeHours || DEFAULT_MIN_AGE_HOURS;
   const cooldownDays = opts.cooldownDays || DEFAULT_COOLDOWN_DAYS;
+  const ttlMinutes = Number.isFinite(opts.ttlMinutes) && opts.ttlMinutes > 0
+    ? Math.floor(opts.ttlMinutes)
+    : STALE_DRAFT_TTL_MINUTES;
   const log = opts.log || console;
 
   const summary = { found: 0, sent: 0, skipped: 0, errors: 0, notConfigured: 0 };
@@ -146,13 +179,31 @@ async function processStaleDraftEmails(opts = {}) {
       continue;
     }
 
+    // Best-effort: mint a magic-login URL so the CTA auto-signs-in the user
+    // and deep-links to their draft. Any failure falls back to the plain
+    // APP_URL path — we never sacrifice the email send to a mint hiccup.
+    let magicLoginUrl = '';
+    try {
+      const mint = await mintMagicLoginToken(db, row.user_id, { ttlMinutes });
+      if (mint && mint.ok && mint.url) {
+        magicLoginUrl = mint.url;
+      } else if (mint && !mint.ok) {
+        log.warn && log.warn(`stale-draft magic-link mint skipped for user ${row.user_id}: ${mint.reason}`);
+      }
+    } catch (err) {
+      // Defence-in-depth: mintMagicLoginToken already catches internally,
+      // but a future refactor that lets it throw must NEVER drop the reminder.
+      log.warn && log.warn(`stale-draft magic-link mint threw for user ${row.user_id}:`, err && err.message);
+    }
+    const buildOpts = magicLoginUrl ? { magicLoginUrl } : undefined;
+
     let result;
     try {
       result = await sendEmail({
         to: row.email,
         subject: buildStaleDraftSubject(row, now),
-        html: buildStaleDraftHtml(row, now),
-        text: buildStaleDraftText(row, now),
+        html: buildStaleDraftHtml(row, now, buildOpts),
+        text: buildStaleDraftText(row, now, buildOpts),
         replyTo: resolveReplyTo(row)
       });
     } catch (err) {
@@ -243,5 +294,6 @@ module.exports = {
   DEFAULT_MIN_AGE_HOURS,
   DEFAULT_COOLDOWN_DAYS,
   DEFAULT_SCHEDULE,
+  STALE_DRAFT_TTL_MINUTES,
   _internal: { escapeHtml, formatMoney, greetingName, resolveReplyTo, ctaUrl }
 };

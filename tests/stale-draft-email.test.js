@@ -128,6 +128,65 @@ test('text: includes greeting, hours-old anchor, client + CTA URL with trimmed t
     'APP_URL trailing slash must be trimmed before joining /invoices/<id>');
 });
 
+// ---- Magic-login bake-in -----------------------------------------------
+
+test('html: opts.magicLoginUrl bakes the auto-sign-in URL into the primary CTA with ?next=/invoices/<id>', () => {
+  process.env.APP_URL = 'https://decentinvoice.com';
+  const magicUrl = 'https://decentinvoice.com/auth/magic/abc123def';
+  const html = staleDraft.buildStaleDraftHtml(
+    staleRow({ invoice_id: 7 }),
+    new Date('2026-05-16T11:00:00Z'),
+    { magicLoginUrl: magicUrl }
+  );
+  assert.match(html, /\/auth\/magic\/abc123def\?next=\/invoices\/7/,
+    'primary CTA href is the magic URL with ?next=/invoices/<id>');
+  // The plain /invoices/<id> path must NOT appear as a stand-alone CTA href
+  // when a magic URL is supplied — it would leak a non-auth-bypass version of
+  // the same surface and undo the point of baking in the token.
+  assert.ok(!/href="https:\/\/decentinvoice\.com\/invoices\/7"/.test(html),
+    'no plain /invoices/<id> href when a magic URL is supplied');
+});
+
+test('text: opts.magicLoginUrl bakes the auto-sign-in URL into the plaintext CTA', () => {
+  process.env.APP_URL = 'https://decentinvoice.com';
+  const magicUrl = 'https://decentinvoice.com/auth/magic/abc123def';
+  const text = staleDraft.buildStaleDraftText(
+    staleRow({ invoice_id: 7 }),
+    new Date('2026-05-16T11:00:00Z'),
+    { magicLoginUrl: magicUrl }
+  );
+  assert.match(text, /https:\/\/decentinvoice\.com\/auth\/magic\/abc123def\?next=\/invoices\/7/);
+  assert.ok(!/^https:\/\/decentinvoice\.com\/invoices\/7$/m.test(text),
+    'no plain CTA leak when magic URL is supplied');
+});
+
+test('html/text: opts.magicLoginUrl absent (legacy / mint-failed path) falls back to plain /invoices/<id>', () => {
+  process.env.APP_URL = 'https://decentinvoice.com';
+  const htmlNoOpts = staleDraft.buildStaleDraftHtml(
+    staleRow({ invoice_id: 7 }),
+    new Date('2026-05-16T11:00:00Z')
+  );
+  assert.match(htmlNoOpts, /https:\/\/decentinvoice\.com\/invoices\/7/);
+  assert.ok(!/\/auth\/magic\//.test(htmlNoOpts), 'no magic URL when opts absent');
+  const htmlEmptyOpts = staleDraft.buildStaleDraftHtml(
+    staleRow({ invoice_id: 7 }),
+    new Date('2026-05-16T11:00:00Z'),
+    {}
+  );
+  assert.match(htmlEmptyOpts, /https:\/\/decentinvoice\.com\/invoices\/7/);
+  const htmlEmptyMagic = staleDraft.buildStaleDraftHtml(
+    staleRow({ invoice_id: 7 }),
+    new Date('2026-05-16T11:00:00Z'),
+    { magicLoginUrl: '   ' }
+  );
+  assert.match(htmlEmptyMagic, /https:\/\/decentinvoice\.com\/invoices\/7/,
+    'whitespace-only magicLoginUrl is treated as absent');
+});
+
+test('STALE_DRAFT_TTL_MINUTES is 7 days (matches WELCOME_TTL_MINUTES + NUDGE_TTL_MINUTES)', () => {
+  assert.strictEqual(staleDraft.STALE_DRAFT_TTL_MINUTES, 7 * 24 * 60);
+});
+
 test('hoursOld: 24h exact, future, garbage, missing', () => {
   assert.strictEqual(
     staleDraft.hoursOld(new Date('2026-05-15T00:00:00Z'), new Date('2026-05-16T00:00:00Z')),
@@ -180,6 +239,120 @@ test('happy path: sends and stamps', async () => {
   assert.match(sends[0].subject, /INV-2026-0003/);
   assert.match(sends[0].html, /Hi Sam/);
   assert.match(sends[0].text, /Hi Sam/);
+});
+
+test('magic-login: mints once per cohort row + bakes the URL into the sent email', async () => {
+  process.env.APP_URL = 'https://decentinvoice.com';
+  const sends = [];
+  const mintCalls = [];
+  const db = fakeDb([
+    staleRow({ user_id: 7, invoice_id: 101, email: 'a@a.com', name: 'A' }),
+    staleRow({ user_id: 8, invoice_id: 102, email: 'b@b.com', name: 'B' })
+  ]);
+  await staleDraft.processStaleDraftEmails({
+    db,
+    sendEmail: async (p) => { sends.push(p); return { ok: true, id: 'em' }; },
+    mintMagicLoginToken: async (_db, userId, opts) => {
+      mintCalls.push({ userId, opts });
+      return { ok: true, url: `https://decentinvoice.com/auth/magic/tok-${userId}`, ttlMinutes: opts.ttlMinutes };
+    },
+    now: new Date('2026-05-16T11:00:00Z'),
+    log: { error: () => {}, warn: () => {}, log: () => {} }
+  });
+  assert.strictEqual(mintCalls.length, 2, 'mint called exactly once per cohort row');
+  assert.strictEqual(mintCalls[0].userId, 7,
+    'mint must use row.user_id (not row.invoice_id) — same id the stamp uses');
+  assert.strictEqual(mintCalls[0].opts.ttlMinutes, staleDraft.STALE_DRAFT_TTL_MINUTES,
+    'mint uses the 7-day TTL — the cron may fire any time inside the 7-day cooldown');
+  assert.strictEqual(mintCalls[1].userId, 8);
+  assert.match(sends[0].html, /\/auth\/magic\/tok-7\?next=\/invoices\/101/,
+    'user 7 receives the user 7 magic URL deep-linking to their invoice 101');
+  assert.match(sends[0].text, /\/auth\/magic\/tok-7\?next=\/invoices\/101/);
+  assert.match(sends[1].html, /\/auth\/magic\/tok-8\?next=\/invoices\/102/,
+    'user 8 receives the user 8 magic URL deep-linking to their invoice 102 (no cross-user token leak)');
+  // Tokens are user-specific — user 8 must NOT see user 7's magic URL.
+  assert.ok(!/\/auth\/magic\/tok-7/.test(sends[1].html),
+    'user 8 must NOT receive user 7 token');
+  // And the deep-link must use each user's own invoice id, not the other's.
+  assert.ok(!/next=\/invoices\/102/.test(sends[0].html),
+    'user 7 email must NOT deep-link to user 8 invoice');
+});
+
+test('magic-login: mint failure falls back to plain CTA + email still ships + stamp still lands', async () => {
+  process.env.APP_URL = 'https://decentinvoice.com';
+  const sends = [];
+  const warns = [];
+  const db = fakeDb([staleRow({ user_id: 99, invoice_id: 7, email: 'q@q.com', name: 'Q' })]);
+  const summary = await staleDraft.processStaleDraftEmails({
+    db,
+    sendEmail: async (p) => { sends.push(p); return { ok: true, id: 'em_99' }; },
+    mintMagicLoginToken: async () => ({ ok: false, reason: 'db_error', error: 'PG hiccup' }),
+    now: new Date('2026-05-16T11:00:00Z'),
+    log: { error: () => {}, warn: (...a) => warns.push(a), log: () => {} }
+  });
+  assert.strictEqual(summary.sent, 1, 'mint failure does NOT block the send');
+  assert.deepStrictEqual(db.stamped, [99], 'stamp lands on send success regardless of mint outcome');
+  assert.match(sends[0].html, /https:\/\/decentinvoice\.com\/invoices\/7/,
+    'falls back to the plain /invoices/<id> CTA');
+  assert.ok(!/\/auth\/magic\//.test(sends[0].html),
+    'no magic URL in the body when mint failed');
+  assert.ok(warns.some(args => /magic-link mint skipped/.test(args.join(' '))),
+    'warn logged for operator visibility');
+});
+
+test('magic-login: mint throws → soft-fails to plain CTA + email still ships', async () => {
+  process.env.APP_URL = 'https://decentinvoice.com';
+  const sends = [];
+  const db = fakeDb([staleRow({ user_id: 5, invoice_id: 31, email: 'z@z.com' })]);
+  const summary = await staleDraft.processStaleDraftEmails({
+    db,
+    sendEmail: async (p) => { sends.push(p); return { ok: true }; },
+    mintMagicLoginToken: async () => { throw new Error('mint exploded'); },
+    now: new Date('2026-05-16T11:00:00Z'),
+    log: { error: () => {}, warn: () => {}, log: () => {} }
+  });
+  assert.strictEqual(summary.sent, 1);
+  assert.strictEqual(summary.errors, 0,
+    'mint throw is a soft-fail — must not count as a send error');
+  assert.match(sends[0].html, /https:\/\/decentinvoice\.com\/invoices\/31/);
+  assert.ok(!/\/auth\/magic\//.test(sends[0].html));
+});
+
+test('magic-login: ttlMinutes opt overrides STALE_DRAFT_TTL_MINUTES on the mint call', async () => {
+  process.env.APP_URL = 'https://decentinvoice.com';
+  let capturedTtl = null;
+  const db = fakeDb([staleRow({ user_id: 1, invoice_id: 9, email: 'a@a.com' })]);
+  await staleDraft.processStaleDraftEmails({
+    db,
+    sendEmail: async () => ({ ok: true }),
+    mintMagicLoginToken: async (_db, _uid, opts) => {
+      capturedTtl = opts.ttlMinutes;
+      return { ok: true, url: 'https://x/auth/magic/t' };
+    },
+    ttlMinutes: 60,
+    log: { error: () => {}, warn: () => {}, log: () => {} }
+  });
+  assert.strictEqual(capturedTtl, 60);
+});
+
+test('magic-login: ?next= deep-link passes lib/magic-login.safeNextPath validation', () => {
+  // The auth/magic consume route gates `?next=` through safeNextPath. If the
+  // emitted deep-link doesn't pass that filter, the CTA silently degrades to
+  // /dashboard — losing the whole point of baking in the invoice id. Lock the
+  // wiring across the module boundary.
+  delete require.cache[require.resolve('../lib/magic-login')];
+  const { safeNextPath } = require('../lib/magic-login');
+  process.env.APP_URL = 'https://decentinvoice.com';
+  const html = staleDraft.buildStaleDraftHtml(
+    staleRow({ invoice_id: 42 }),
+    new Date('2026-05-16T11:00:00Z'),
+    { magicLoginUrl: 'https://decentinvoice.com/auth/magic/tok' }
+  );
+  // Extract the `next` param from the CTA url in the HTML body.
+  const m = /next=(\/invoices\/\d+)/.exec(html);
+  assert.ok(m, 'CTA must carry a ?next=/invoices/<id> deep-link');
+  assert.strictEqual(safeNextPath(m[1]), m[1],
+    'the emitted next= path must be accepted by safeNextPath — otherwise the consume route silently falls back to /dashboard');
 });
 
 test('replyTo precedence: reply_to_email > business_email > email', async () => {
