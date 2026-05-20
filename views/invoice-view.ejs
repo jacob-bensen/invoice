@@ -100,12 +100,15 @@
       const _bannerIntents = prefetchedShare.shareIntents;
       const _bannerShareUrl = prefetchedShare.url || '';
       const _bannerClient = invoice.client_name ? String(invoice.client_name).trim() : '';
+      const _bannerEmailClient = (user.plan === 'pro' || user.plan === 'agency') && invoice.client_email
+        ? String(invoice.client_email).trim() : '';
     %>
     <div
       data-testid="draft-send-banner"
       class="mb-6 rounded-2xl border border-brand-200 bg-brand-50 px-5 py-5 print:hidden"
       role="region"
       aria-label="Send this invoice to your client"
+      x-data="{ emailSending: false, emailSent: false, emailError: '', emailSendTo(addr) { try { this.emailSending = true; this.emailError = ''; fetch('/invoices/<%= invoice.id %>/email-client', { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Accept': 'application/json' } }).then(r => r.json().then(d => ({ ok: r.ok, status: r.status, data: d }))).then(res => { if (res.ok && res.data && res.data.ok) { this.emailSending = false; this.emailSent = true; setTimeout(() => { try { window.location.reload(); } catch (e) {} }, 1200); } else { this.emailSending = false; this.emailError = (res.data && res.data.error) || 'send_failed'; } }).catch(() => { this.emailSending = false; this.emailError = 'network_error'; }); } catch (e) { this.emailSending = false; this.emailError = 'js_error'; } } }"
     >
       <p class="text-base font-semibold text-gray-800">
         📤 Ready to send<% if (_bannerClient) { %> to <%= _bannerClient %><% } %>?
@@ -113,6 +116,24 @@
       <p class="text-sm text-gray-600 mt-1 mb-3">
         Tap a channel — we&rsquo;ll mark this invoice as Sent automatically.
       </p>
+      <% if (_bannerEmailClient) { %>
+        <div class="mb-3" data-testid="draft-send-banner-direct-email-row">
+          <button type="button"
+            data-testid="draft-send-banner-direct-email"
+            x-bind:disabled="emailSending || emailSent"
+            @click="emailSendTo('<%= _bannerEmailClient %>')"
+            class="inline-flex items-center gap-2 bg-brand-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-brand-700 disabled:opacity-60 disabled:cursor-not-allowed transition text-sm">
+            <span aria-hidden="true">📧</span>
+            <span x-show="!emailSending && !emailSent">Send by email to <%= _bannerEmailClient %></span>
+            <span x-show="emailSending" x-cloak>Sending…</span>
+            <span x-show="emailSent" x-cloak>✓ Sent to <%= _bannerEmailClient %></span>
+          </button>
+          <p x-show="emailError" x-cloak x-text="emailError === 'no_client_email' ? 'Add a client email on this invoice first.' : emailError === 'not_configured' ? 'Email delivery is not configured yet — use another channel below.' : 'Could not send — try another channel below.'"
+            data-testid="draft-send-banner-direct-email-error"
+            class="text-red-600 text-xs mt-2"></p>
+          <p class="text-xs text-gray-500 mt-1">One tap — we deliver the invoice to your client&rsquo;s inbox and mark it Sent.</p>
+        </div>
+      <% } %>
       <div class="flex flex-wrap gap-2">
         <a href="<%= _bannerIntents.whatsapp %>"
           target="_blank" rel="noopener"
@@ -294,7 +315,7 @@
         data-prefetch-url="<%= _prefUrl %>"
         data-prefetch-intents="<%= _prefIntentsJson %>"
         data-prefetch-followup="<%= _prefFollowUpJson %>"
-        x-data="{ url: '', copied: false, loading: false, error: '', intents: null, followUpIntents: null, nativeShareSupported: false, fireIntent(kind) { try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: kind }) }).catch(() => {}); } catch (e) {} }, nativeShare(data) { try { if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') { navigator.share(data).catch(() => {}); } } catch (e) {} } }"
+        x-data="{ url: '', copied: false, loading: false, error: '', intents: null, followUpIntents: null, nativeShareSupported: false, emailSending: false, emailSent: false, emailError: '', fireIntent(kind) { try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: kind }) }).catch(() => {}); } catch (e) {} }, nativeShare(data) { try { if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') { navigator.share(data).catch(() => {}); } } catch (e) {} }, emailSendDirect() { try { this.emailSending = true; this.emailError = ''; fetch('/invoices/<%= invoice.id %>/email-client', { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Accept': 'application/json' } }).then(r => r.json().then(d => ({ ok: r.ok, status: r.status, data: d }))).then(res => { if (res.ok && res.data && res.data.ok) { this.emailSending = false; this.emailSent = true; setTimeout(() => { try { window.location.reload(); } catch (e) {} }, 1200); } else { this.emailSending = false; this.emailError = (res.data && res.data.error) || 'send_failed'; } }).catch(() => { this.emailSending = false; this.emailError = 'network_error'; }); } catch (e) { this.emailSending = false; this.emailError = 'js_error'; } } }"
         x-init="try { if ($el.dataset.prefetchUrl) { url = $el.dataset.prefetchUrl; } if ($el.dataset.prefetchIntents) { intents = JSON.parse($el.dataset.prefetchIntents); } if ($el.dataset.prefetchFollowup) { followUpIntents = JSON.parse($el.dataset.prefetchFollowup); } if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') { nativeShareSupported = true; } } catch (e) {}">
         <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Public share link</p>
         <% if (_shareIsPaidOwner) { %>
@@ -353,6 +374,25 @@
         <div x-show="url && intents" x-cloak class="mt-4 pt-4 border-t border-gray-100"
           data-testid="public-share-intents">
           <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Send to client</p>
+          <% if (_shareIsPaidOwner && invoice.client_email) { %>
+            <div class="mb-3" data-testid="public-share-direct-email-row">
+              <button type="button"
+                data-testid="public-share-direct-email"
+                x-bind:disabled="emailSending || emailSent"
+                @click="emailSendDirect()"
+                title="Send the invoice directly to your client's inbox from DecentInvoice — no mailto: roundtrip"
+                class="inline-flex items-center gap-2 bg-brand-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-brand-700 disabled:opacity-60 disabled:cursor-not-allowed transition text-sm">
+                <span aria-hidden="true">📧</span>
+                <span x-show="!emailSending && !emailSent">Send by email to <%= invoice.client_email %></span>
+                <span x-show="emailSending" x-cloak>Sending…</span>
+                <span x-show="emailSent" x-cloak>✓ Sent to <%= invoice.client_email %></span>
+              </button>
+              <p x-show="emailError" x-cloak x-text="emailError === 'no_client_email' ? 'Add a client email on this invoice first.' : emailError === 'not_configured' ? 'Email delivery is not configured yet — use another channel below.' : 'Could not send — try another channel below.'"
+                data-testid="public-share-direct-email-error"
+                class="text-red-600 text-xs mt-2"></p>
+              <p class="text-xs text-gray-500 mt-1">One tap — we deliver the invoice straight to your client and mark it Sent.</p>
+            </div>
+          <% } %>
           <div class="flex flex-wrap gap-2">
             <a x-bind:href="intents && intents.whatsapp" target="_blank" rel="noopener"
               data-share="whatsapp"

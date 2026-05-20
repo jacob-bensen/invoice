@@ -755,6 +755,77 @@ router.post('/:id/share-intent', requireAuth, async (req, res) => {
   }
 });
 
+/*
+ * One-tap server-side "Send by email" for Pro/Agency users on /invoices/:id
+ * (Milestone 3 — first invoice created → first invoice sent). The existing
+ * share-intent buttons all hand off to a native app (WhatsApp / Messages /
+ * mailto: / OS share sheet) and rely on the user to actually hit send in
+ * that other app. This endpoint short-circuits the round-trip: server
+ * sends the invoice email directly via Resend (lib/email.sendInvoiceEmail)
+ * and atomically flips draft → sent in the same request. One tap, real
+ * delivery, no second app.
+ *
+ * Gates:
+ *   - Auth + ownership (db.getInvoiceById's WHERE user_id filter)
+ *   - Pro or Agency plan (free users see the existing pro-lock copy
+ *     instead of this button — the route still hard-rejects with 402 as a
+ *     defence-in-depth measure against a tampered request)
+ *   - invoice.client_email present (lib.sendInvoiceEmail returns
+ *     no_client_email otherwise; we surface that as a 400 so the UI can
+ *     prompt the user to add a client email to the invoice)
+ *
+ * On success the response carries the same { flipped, status } shape as
+ * /share-intent so the client-side handler can update the status badge.
+ * The atomic flip uses the same markInvoiceSentFromShareIntent helper —
+ * race-safe against the client-view auto-flip or a concurrent explicit
+ * Mark-as-Sent. Idempotent on already-sent invoices (still re-sends the
+ * email; the freelancer may have hit "client didn't receive it, send
+ * again" — that's a feature, not a bug).
+ */
+router.post('/:id/email-client', requireAuth, async (req, res) => {
+  try {
+    const user = await db.getUserById(req.session.user.id);
+    if (!user) return res.status(401).json({ error: 'unauthorized' });
+    if (user.plan !== 'pro' && user.plan !== 'agency') {
+      return res.status(402).json({ error: 'plan_locked' });
+    }
+    const invoice = await db.getInvoiceById(req.params.id, req.session.user.id);
+    if (!invoice) return res.status(404).json({ error: 'not_found' });
+    if (!invoice.client_email) {
+      return res.status(400).json({ error: 'no_client_email' });
+    }
+
+    const sendResult = await sendInvoiceEmail(invoice, user);
+    if (!sendResult || sendResult.ok !== true) {
+      const reason = (sendResult && sendResult.reason) || 'send_failed';
+      const status = reason === 'not_configured' ? 503 : 502;
+      return res.status(status).json({ error: reason });
+    }
+
+    // Atomic draft → sent flip (idempotent on already-sent invoices).
+    let row = null;
+    try {
+      row = await db.markInvoiceSentFromShareIntent(invoice.id, req.session.user.id);
+    } catch (e) {
+      console.error('email-client status flip failed:', e && e.message);
+    }
+    const newStatus = (row && row.status) || invoice.status;
+    const flipped = invoice.status === 'draft' && newStatus === 'sent';
+
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      status: newStatus,
+      flipped,
+      sent_to: invoice.client_email,
+      message_id: sendResult.id || null
+    });
+  } catch (err) {
+    console.error('email-client send error:', err && err.message);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
 router.post('/:id/delete', requireAuth, async (req, res) => {
   try {
     await db.deleteInvoice(req.params.id, req.session.user.id);
