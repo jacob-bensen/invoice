@@ -53,6 +53,7 @@ router.get('/', requireAuth, async (req, res) => {
     const invoiceLimitProgress = buildInvoiceLimitProgress(user);
     const recentRevenueCard = buildRecentRevenueCard(user, recentRevenue);
     const annualUpgradePrompt = buildAnnualUpgradePrompt(user);
+    const pendingQuickInvoice = buildPendingQuickInvoiceBanner(user);
     // Pro social-proof anchor (#135): fire the cached count lookup only on
     // the final-day banner render path — earlier-trial banner variants
     // don't surface this line, so a fresh-cache miss isn't worth the
@@ -63,7 +64,7 @@ router.get('/', requireAuth, async (req, res) => {
     const celebration = await loadCelebration(user).catch(() => null);
     const staleDraftPrompt = buildStaleDraftPrompt(user, oldestStaleDraft);
     const firstRealInvoicePrompt = buildFirstRealInvoicePrompt(user, invoices);
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, firstRealInvoicePrompt, noindex: true });
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, firstRealInvoicePrompt, pendingQuickInvoice, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
@@ -71,7 +72,8 @@ router.get('/', requireAuth, async (req, res) => {
       flash: null, days_left_in_trial: 0, onboarding: null,
       invoiceLimitProgress: null, recentRevenue: null,
       annualUpgradePrompt: null, socialProof: null, celebration: null,
-      staleDraftPrompt: null, firstRealInvoicePrompt: null, noindex: true
+      staleDraftPrompt: null, firstRealInvoicePrompt: null,
+      pendingQuickInvoice: null, noindex: true
     });
   }
 });
@@ -190,6 +192,73 @@ function buildFirstRealInvoicePrompt(user, invoices) {
   const list = Array.isArray(invoices) ? invoices : [];
   if (list.some((i) => i && !i.is_seed)) return null;
   return { hasSeed: list.some((i) => i && i.is_seed) };
+}
+
+/*
+ * "Continue your draft invoice" banner (Milestone 2 — first dashboard
+ * re-entry → first real invoice created). Surfaces on the dashboard when
+ * the user has an autosaved /invoices/quick draft. The payload is the raw
+ * column value from db.getUserById; we re-validate the shape here because
+ * legacy/migration rows or a hand-edited DB row might not match the four
+ * expected string fields. Returns null if every field is empty (UI shows
+ * nothing) or if the column is null / not an object.
+ */
+const PENDING_QUICK_MAX_LEN = 500;
+const PENDING_QUICK_AMOUNT_MAX_LEN = 32;
+
+function normalizePendingQuickInvoiceInput(body) {
+  if (!body || typeof body !== 'object') return null;
+  const clamp = (v, max) => {
+    if (typeof v === 'string') return v.slice(0, max);
+    if (typeof v === 'number' && Number.isFinite(v)) return String(v).slice(0, max);
+    return '';
+  };
+  const payload = {
+    client_name: clamp(body.client_name, PENDING_QUICK_MAX_LEN),
+    client_email: clamp(body.client_email, PENDING_QUICK_MAX_LEN),
+    description: clamp(body.description, PENDING_QUICK_MAX_LEN),
+    amount: clamp(body.amount, PENDING_QUICK_AMOUNT_MAX_LEN)
+  };
+  const allEmpty = !payload.client_name.trim()
+    && !payload.client_email.trim()
+    && !payload.description.trim()
+    && !payload.amount.trim();
+  return { payload, allEmpty };
+}
+
+function readPendingQuickInvoice(user) {
+  if (!user) return null;
+  let raw = user.pending_quick_invoice;
+  if (raw == null) return null;
+  // pg returns JSONB as a parsed object by default; tolerate stringified
+  // values from test stubs or legacy drivers.
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw); } catch (e) { return null; }
+  }
+  if (!raw || typeof raw !== 'object') return null;
+  const pickStr = (v) => (typeof v === 'string' ? v : '');
+  const fields = {
+    client_name: pickStr(raw.client_name),
+    client_email: pickStr(raw.client_email),
+    description: pickStr(raw.description),
+    amount: pickStr(raw.amount)
+  };
+  const allEmpty = !fields.client_name.trim()
+    && !fields.client_email.trim()
+    && !fields.description.trim()
+    && !fields.amount.trim();
+  if (allEmpty) return null;
+  return fields;
+}
+
+function buildPendingQuickInvoiceBanner(user) {
+  const fields = readPendingQuickInvoice(user);
+  if (!fields) return null;
+  return {
+    clientName: fields.client_name.trim(),
+    description: fields.description.trim(),
+    amount: fields.amount.trim()
+  };
 }
 
 function buildStaleDraftPrompt(user, draft) {
@@ -351,12 +420,48 @@ router.get('/quick', requireAuth, async (req, res) => {
   if (user.plan === 'free' && user.invoice_count >= FREE_LIMIT) {
     return res.redirect('/invoices?limit_hit=1');
   }
+  const pending = readPendingQuickInvoice(user);
   res.render('invoice-quick', {
     title: 'Quick invoice',
     user,
     flash: null,
+    submitted: pending || null,
+    pendingRestored: !!pending,
     noindex: true
   });
+});
+
+/*
+ * "Continue your draft invoice" autosave endpoint (Milestone 2). The
+ * /invoices/quick form posts a JSON body here on every debounced input
+ * change so a user who starts typing then bounces can pick up where they
+ * left off — both via the form pre-fill on next GET /invoices/quick AND
+ * via the dashboard "Continue your draft invoice" banner. Auth-required;
+ * the in-progress draft is per-user. CSRF protected via the same
+ * middleware as every other authed POST.
+ *
+ * The endpoint is forgiving by design: unknown fields are ignored, missing
+ * fields are treated as empty strings, oversize fields are clamped at 500
+ * chars (32 for amount). An all-empty payload clears the pending row
+ * rather than storing { '', '', '', '' } — keeps the dashboard banner
+ * from firing on a phantom draft after the user backspaces every field.
+ */
+router.post('/quick/autosave', requireAuth, async (req, res) => {
+  try {
+    const normalized = normalizePendingQuickInvoiceInput(req.body);
+    if (!normalized) {
+      return res.json({ ok: true, stored: false });
+    }
+    if (normalized.allEmpty) {
+      await db.clearPendingQuickInvoice(req.session.user.id);
+      return res.json({ ok: true, stored: false });
+    }
+    await db.setPendingQuickInvoice(req.session.user.id, normalized.payload);
+    res.json({ ok: true, stored: true });
+  } catch (err) {
+    console.error('Quick invoice autosave error:', err && err.message);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
 });
 
 router.post('/quick', requireAuth, [
@@ -412,6 +517,17 @@ router.post('/quick', requireAuth, [
     });
 
     req.session.user.invoice_count = (req.session.user.invoice_count || 0) + 1;
+
+    // Clear the autosaved "Continue your draft invoice" payload — the
+    // freelancer has now created the real invoice, so the dashboard banner
+    // + the GET /invoices/quick pre-fill must stop firing. Best-effort:
+    // never blocks the redirect (a stuck banner is recoverable; a 500 on
+    // create is not).
+    try {
+      await db.clearPendingQuickInvoice(req.session.user.id);
+    } catch (e) {
+      console.error('Quick invoice clear pending failed:', e && e.message);
+    }
 
     // Combined create+send path: the freelancer ticked "Create & email to
     // client" on the form, which collapses the create → land on /:id →
@@ -941,6 +1057,9 @@ module.exports.buildRecentRevenueCard = buildRecentRevenueCard;
 module.exports.buildAnnualUpgradePrompt = buildAnnualUpgradePrompt;
 module.exports.buildStaleDraftPrompt = buildStaleDraftPrompt;
 module.exports.buildFirstRealInvoicePrompt = buildFirstRealInvoicePrompt;
+module.exports.buildPendingQuickInvoiceBanner = buildPendingQuickInvoiceBanner;
+module.exports.readPendingQuickInvoice = readPendingQuickInvoice;
+module.exports.normalizePendingQuickInvoiceInput = normalizePendingQuickInvoiceInput;
 module.exports.loadOldestStaleDraft = loadOldestStaleDraft;
 module.exports.onboardingDismissHandler = onboardingDismissHandler;
 module.exports.ALLOWED_INVOICE_STATUSES = ALLOWED_INVOICE_STATUSES;

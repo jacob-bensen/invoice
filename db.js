@@ -39,6 +39,38 @@ const db = {
     return rows[0];
   },
 
+  /*
+   * "Continue your draft invoice" recovery (Milestone 2). Persists the
+   * in-progress /invoices/quick form fields server-side on every debounced
+   * keystroke so a user who starts typing then bounces can resume on next
+   * visit (form pre-fill + dashboard banner). Payload is the same 4-field
+   * shape the route normalizes — strings only, length-clamped at the call
+   * site. NULL payload clears the row (same effect as clearPendingQuickInvoice
+   * but kept distinct for caller clarity).
+   */
+  async setPendingQuickInvoice(userId, payload) {
+    const json = (payload && typeof payload === 'object') ? JSON.stringify(payload) : null;
+    await pool.query(
+      `UPDATE users
+         SET pending_quick_invoice = $2::jsonb,
+             pending_quick_invoice_updated_at = NOW(),
+             updated_at = NOW()
+       WHERE id = $1`,
+      [userId, json]
+    );
+  },
+
+  async clearPendingQuickInvoice(userId) {
+    await pool.query(
+      `UPDATE users
+         SET pending_quick_invoice = NULL,
+             pending_quick_invoice_updated_at = NULL,
+             updated_at = NOW()
+       WHERE id = $1`,
+      [userId]
+    );
+  },
+
   async getInvoicesByUser(userId) {
     const { rows } = await pool.query(
       'SELECT * FROM invoices WHERE user_id = $1 ORDER BY created_at DESC',

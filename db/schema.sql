@@ -253,6 +253,19 @@ CREATE INDEX IF NOT EXISTS idx_invoices_reminder_due
   ON invoices(status, due_date)
   WHERE status = 'sent';
 
+-- "Continue your draft invoice" recovery (Milestone 2 — first dashboard
+-- re-entry → first real invoice created). The /invoices/quick form
+-- autosaves any in-progress fields (client_name, client_email, description,
+-- amount) on input so a user who starts typing then bounces can pick up
+-- where they left off on next visit. The dashboard surfaces a banner
+-- pointing back to /invoices/quick whenever this JSON column is populated,
+-- and the GET /invoices/quick handler pre-fills the form from it. Cleared
+-- on successful create. JSONB so future field additions (notes, due_date,
+-- etc.) don't need a schema change; nullable so the row is empty for the
+-- vast majority of users who never abandon mid-typing.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_quick_invoice JSONB;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_quick_invoice_updated_at TIMESTAMP;
+
 -- Conversion-intelligence signals captured from the upgrade-modal "What's
 -- missing?" widget (#145). user_id is nullable so the table also accepts
 -- anonymous pricing-page submissions; ON DELETE SET NULL preserves the

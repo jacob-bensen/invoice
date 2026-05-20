@@ -197,6 +197,38 @@
 
   <%- include('partials/celebration-banner') %>
 
+  <% if (locals.pendingQuickInvoice && pendingQuickInvoice) { %>
+    <div
+      data-testid="pending-quick-invoice-banner"
+      class="mb-6 rounded-xl border border-brand-200 bg-brand-50 px-5 py-4 flex items-start gap-3 print:hidden"
+      role="region"
+      aria-label="Continue your draft invoice"
+    >
+      <div class="text-brand-600 text-xl leading-none mt-0.5" aria-hidden="true">&#128221;</div>
+      <div class="flex-1 text-sm">
+        <p class="font-semibold text-brand-800">
+          Pick up your draft invoice<% if (pendingQuickInvoice.clientName) { %> for <span data-testid="pending-quick-invoice-client"><%= pendingQuickInvoice.clientName %></span><% } %>.
+        </p>
+        <p class="text-brand-700 mt-0.5">
+          <% if (pendingQuickInvoice.description) { %>
+            <span data-testid="pending-quick-invoice-description"><%= pendingQuickInvoice.description %></span><% if (pendingQuickInvoice.amount) { %> &middot; $<span data-testid="pending-quick-invoice-amount"><%= pendingQuickInvoice.amount %></span><% } %>
+          <% } else if (pendingQuickInvoice.amount) { %>
+            $<span data-testid="pending-quick-invoice-amount"><%= pendingQuickInvoice.amount %></span>
+          <% } else { %>
+            You started filling in an invoice but didn&rsquo;t finish &mdash; one click to resume.
+          <% } %>
+        </p>
+        <div class="mt-3">
+          <a
+            href="/invoices/quick"
+            data-testid="pending-quick-invoice-cta"
+            class="bg-brand-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-brand-700 transition text-sm inline-block"
+          >Continue invoice &rarr;</a>
+        </div>
+      </div>
+    </div>
+  <% } %>
+
   <% if (locals.staleDraftPrompt && staleDraftPrompt) { %>
     <div
       data-testid="stale-draft-prompt"

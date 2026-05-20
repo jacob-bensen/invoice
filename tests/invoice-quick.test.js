@@ -740,7 +740,8 @@ async function testViewRendersEmailButtonForPro() {
   assert.ok(html.includes('data-testid="invoice-quick-email-hint"'),
     'pro user must see the one-tap email hint');
   // Alpine binding gates the email button on a non-empty client_email
-  assert.ok(/:disabled="!clientEmail/.test(html),
+  // (now lives under the shared autosave-scope as fields.client_email)
+  assert.ok(/:disabled="!fields\.client_email/.test(html),
     'email button must disable when client_email is empty (Alpine binding)');
 }
 
