@@ -239,6 +239,23 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_claim_method VARCHAR(40);
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_claim_reference VARCHAR(200);
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_claim_note TEXT;
 
+-- Client-viewed-but-unpaid follow-up nudge stamp (Milestone 4 — first invoice
+-- sent → first payment received). Fills the gap between the real-time
+-- sendClientViewedEmail (fires the instant of first open) and the
+-- overdue-freelancer-digest (fires only AFTER due_date passes, often weeks
+-- later). The 48h-7d window captures the peak moment: the client demonstrably
+-- saw the invoice and is now sitting on it; a freelancer nudge at this exact
+-- moment closes the loop before the client forgets entirely. Works for ALL
+-- plans — free users get the freelancer-side push to use share-intent buttons,
+-- Pro users get the same nudge. One stamp per invoice (not per user) so
+-- multiple unpaid-but-viewed invoices each get their own follow-up window.
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_viewed_followup_sent_at TIMESTAMP;
+CREATE INDEX IF NOT EXISTS idx_invoices_client_viewed_followup
+  ON invoices(first_viewed_at)
+  WHERE status IN ('sent', 'overdue')
+    AND first_viewed_at IS NOT NULL
+    AND client_viewed_followup_sent_at IS NULL;
+
 -- Password reset / magic-link sign-in (Milestone 1 — signup → first dashboard
 -- re-entry). A user who loses their session has to be able to get back into
 -- their seeded dashboard or the activation funnel breaks at step 1. Tokens

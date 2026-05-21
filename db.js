@@ -599,6 +599,84 @@ const db = {
   },
 
   /*
+   * Client-viewed-but-unpaid follow-up cron query. Picks up unpaid invoices
+   * whose client has opened the public /i/<token> link `minHours` ago but who
+   * hasn't paid yet — the peak moment where a freelancer follow-up converts.
+   *
+   * Predicates:
+   *   - status IN ('sent','overdue') — only invoices that are actually out
+   *     with the client. Drafts and paid are excluded.
+   *   - is_seed=false — never email about the sample invoice. The seed is
+   *     unshareable in practice (no public_token issued), but belt-and-braces.
+   *   - first_viewed_at IS NOT NULL — the client demonstrably opened the link.
+   *     This is the conversion-moment signal that distinguishes this nudge
+   *     from the overdue-digest (which fires only after due_date passes,
+   *     potentially weeks later).
+   *   - first_viewed_at <= NOW() - minHours — give the client a window to
+   *     pay on their own before we ping the freelancer.
+   *   - first_viewed_at > NOW() - maxDays — skip very-old viewed invoices
+   *     so we don't double-email with the overdue-digest cohort.
+   *   - client_viewed_followup_sent_at IS NULL — one-shot per invoice. Once
+   *     stamped the invoice never re-enters this cohort.
+   *   - u.welcome_email_sent_at IS NOT NULL — activation ordering: a brand-
+   *     new signup must receive the welcome email before any follow-up nudge.
+   *   - u.email IS NOT NULL — defence-in-depth.
+   *
+   * LIMIT 500 caps the cron tick. ORDER BY first_viewed_at ASC drains the
+   * oldest-viewed unpaid invoices first — peak conversion-likelihood ordering.
+   */
+  async getInvoicesForClientViewedFollowup(minHours = 48, maxDays = 14) {
+    const hours = Number.isFinite(minHours) && minHours > 0
+      ? Math.floor(minHours)
+      : 48;
+    const max = Number.isFinite(maxDays) && maxDays > 0
+      ? Math.floor(maxDays)
+      : 14;
+    const { rows } = await pool.query(
+      `SELECT
+         i.id                AS invoice_id,
+         i.user_id           AS user_id,
+         i.invoice_number    AS invoice_number,
+         i.client_name       AS client_name,
+         i.total             AS invoice_total,
+         i.first_viewed_at   AS first_viewed_at,
+         i.view_count        AS view_count,
+         i.status            AS status,
+         u.email             AS email,
+         u.name              AS name,
+         u.business_name     AS business_name,
+         u.reply_to_email    AS reply_to_email,
+         u.business_email    AS business_email
+       FROM invoices i
+       JOIN users u ON u.id = i.user_id
+       WHERE i.status IN ('sent', 'overdue')
+         AND i.is_seed = false
+         AND i.first_viewed_at IS NOT NULL
+         AND i.first_viewed_at <= NOW() - ($1 * INTERVAL '1 hour')
+         AND i.first_viewed_at > NOW() - ($2 * INTERVAL '1 day')
+         AND i.client_viewed_followup_sent_at IS NULL
+         AND u.email IS NOT NULL
+         AND u.welcome_email_sent_at IS NOT NULL
+       ORDER BY i.first_viewed_at ASC
+       LIMIT 500`,
+      [hours, max]
+    );
+    return rows;
+  },
+
+  async markClientViewedFollowupSent(invoiceId) {
+    if (!invoiceId) return null;
+    const { rows } = await pool.query(
+      `UPDATE invoices SET client_viewed_followup_sent_at = NOW(), updated_at = NOW()
+         WHERE id = $1
+           AND client_viewed_followup_sent_at IS NULL
+         RETURNING id, client_viewed_followup_sent_at`,
+      [invoiceId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Recent paid-revenue stats for the dashboard "what you collected lately"
    * row (INTERNAL_TODO #107). Returns SUM(total), COUNT(*) and a count of
    * distinct paying clients (deduped on lowercased email-or-name) over a

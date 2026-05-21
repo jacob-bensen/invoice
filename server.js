@@ -214,5 +214,14 @@ app.listen(PORT, () => {
     } catch (err) {
       console.error('[overdue-digest] startup failed:', err && err.message);
     }
+
+    try {
+      const { startClientViewedFollowupJob } = require('./jobs/client-viewed-followup');
+      const cv = startClientViewedFollowupJob();
+      if (cv && cv.ok) console.log(`[client-viewed-followup] scheduled (${cv.schedule})`);
+      else console.warn('[client-viewed-followup] not scheduled:', cv && cv.reason);
+    } catch (err) {
+      console.error('[client-viewed-followup] startup failed:', err && err.message);
+    }
   }
 });
