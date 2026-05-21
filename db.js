@@ -477,6 +477,53 @@ const db = {
   },
 
   /*
+   * Second no-invoice nudge cron query. Mirrors getUsersForNoInvoiceNudge but
+   * for the day-7+ cohort still at invoice_count = 0 — recovers users who
+   * either ignored the 48h nudge or missed it entirely (RESEND_API_KEY unset
+   * when their first nudge tick ran). One-shot: `second_no_invoice_nudge_sent_at
+   * IS NULL` so the second nudge never repeats either.
+   *
+   * The `no_invoice_nudge_sent_at IS NULL OR < NOW() - 4d` clause prevents the
+   * first and second nudge from going out on the same cron day for users
+   * whose initial nudge was delayed (e.g. RESEND configured retroactively).
+   * The 4-day inner gap is the smallest window that's bigger than the
+   * 48h-vs-7d cohort gap, so under normal operation the second nudge always
+   * lands at least 4 days after the first.
+   */
+  async getUsersForSecondNoInvoiceNudge(minAgeHours = 168) {
+    const hours = Number.isFinite(minAgeHours) && minAgeHours > 0
+      ? Math.floor(minAgeHours)
+      : 168;
+    const { rows } = await pool.query(
+      `SELECT id, email, name, business_name, reply_to_email, business_email, created_at
+         FROM users
+        WHERE invoice_count = 0
+          AND email IS NOT NULL
+          AND welcome_email_sent_at IS NOT NULL
+          AND second_no_invoice_nudge_sent_at IS NULL
+          AND created_at <= NOW() - ($1 * INTERVAL '1 hour')
+          AND (no_invoice_nudge_sent_at IS NULL
+               OR no_invoice_nudge_sent_at <= NOW() - INTERVAL '4 days')
+        ORDER BY created_at ASC
+        LIMIT 500`,
+      [hours]
+    );
+    return rows;
+  },
+
+  async markSecondNoInvoiceNudgeSent(userId) {
+    if (!userId) return null;
+    const { rows } = await pool.query(
+      `UPDATE users SET second_no_invoice_nudge_sent_at = NOW(), updated_at = NOW()
+         WHERE id = $1
+           AND second_no_invoice_nudge_sent_at IS NULL
+         RETURNING id, second_no_invoice_nudge_sent_at`,
+      [userId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Overdue-invoice freelancer digest query (Milestone 4 — first invoice sent
    * → first payment received). Aggregates one row per user whose sent
    * invoices are past their due_date, returning counts + totals + the

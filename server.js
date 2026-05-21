@@ -198,6 +198,15 @@ app.listen(PORT, () => {
     }
 
     try {
+      const { startSecondNoInvoiceNudgeJob } = require('./jobs/second-no-invoice-nudge');
+      const n2 = startSecondNoInvoiceNudgeJob();
+      if (n2 && n2.ok) console.log(`[second-no-invoice-nudge] scheduled (${n2.schedule})`);
+      else console.warn('[second-no-invoice-nudge] not scheduled:', n2 && n2.reason);
+    } catch (err) {
+      console.error('[second-no-invoice-nudge] startup failed:', err && err.message);
+    }
+
+    try {
       const { startOverdueDigestJob } = require('./jobs/overdue-freelancer-digest');
       const o = startOverdueDigestJob();
       if (o && o.ok) console.log(`[overdue-digest] scheduled (${o.schedule})`);

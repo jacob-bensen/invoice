@@ -186,6 +186,15 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS stale_draft_email_sent_at TIMESTAMP;
 -- covering the cohort that gets neither because they never created a draft.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS no_invoice_nudge_sent_at TIMESTAMP;
 
+-- Second no-invoice nudge stamp. Fires 7+ days after signup for the cohort
+-- still at invoice_count = 0 — the 48h nudge above is one-shot, so a user who
+-- ignored or missed it (delivery delay, busy week, RESEND key unset when the
+-- first nudge should have fired) is currently lost forever. This second pass
+-- uses sharper, problem-solving framing ("hit reply if anything's blocking
+-- you") on the same magic-login + /invoices/quick CTA. Also one-shot — a user
+-- silent for 7 days after two nudges will not be moved by a third.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS second_no_invoice_nudge_sent_at TIMESTAMP;
+
 -- Overdue-invoice freelancer digest stamp (Milestone 4 — first invoice sent →
 -- first payment received). Daily cron picks up users whose sent invoices have
 -- gone past their due_date and aggregates them into a single "you have N
