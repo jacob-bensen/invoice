@@ -7,7 +7,14 @@ const { createInvoicePaymentLink } = stripePaymentLinkLib;
 // Test stubs may omit parsePaymentMethods — fall back to card-only.
 const parsePaymentMethods = stripePaymentLinkLib.parsePaymentMethods || (() => ['card']);
 const { firePaidWebhook, buildPaidPayload } = require('../lib/outbound-webhook');
-const { sendInvoiceEmail, sendReferralCelebrationEmail } = require('../lib/email');
+const {
+  sendInvoiceEmail,
+  sendReferralCelebrationEmail,
+  buildInvoiceSubject,
+  buildInvoiceHtml,
+  buildInvoiceText,
+  resolveReplyTo: resolveEmailReplyTo
+} = require('../lib/email');
 const { loadProSubscriberCount } = require('../lib/pro-subscriber-count');
 const { triggerFirstPaidCelebration, buildReferralUrl } = require('../lib/celebration');
 const { triggerFirstSentCelebration } = require('../lib/first-sent-celebration');
@@ -756,6 +763,44 @@ router.get('/:id/print', requireAuth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.redirect('/dashboard');
+  }
+});
+
+/*
+ * Preview client email (Milestone 3 — first invoice created → first invoice
+ * sent). Renders the exact subject + HTML body that lib/email.sendInvoiceEmail
+ * would deliver to the invoice's client_email, sandboxed in an iframe so a
+ * freelancer can verify "what my client will see" before tapping a share
+ * button. Removes the dominant pre-send anxiety beat ("I don't know what
+ * this looks like to them") that keeps users stuck in draft.
+ *
+ * Owner-only — db.getInvoiceById's user_id gate keeps a cross-tenant request
+ * from rendering someone else's invoice. Cache-Control: no-store so the
+ * preview never lands in an intermediate proxy. The iframe carries a strict
+ * sandbox attribute so any owner-supplied content in the rendered email
+ * (line-item descriptions, notes) cannot escape into the parent page even
+ * if a future email-template change accidentally drops the existing
+ * escapeHtml() guard.
+ */
+router.get('/:id/preview-email', requireAuth, async (req, res) => {
+  try {
+    const invoice = await db.getInvoiceById(req.params.id, req.session.user.id);
+    if (!invoice) return res.redirect('/dashboard');
+    const user = await db.getUserById(req.session.user.id);
+    const owner = user || req.session.user || {};
+    const emailSubject = buildInvoiceSubject(invoice, owner);
+    const emailHtml = buildInvoiceHtml(invoice, owner);
+    const emailText = buildInvoiceText(invoice, owner);
+    const replyTo = resolveEmailReplyTo(owner);
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.render('invoice-preview-email', {
+      title: `Preview email — ${invoice.invoice_number}`,
+      invoice, user: owner, emailSubject, emailHtml, emailText, replyTo,
+      noindex: true
+    });
+  } catch (err) {
+    console.error('Email preview render failed:', err && err.message);
+    res.redirect(`/invoices/${req.params.id}`);
   }
 });
 

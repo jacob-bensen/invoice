@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <% if (typeof noindex !== 'undefined' && noindex) { %><meta name="robots" content="noindex,nofollow"><% } %>
+  <title><%= title %></title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: #1f2937; background: #f7f7f9; margin: 0; padding: 24px; }
+    .wrap { max-width: 720px; margin: 0 auto; }
+    .chrome { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 12px; padding: 16px 20px; margin-bottom: 16px; }
+    .chrome h1 { font-size: 18px; margin: 0 0 4px 0; color: #92400e; }
+    .chrome p { font-size: 14px; margin: 4px 0; color: #b45309; }
+    .chrome a { color: #b45309; text-decoration: underline; font-weight: 600; }
+    .meta { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; font-size: 13px; color: #374151; margin: 12px 0 0 0; }
+    .meta dt { font-weight: 600; color: #6b7280; }
+    .meta dd { margin: 0; word-break: break-all; }
+    iframe { width: 100%; min-height: 700px; border: 1px solid #e5e7eb; border-radius: 12px; background: white; display: block; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="chrome" data-testid="preview-email-chrome">
+      <h1>📬 Preview &mdash; this is what your client will receive</h1>
+      <p>No email has been sent. This is a preview of the message we&rsquo;d deliver to <strong data-testid="preview-email-recipient"><%= (invoice.client_email && String(invoice.client_email).trim()) || '(no client email set &mdash; add one on the invoice to enable email send)' %></strong>.</p>
+      <p><a href="/invoices/<%= invoice.id %>" data-testid="preview-email-back">&larr; Back to invoice</a></p>
+      <dl class="meta" data-testid="preview-email-meta">
+        <dt>From</dt><dd><%= (user && (user.business_name || user.name)) || 'Your Business' %></dd>
+        <% if (replyTo) { %><dt>Reply-To</dt><dd data-testid="preview-email-reply-to"><%= replyTo %></dd><% } %>
+        <dt>Subject</dt><dd data-testid="preview-email-subject"><%= emailSubject %></dd>
+      </dl>
+    </div>
+    <iframe
+      data-testid="preview-email-iframe"
+      sandbox=""
+      title="Preview: client-facing invoice email"
+      srcdoc="<%= emailHtml %>"
+    ></iframe>
+  </div>
+</body>
+</html>
