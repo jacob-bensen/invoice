@@ -68,16 +68,22 @@ const users = new Map();
 const createCalls = [];
 const markSentCalls = [];
 const emailSendCalls = [];
+const updateUserCalls = [];
+const clearPendingCalls = [];
 let nextInvoiceId = 100;
 let emailSendImpl = async () => ({ ok: true, id: 'em_quick' });
+let updateUserImpl = null;
 
 function resetStore() {
   users.clear();
   createCalls.length = 0;
   markSentCalls.length = 0;
   emailSendCalls.length = 0;
+  updateUserCalls.length = 0;
+  clearPendingCalls.length = 0;
   nextInvoiceId = 100;
   emailSendImpl = async () => ({ ok: true, id: 'em_quick' });
+  updateUserImpl = null;
 }
 
 function buildDbStub() {
@@ -108,6 +114,17 @@ function buildDbStub() {
       async markInvoiceSentFromShareIntent(invoiceId, userId) {
         markSentCalls.push({ invoiceId, userId });
         return { id: invoiceId, status: 'sent', sent_via_share_intent_at: new Date() };
+      },
+      async updateUser(id, fields) {
+        updateUserCalls.push({ id, fields });
+        if (updateUserImpl) return updateUserImpl(id, fields);
+        const u = users.get(id);
+        if (!u) return null;
+        Object.assign(u, fields);
+        return u;
+      },
+      async clearPendingQuickInvoice(userId) {
+        clearPendingCalls.push(userId);
       },
       async getOrCreatePublicToken() { return null; },
       async getOldestStaleDraft() { return null; },
@@ -447,6 +464,132 @@ async function testPostRepopulatesFormOnValidationError() {
 }
 
 // ============================================================================
+// Layer 2c — POST /invoices/quick inline payment_instructions capture
+// ============================================================================
+//
+// Free-tier owners have no Stripe Pay button — the public /i/<token> share
+// page their client opens shows no payment path unless they've filled in
+// users.payment_instructions. The post-create inline prompt on /invoices/:id
+// closes that gap once a user reaches it, but many users tap one of the
+// Ready-to-send banner share buttons immediately, before noticing the
+// amber prompt below. Capturing the field on /invoices/quick — before the
+// invoice exists — guarantees the FIRST share already carries payment
+// instructions. Server hard-gates on plan=free + no existing instructions
+// so a Pro user (who has a Pay Link) or a free user who already saved
+// instructions can't accidentally overwrite via a forged payload.
+
+async function testPostPaymentInstructionsSavesForFreeUserWithoutInstructions() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com', payment_instructions: null });
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'free', invoice_count: 0 }, routes);
+
+  const res = await request(app, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    description: 'Work',
+    amount: '500',
+    payment_instructions: '  Venmo @alice\nZelle: alice@bank.com  '
+  });
+  assert.strictEqual(res.status, 302, 'free + payment_instructions still redirects to /invoices/:id');
+  assert.strictEqual(createCalls.length, 1, 'invoice is created');
+  assert.strictEqual(updateUserCalls.length, 1,
+    'free user with no existing instructions: updateUser called exactly once');
+  assert.strictEqual(updateUserCalls[0].id, 1, 'updateUser carries session user id');
+  assert.deepStrictEqual(updateUserCalls[0].fields, { payment_instructions: 'Venmo @alice\nZelle: alice@bank.com' },
+    'payment_instructions is trimmed and saved alone — no other user fields are stomped');
+}
+
+async function testPostPaymentInstructionsSkippedForPro() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'pro', invoice_count: 0, name: 'Alice', email: 'a@x.com', payment_instructions: null });
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'pro', invoice_count: 0 }, routes);
+
+  await request(app, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    description: 'Work',
+    amount: '500',
+    payment_instructions: 'Venmo @alice'
+  });
+  assert.strictEqual(createCalls.length, 1, 'invoice still created for Pro');
+  assert.strictEqual(updateUserCalls.length, 0,
+    'Pro plan tampering with payment_instructions in the payload must NOT call updateUser');
+}
+
+async function testPostPaymentInstructionsSkippedWhenUserAlreadyHasThem() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com', payment_instructions: 'Existing instructions' });
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'free', invoice_count: 0 }, routes);
+
+  await request(app, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    description: 'Work',
+    amount: '500',
+    payment_instructions: 'Try to overwrite'
+  });
+  assert.strictEqual(createCalls.length, 1, 'invoice still created');
+  assert.strictEqual(updateUserCalls.length, 0,
+    'existing payment_instructions must NOT be overwritten via the quick form');
+}
+
+async function testPostPaymentInstructionsEmptyDoesNotCallUpdateUser() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com', payment_instructions: null });
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'free', invoice_count: 0 }, routes);
+
+  await request(app, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    description: 'Work',
+    amount: '500',
+    payment_instructions: '   '
+  });
+  assert.strictEqual(createCalls.length, 1, 'invoice created on blank instructions');
+  assert.strictEqual(updateUserCalls.length, 0,
+    'whitespace-only payment_instructions must NOT call updateUser (avoids storing empty string)');
+}
+
+async function testPostPaymentInstructionsOverLimitSilentlyIgnored() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com', payment_instructions: null });
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'free', invoice_count: 0 }, routes);
+
+  const payload = 'x'.repeat(2001);
+  const res = await request(app, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    description: 'Work',
+    amount: '500',
+    payment_instructions: payload
+  });
+  assert.strictEqual(res.status, 302, 'oversize instructions must NOT block invoice creation');
+  assert.strictEqual(createCalls.length, 1, 'invoice still created even when instructions exceed cap');
+  assert.strictEqual(updateUserCalls.length, 0,
+    'oversize payment_instructions is silently ignored at the save layer (invoice create is the dominant goal)');
+}
+
+async function testPostPaymentInstructionsUpdateFailureDoesNotBlockRedirect() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com', payment_instructions: null });
+  updateUserImpl = async () => { throw new Error('DB down'); };
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'free', invoice_count: 0 }, routes);
+
+  const res = await request(app, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    description: 'Work',
+    amount: '500',
+    payment_instructions: 'Venmo @alice'
+  });
+  assert.strictEqual(res.status, 302, 'invoice redirect must still fire on a payment-instructions save failure');
+  assert.ok(/^\/invoices\/\d+$/.test(res.headers.location),
+    'redirect target is the just-created invoice (best-effort semantics on the side-effect)');
+  assert.strictEqual(createCalls.length, 1, 'invoice still created');
+  assert.strictEqual(updateUserCalls.length, 1, 'updateUser was attempted exactly once');
+}
+
+// ============================================================================
 // Layer 2b — POST /invoices/quick with action=create_and_email (Pro/Agency)
 // ============================================================================
 //
@@ -767,6 +910,57 @@ async function testViewRendersEmailButtonForAgency() {
     'agency users get parity with pro on the create+email surface');
 }
 
+// View tests for the inline "How will your client pay you?" capture block.
+// Visibility contract: shown only when the cohort would benefit (free plan
+// + no existing payment_instructions). Pro/Agency owners have a Stripe Pay
+// Link; free users who already saved instructions don't need to be asked
+// again.
+
+async function testViewRendersPaymentInstructionsBlockForFreeWithoutInstructions() {
+  const html = await renderQuickView({
+    user: { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com', payment_instructions: null }
+  });
+  assert.ok(html.includes('data-testid="invoice-quick-payment-instructions-block"'),
+    'free user with no existing instructions sees the capture block');
+  assert.ok(html.includes('data-testid="invoice-quick-payment-instructions-input"'),
+    'the textarea is rendered with the testid hook');
+  assert.ok(/name="payment_instructions"/.test(html),
+    'textarea posts under name="payment_instructions"');
+  assert.ok(/maxlength="2000"/.test(html),
+    'maxlength matches the 2000-char server cap (matches /billing/settings)');
+}
+
+async function testViewHidesPaymentInstructionsBlockForPro() {
+  const html = await renderQuickView({
+    user: { id: 1, plan: 'pro', invoice_count: 0, name: 'Alice', email: 'a@x.com', payment_instructions: null }
+  });
+  assert.ok(!html.includes('data-testid="invoice-quick-payment-instructions-block"'),
+    'Pro users have a Stripe Pay Link — they do not see the capture block');
+}
+
+async function testViewHidesPaymentInstructionsBlockWhenAlreadySet() {
+  const html = await renderQuickView({
+    user: { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com', payment_instructions: 'Venmo @existing' }
+  });
+  assert.ok(!html.includes('data-testid="invoice-quick-payment-instructions-block"'),
+    'free user who already saved instructions does not see the capture block');
+}
+
+async function testViewRepopulatesPaymentInstructions() {
+  const html = await renderQuickView({
+    user: { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com', payment_instructions: null },
+    submitted: {
+      client_name: '',
+      client_email: '',
+      description: '',
+      amount: '',
+      payment_instructions: 'Venmo @typed-already'
+    }
+  });
+  assert.ok(html.includes('Venmo @typed-already'),
+    'validation re-render must keep the typed payment_instructions value sticky');
+}
+
 // ============================================================================
 // Layer 4 — dashboard wiring
 // ============================================================================
@@ -811,6 +1005,12 @@ async function run() {
     ['POST /invoices/quick: missing amount re-renders form', testPostMissingAmountRerenders],
     ['POST /invoices/quick: free user at limit → /invoices?limit_hit=1', testPostFreeUserAtLimit],
     ['POST /invoices/quick: validation error re-populates submitted fields', testPostRepopulatesFormOnValidationError],
+    ['POST /invoices/quick: free user without instructions → updateUser called with trimmed payment_instructions', testPostPaymentInstructionsSavesForFreeUserWithoutInstructions],
+    ['POST /invoices/quick: Pro user → forged payment_instructions ignored (no updateUser)', testPostPaymentInstructionsSkippedForPro],
+    ['POST /invoices/quick: free user with existing instructions → no overwrite', testPostPaymentInstructionsSkippedWhenUserAlreadyHasThem],
+    ['POST /invoices/quick: whitespace-only payment_instructions → no updateUser', testPostPaymentInstructionsEmptyDoesNotCallUpdateUser],
+    ['POST /invoices/quick: oversize (>2000 char) payment_instructions silently ignored', testPostPaymentInstructionsOverLimitSilentlyIgnored],
+    ['POST /invoices/quick: updateUser failure does not block invoice redirect', testPostPaymentInstructionsUpdateFailureDoesNotBlockRedirect],
     ['POST /invoices/quick: action=create_and_email (Pro+email) → send + flip', testPostCreateAndEmailProHappyPath],
     ['POST /invoices/quick: action=create_and_email success flash names the recipient', testPostCreateAndEmailFlashOnSuccess],
     ['POST /invoices/quick: action=create_and_email (Free) → no send, no flip (defence-in-depth)', testPostCreateAndEmailFreeUserDefenceInDepth],
@@ -826,6 +1026,10 @@ async function run() {
     ['view: Pro sees the "Create & email to client" button + draft + hint', testViewRendersEmailButtonForPro],
     ['view: Free user does NOT see the create_and_email surface', testViewHidesEmailButtonForFree],
     ['view: Agency sees the "Create & email to client" button (parity with Pro)', testViewRendersEmailButtonForAgency],
+    ['view: free user without instructions sees the payment_instructions capture block', testViewRendersPaymentInstructionsBlockForFreeWithoutInstructions],
+    ['view: Pro user does not see the payment_instructions capture block', testViewHidesPaymentInstructionsBlockForPro],
+    ['view: free user with existing instructions does not see the capture block', testViewHidesPaymentInstructionsBlockWhenAlreadySet],
+    ['view: validation re-render keeps payment_instructions value sticky', testViewRepopulatesPaymentInstructions],
     ['dashboard: primary CTA at /invoices/quick + advanced link at /invoices/new', testDashboardPrimaryCtaPointsAtQuick]
   ];
   let passed = 0;

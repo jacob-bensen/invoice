@@ -485,7 +485,8 @@ router.post('/quick', requireAuth, [
         client_name: req.body.client_name || '',
         client_email: req.body.client_email || '',
         description: req.body.description || '',
-        amount: req.body.amount || ''
+        amount: req.body.amount || '',
+        payment_instructions: req.body.payment_instructions || ''
       },
       noindex: true
     });
@@ -527,6 +528,30 @@ router.post('/quick', requireAuth, [
       await db.clearPendingQuickInvoice(req.session.user.id);
     } catch (e) {
       console.error('Quick invoice clear pending failed:', e && e.message);
+    }
+
+    // Inline "How will your client pay you?" capture (Milestone 4 — first
+    // invoice sent → first payment received). Free-tier owners with no
+    // Stripe Pay button get the optional textarea on /invoices/quick; if
+    // they filled it in we persist to users.payment_instructions BEFORE
+    // the user reaches /invoices/:id, so the very first share link they
+    // tap (the draft-send banner is one click away) already carries the
+    // payment instructions on the public /i/<token> page. Gated server-
+    // side on plan=free AND no existing instructions so a Pro user (who
+    // has a Pay Link) or a free user who already saved instructions can't
+    // accidentally overwrite via a forged payload. Best-effort: never
+    // blocks the redirect.
+    if (typeof req.body.payment_instructions === 'string'
+        && user.plan === 'free'
+        && (!user.payment_instructions || !String(user.payment_instructions).trim())) {
+      const payInstr = req.body.payment_instructions.trim();
+      if (payInstr.length > 0 && payInstr.length <= 2000) {
+        try {
+          await db.updateUser(req.session.user.id, { payment_instructions: payInstr });
+        } catch (e) {
+          console.error('Quick invoice payment-instructions save failed:', e && e.message);
+        }
+      }
     }
 
     // Combined create+send path: the freelancer ticked "Create & email to
@@ -583,7 +608,8 @@ router.post('/quick', requireAuth, [
         client_name: req.body.client_name || '',
         client_email: req.body.client_email || '',
         description: req.body.description || '',
-        amount: req.body.amount || ''
+        amount: req.body.amount || '',
+        payment_instructions: req.body.payment_instructions || ''
       },
       noindex: true
     });
