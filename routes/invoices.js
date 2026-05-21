@@ -10,6 +10,7 @@ const { firePaidWebhook, buildPaidPayload } = require('../lib/outbound-webhook')
 const { sendInvoiceEmail, sendReferralCelebrationEmail } = require('../lib/email');
 const { loadProSubscriberCount } = require('../lib/pro-subscriber-count');
 const { triggerFirstPaidCelebration, buildReferralUrl } = require('../lib/celebration');
+const { triggerFirstSentCelebration } = require('../lib/first-sent-celebration');
 const { buildShareSurfaceForInvoice } = require('../lib/share-link');
 
 const router = express.Router();
@@ -579,6 +580,11 @@ router.post('/quick', requireAuth, [
         } catch (e) {
           console.error('Quick invoice status flip failed:', e && e.message);
         }
+        // First-sent celebration — the create+email shortcut is the lowest-
+        // friction path from signup to a real sent invoice; this is exactly
+        // the cohort that benefits most from the celebration reinforcement.
+        triggerFirstSentCelebration(db, req.session.user.id, invoice)
+          .catch(e => console.error('First-sent celebration error:', e && e.message));
         req.session.flash = {
           type: 'success',
           message: `Invoice created and emailed to ${client_email}.`
@@ -839,6 +845,11 @@ router.post('/:id/status', requireAuth, async (req, res) => {
             .catch(e => console.error('Invoice email error:', e && e.message));
         }
       }
+      // First-sent celebration email. Idempotent — only fires once per user,
+      // on the very first non-seed invoice flipped to sent. Safe to call on
+      // every status='sent' transition; the SQL guard collapses repeats.
+      triggerFirstSentCelebration(db, req.session.user.id, updated)
+        .catch(e => console.error('First-sent celebration error:', e && e.message));
     }
 
     if (updated && newStatus === 'paid') {
@@ -930,6 +941,12 @@ router.post('/:id/share-intent', requireAuth, async (req, res) => {
     const row = await db.markInvoiceSentFromShareIntent(invoice.id, req.session.user.id);
     if (!row) return res.status(500).json({ error: 'update_failed' });
     const flipped = invoice.status === 'draft' && row.status === 'sent';
+    if (flipped) {
+      // First-sent celebration. Idempotent at the SQL layer so safe to call
+      // unconditionally on every flip from this surface.
+      triggerFirstSentCelebration(db, req.session.user.id, invoice)
+        .catch(e => console.error('First-sent celebration error:', e && e.message));
+    }
     res.set('Cache-Control', 'no-store');
     res.json({ ok: true, status: row.status, flipped, intent });
   } catch (err) {
@@ -994,6 +1011,12 @@ router.post('/:id/email-client', requireAuth, async (req, res) => {
     }
     const newStatus = (row && row.status) || invoice.status;
     const flipped = invoice.status === 'draft' && newStatus === 'sent';
+
+    if (flipped) {
+      // First-sent celebration. Idempotent at the SQL layer.
+      triggerFirstSentCelebration(db, req.session.user.id, invoice)
+        .catch(e => console.error('First-sent celebration error:', e && e.message));
+    }
 
     res.set('Cache-Control', 'no-store');
     res.json({

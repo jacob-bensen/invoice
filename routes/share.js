@@ -17,6 +17,7 @@ const { db } = require('../db');
 const { isValidPublicToken } = require('../lib/share-link');
 const { isLikelyBotUserAgent } = require('../lib/client-view');
 const emailLib = require('../lib/email');
+const { triggerFirstSentCelebration } = require('../lib/first-sent-celebration');
 
 const router = express.Router();
 
@@ -80,6 +81,19 @@ router.get('/i/:token', async (req, res) => {
   if (typeof db.recordPublicInvoiceView === 'function' &&
       !isLikelyBotUserAgent(req.get('user-agent'))) {
     db.recordPublicInvoiceView(invoice.id).then((row) => {
+      // First-sent celebration on the client-view auto-flip. The atomic
+      // UPDATE in recordPublicInvoiceView returns the row with the new
+      // status; if the pre-update status was 'draft' and the post-update
+      // status is 'sent', the auto-transition just fired. The DB-side guard
+      // in recordFirstSentIfMissing makes this safe to call unconditionally,
+      // but gating on invoice.is_seed + an owner_id check trims the trigger
+      // to the actual activation cohort.
+      const flipped = row && invoice.status === 'draft' && row.status === 'sent';
+      if (flipped && !invoice.is_seed && invoice.owner_id) {
+        triggerFirstSentCelebration(db, invoice.owner_id, invoice)
+          .catch((err) => console.error('First-sent celebration error:', err && err.message));
+      }
+
       // On the very first non-bot view, pull the freelancer back into the
       // app with a notification email. The atomic UPDATE in
       // recordPublicInvoiceView guarantees exactly one concurrent caller

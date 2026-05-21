@@ -77,6 +77,21 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS is_seed BOOLEAN DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS first_paid_at TIMESTAMP;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR(32) UNIQUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS referrer_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+
+-- First-sent celebration (Milestone 3 — first invoice created → first invoice
+-- sent). Stamped the very first time any of the user's non-seed invoices
+-- crosses into status IN ('sent','paid','overdue') — whether via the manual
+-- Mark-as-Sent flow, a share-intent button click (WhatsApp/SMS/Email/Copy/
+-- Native), the Pro server-side "Send by email" button, the quick-invoice
+-- create+email shortcut, or the public /i/<token> client-view auto-flip. A
+-- one-shot transactional email fires from lib/first-sent-celebration on the
+-- stamping UPDATE that actually took (the WHERE first_sent_at IS NULL guard
+-- + EXISTS subquery on non-seed sent/paid/overdue rows means concurrent flips
+-- collapse to exactly one stamp + one email). Reinforces the strongest
+-- upstream activation event before payment, confirms the send happened, sets
+-- payment-timeline expectation, surfaces Pay-Link upsell to free users, and
+-- bakes in a magic-login URL back to the just-sent invoice.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS first_sent_at TIMESTAMP;
 -- Referral redemption (#50). Stamped exactly once when a referred user's
 -- Stripe subscription is created (checkout.session.completed, mode=subscription),
 -- so the referrer's free-month coupon application is one-shot — replaying the

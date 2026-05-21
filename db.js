@@ -753,6 +753,42 @@ const db = {
   },
 
   /*
+   * Idempotently stamps users.first_sent_at the first time any of the user's
+   * non-seed invoices is in status IN ('sent','paid','overdue'). Mirrors
+   * recordFirstPaidIfMissing's race-safe single-UPDATE pattern: the WHERE
+   * first_sent_at IS NULL guard means concurrent flips (manual mark-sent +
+   * share-intent click + client-view auto-transition arriving milliseconds
+   * apart on the same user's first invoice) collapse to exactly one
+   * RETURNING row — the others see []. The EXISTS subquery excludes seed
+   * invoices so a brand-new user marking the dashboard sample as sent
+   * cannot accidentally fire the celebration; only a real-client sent
+   * invoice counts. Returns the post-stamp user projection (id + email +
+   * naming columns + plan) when the celebration should fire now, or null
+   * when the user is already stamped / has no non-seed sent invoice yet.
+   * Callers use the non-null return as the "fire the celebration email
+   * now" signal so the email goes out exactly once per user lifetime.
+   */
+  async recordFirstSentIfMissing(userId) {
+    if (!userId) return null;
+    const { rows } = await pool.query(
+      `UPDATE users
+          SET first_sent_at = NOW(),
+              updated_at    = NOW()
+        WHERE id = $1
+          AND first_sent_at IS NULL
+          AND EXISTS (
+                SELECT 1 FROM invoices
+                 WHERE user_id = $1
+                   AND status IN ('sent','paid','overdue')
+                   AND COALESCE(is_seed, false) = false
+              )
+        RETURNING id, email, name, business_name, business_email, reply_to_email, plan, first_sent_at`,
+      [userId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Idempotently stamps users.welcome_email_sent_at the first time the
    * post-signup welcome email fires. Single SQL UPDATE guarded on the column
    * being NULL — concurrent callers race on the row lock and exactly one
