@@ -223,5 +223,14 @@ app.listen(PORT, () => {
     } catch (err) {
       console.error('[client-viewed-followup] startup failed:', err && err.message);
     }
+
+    try {
+      const { startSentNotViewedNudgeJob } = require('./jobs/sent-not-viewed-nudge');
+      const sn = startSentNotViewedNudgeJob();
+      if (sn && sn.ok) console.log(`[sent-not-viewed-nudge] scheduled (${sn.schedule})`);
+      else console.warn('[sent-not-viewed-nudge] not scheduled:', sn && sn.reason);
+    } catch (err) {
+      console.error('[sent-not-viewed-nudge] startup failed:', err && err.message);
+    }
   }
 });

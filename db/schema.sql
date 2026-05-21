@@ -256,6 +256,28 @@ CREATE INDEX IF NOT EXISTS idx_invoices_client_viewed_followup
     AND first_viewed_at IS NOT NULL
     AND client_viewed_followup_sent_at IS NULL;
 
+-- Sent-but-never-viewed nudge stamp (Milestone 4 — first invoice sent →
+-- first payment received). Covers the cohort where the freelancer fired a
+-- share-intent button (WhatsApp/SMS/Email/Copy) on /invoices/:id 72h+ ago
+-- but the client has never opened the public /i/<token> link. Common causes:
+-- message went to spam, the freelancer copy-pasted to the wrong contact, the
+-- client opened the message but didn't tap the link, or WhatsApp number is
+-- stale. A nudge at this moment ("your client hasn't opened it yet — try
+-- another channel") closes the silent-failure gap that today's surfaces
+-- miss entirely: client-viewed-followup is gated on first_viewed_at IS NOT
+-- NULL, overdue-freelancer-digest waits for due_date, and reminders.js is
+-- Pro-only AND client-facing (irrelevant here — the CLIENT never got the
+-- link). Anchored on sent_via_share_intent_at (the unambiguous freelancer
+-- intent stamp). One stamp per invoice so multiple unsent invoices each get
+-- their own window.
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS sent_not_viewed_nudge_sent_at TIMESTAMP;
+CREATE INDEX IF NOT EXISTS idx_invoices_sent_not_viewed_nudge
+  ON invoices(sent_via_share_intent_at)
+  WHERE status IN ('sent', 'overdue')
+    AND first_viewed_at IS NULL
+    AND sent_via_share_intent_at IS NOT NULL
+    AND sent_not_viewed_nudge_sent_at IS NULL;
+
 -- Password reset / magic-link sign-in (Milestone 1 — signup → first dashboard
 -- re-entry). A user who loses their session has to be able to get back into
 -- their seeded dashboard or the activation funnel breaks at step 1. Tokens

@@ -677,6 +677,98 @@ const db = {
   },
 
   /*
+   * Sent-but-never-viewed nudge cron query (Milestone 4 — sent → paid).
+   * Picks up invoices where the freelancer fired a share-intent button
+   * `minHours` ago (the unambiguous "I sent this" stamp) but the client has
+   * never opened the public /i/<token> link.
+   *
+   * Cohort meaning: the freelancer believes they sent the invoice, but the
+   * client either never received it (wrong contact, spam folder, stale
+   * WhatsApp number), never opened the message, or opened the message but
+   * didn't tap the link. A nudge at 72h ("hasn't opened it yet — try another
+   * channel?") catches the silent-failure case that today's surfaces miss:
+   *   - client-viewed-followup is gated on first_viewed_at IS NOT NULL
+   *     (won't fire here by definition).
+   *   - overdue-freelancer-digest only fires after due_date passes, often
+   *     weeks later.
+   *   - reminders.js is Pro-only AND emails the CLIENT (irrelevant — the
+   *     client never got the link in the first place).
+   *
+   * Predicates:
+   *   - status IN ('sent','overdue') — only invoices that are out with the
+   *     client. Drafts excluded (the share-intent stamp only fires on a
+   *     real draft→sent flip, but belt-and-braces).
+   *   - is_seed=false — never email about the sample invoice.
+   *   - first_viewed_at IS NULL — the client demonstrably has NOT opened it.
+   *     If they have, client-viewed-followup owns that cohort.
+   *   - sent_via_share_intent_at IS NOT NULL — only invoices where we
+   *     captured an unambiguous freelancer-side "I sent this" gesture. We
+   *     deliberately skip manual Mark-as-Sent invoices: updated_at drifts
+   *     on every edit and we can't reliably anchor the nudge window.
+   *   - sent_via_share_intent_at <= NOW() - minHours — give the client a
+   *     window to open on their own before we ping the freelancer.
+   *   - sent_via_share_intent_at > NOW() - maxDays — skip very-old shares
+   *     to avoid overlapping with the overdue-digest cohort.
+   *   - sent_not_viewed_nudge_sent_at IS NULL — one-shot per invoice.
+   *   - u.welcome_email_sent_at IS NOT NULL — activation ordering.
+   *   - u.email IS NOT NULL — defence-in-depth.
+   *
+   * LIMIT 500 caps the cron tick. ORDER BY sent_via_share_intent_at ASC
+   * drains the oldest unopened shares first.
+   */
+  async getInvoicesForSentNotViewedNudge(minHours = 72, maxDays = 14) {
+    const hours = Number.isFinite(minHours) && minHours > 0
+      ? Math.floor(minHours)
+      : 72;
+    const max = Number.isFinite(maxDays) && maxDays > 0
+      ? Math.floor(maxDays)
+      : 14;
+    const { rows } = await pool.query(
+      `SELECT
+         i.id                          AS invoice_id,
+         i.user_id                     AS user_id,
+         i.invoice_number              AS invoice_number,
+         i.client_name                 AS client_name,
+         i.client_email                AS client_email,
+         i.total                       AS invoice_total,
+         i.sent_via_share_intent_at    AS sent_at,
+         i.status                      AS status,
+         u.email                       AS email,
+         u.name                        AS name,
+         u.business_name               AS business_name,
+         u.reply_to_email              AS reply_to_email,
+         u.business_email              AS business_email
+       FROM invoices i
+       JOIN users u ON u.id = i.user_id
+       WHERE i.status IN ('sent', 'overdue')
+         AND i.is_seed = false
+         AND i.first_viewed_at IS NULL
+         AND i.sent_via_share_intent_at IS NOT NULL
+         AND i.sent_via_share_intent_at <= NOW() - ($1 * INTERVAL '1 hour')
+         AND i.sent_via_share_intent_at > NOW() - ($2 * INTERVAL '1 day')
+         AND i.sent_not_viewed_nudge_sent_at IS NULL
+         AND u.email IS NOT NULL
+         AND u.welcome_email_sent_at IS NOT NULL
+       ORDER BY i.sent_via_share_intent_at ASC
+       LIMIT 500`,
+      [hours, max]
+    );
+    return rows;
+  },
+
+  async markSentNotViewedNudgeSent(invoiceId) {
+    if (!invoiceId) return null;
+    const { rows } = await pool.query(
+      `UPDATE invoices SET sent_not_viewed_nudge_sent_at = NOW(), updated_at = NOW()
+         WHERE id = $1
+           AND sent_not_viewed_nudge_sent_at IS NULL
+         RETURNING id, sent_not_viewed_nudge_sent_at`,
+      [invoiceId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Recent paid-revenue stats for the dashboard "what you collected lately"
    * row (INTERNAL_TODO #107). Returns SUM(total), COUNT(*) and a count of
    * distinct paying clients (deduped on lowercased email-or-name) over a
