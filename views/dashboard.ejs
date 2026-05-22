@@ -328,6 +328,57 @@
     </div>
   <% } %>
 
+  <% if (locals.sentNotViewedPrompt && sentNotViewedPrompt) { %>
+    <div
+      data-testid="sent-not-viewed-prompt"
+      data-invoice-id="<%= sentNotViewedPrompt.id %>"
+      data-days-ago="<%= sentNotViewedPrompt.daysAgo %>"
+      class="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-5 py-4 flex items-start gap-3 print:hidden"
+      role="region"
+      aria-label="Client hasn't opened your invoice — try another channel"
+    >
+      <div class="text-orange-600 text-xl leading-none mt-0.5" aria-hidden="true">&#128225;</div>
+      <div class="flex-1 text-sm">
+        <p class="font-semibold text-orange-900">
+          <% if (sentNotViewedPrompt.clientName) { %>
+            <strong data-testid="sent-not-viewed-client-name"><%= sentNotViewedPrompt.clientName %></strong> hasn't opened your invoice yet — try another channel.
+          <% } else { %>
+            Your client hasn't opened your invoice yet — try another channel.
+          <% } %>
+        </p>
+        <p class="text-orange-800 mt-0.5">
+          <span data-testid="sent-not-viewed-invoice-number"><%= sentNotViewedPrompt.invoiceNumber %></span>
+          ($<span data-testid="sent-not-viewed-total"><%= sentNotViewedPrompt.total.toFixed(2) %></span>)
+          was sent <span data-testid="sent-not-viewed-days-ago"><%= sentNotViewedPrompt.daysAgo %></span>
+          day<% if (sentNotViewedPrompt.daysAgo !== 1) { %>s<% } %> ago with zero opens.
+        </p>
+        <p class="text-orange-700 text-xs mt-1">
+          The share link might be spam-foldered, the contact stale, or the link mis-pasted. Re-sharing through a different channel is the fastest recovery.
+        </p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <a
+            href="/invoices/<%= sentNotViewedPrompt.id %>"
+            data-testid="sent-not-viewed-cta"
+            class="bg-orange-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-orange-700 transition text-sm"
+          >
+            &#128228; Open invoice &amp; re-share &rarr;
+          </a>
+          <form action="/invoices/<%= sentNotViewedPrompt.id %>/status" method="POST" class="inline">
+            <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+            <input type="hidden" name="status" value="paid">
+            <button
+              type="submit"
+              data-testid="sent-not-viewed-mark-paid"
+              class="border border-orange-300 text-orange-800 font-semibold px-4 py-2 rounded-lg hover:bg-orange-100 transition text-sm"
+            >
+              &#10003; Mark as paid
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  <% } %>
+
   <% if (locals.invoiceLimitProgress) { %>
     <div
       data-testid="invoice-limit-progress"

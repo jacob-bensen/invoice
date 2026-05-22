@@ -376,6 +376,39 @@ const db = {
   },
 
   /*
+   * Returns the user's oldest sent/overdue invoice that has demonstrably
+   * NOT been opened by the client (first_viewed_at IS NULL) yet was
+   * shared via a share-intent gesture at least `minAgeHours` ago. Powers
+   * the in-app dashboard "client hasn't opened it — try another channel"
+   * prompt — mirrors the cohort of jobs/sent-not-viewed-nudge.js (the 72h
+   * silent-failure email cron) but fires in-app the moment the freelancer
+   * returns to the dashboard. Anchored on sent_via_share_intent_at so
+   * manual Mark-as-Sent invoices (whose updated_at drifts on every edit)
+   * never trigger; that's the same anchor the email cron uses, so the two
+   * surfaces cover identical cohorts.
+   */
+  async getOldestSentNotViewed(userId, minAgeHours = 72) {
+    if (!userId) return null;
+    const hours = Number.isFinite(minAgeHours) && minAgeHours > 0
+      ? Math.floor(minAgeHours)
+      : 72;
+    const { rows } = await pool.query(
+      `SELECT id, invoice_number, client_name, total, sent_via_share_intent_at, status
+         FROM invoices
+        WHERE user_id = $1
+          AND status IN ('sent', 'overdue')
+          AND is_seed = false
+          AND first_viewed_at IS NULL
+          AND sent_via_share_intent_at IS NOT NULL
+          AND sent_via_share_intent_at <= NOW() - ($2 * INTERVAL '1 hour')
+        ORDER BY sent_via_share_intent_at ASC
+        LIMIT 1`,
+      [userId, hours]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Trial-nudge query (INTERNAL_TODO #29). Returns trial users whose
    * `trial_ends_at` falls in the day-3-to-day-5 window from now and who
    * haven't been nudged yet. The `trial_nudge_sent_at IS NULL` filter is the

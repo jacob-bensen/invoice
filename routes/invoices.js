@@ -30,12 +30,13 @@ const RECENT_REVENUE_WINDOWS = [7, 30, 90];
 
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const [invoices, user, recentRevenue, oldestStaleDraft, oldestClientViewedUnpaid] = await Promise.all([
+    const [invoices, user, recentRevenue, oldestStaleDraft, oldestClientViewedUnpaid, oldestSentNotViewed] = await Promise.all([
       db.getInvoicesByUser(req.session.user.id),
       db.getUserById(req.session.user.id),
       loadRecentRevenueStats(req.session.user.id),
       loadOldestStaleDraft(req.session.user.id),
-      loadOldestClientViewedUnpaid(req.session.user.id)
+      loadOldestClientViewedUnpaid(req.session.user.id),
+      loadOldestSentNotViewed(req.session.user.id)
     ]);
     const flash = req.session.flash;
     delete req.session.flash;
@@ -73,8 +74,9 @@ router.get('/', requireAuth, async (req, res) => {
     const celebration = await loadCelebration(user).catch(() => null);
     const staleDraftPrompt = buildStaleDraftPrompt(user, oldestStaleDraft);
     const clientViewedFollowupPrompt = buildClientViewedFollowupPrompt(user, oldestClientViewedUnpaid);
+    const sentNotViewedPrompt = buildSentNotViewedPrompt(user, oldestSentNotViewed);
     const firstRealInvoicePrompt = buildFirstRealInvoicePrompt(user, invoices);
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, clientViewedFollowupPrompt, firstRealInvoicePrompt, pendingQuickInvoice, noindex: true });
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, clientViewedFollowupPrompt, sentNotViewedPrompt, firstRealInvoicePrompt, pendingQuickInvoice, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
@@ -83,6 +85,7 @@ router.get('/', requireAuth, async (req, res) => {
       invoiceLimitProgress: null, recentRevenue: null,
       annualUpgradePrompt: null, socialProof: null, celebration: null,
       staleDraftPrompt: null, clientViewedFollowupPrompt: null,
+      sentNotViewedPrompt: null,
       firstRealInvoicePrompt: null,
       pendingQuickInvoice: null, noindex: true
     });
@@ -185,6 +188,16 @@ async function loadOldestClientViewedUnpaid(userId) {
     return await db.getOldestClientViewedUnpaid(userId);
   } catch (err) {
     console.error('Client-viewed unpaid lookup failed:', err && err.message);
+    return null;
+  }
+}
+
+async function loadOldestSentNotViewed(userId) {
+  if (!userId || typeof db.getOldestSentNotViewed !== 'function') return null;
+  try {
+    return await db.getOldestSentNotViewed(userId);
+  } catch (err) {
+    console.error('Sent-not-viewed lookup failed:', err && err.message);
     return null;
   }
 }
@@ -328,6 +341,37 @@ function buildClientViewedFollowupPrompt(user, invoice) {
     daysAgo,
     hoursAgo,
     viewCount,
+    status: invoice.status || 'sent'
+  };
+}
+
+/*
+ * Silent-failure cohort: the freelancer shared an invoice via WhatsApp /
+ * SMS / Email / Copy / Native at least 72h ago, but the client has never
+ * opened the public link (`first_viewed_at IS NULL`). The share channel
+ * itself failed — stale contact, spam-foldered, bounced, link mistyped on
+ * paste. In-app analog of jobs/sent-not-viewed-nudge.js (the 72h email
+ * cron): closes the gap between cron firings and gives the freelancer an
+ * immediate "try another channel" surface the moment they return to the
+ * dashboard. Empty client_name falls back to "Your client" in the view.
+ * Anchored on sent_via_share_intent_at — the only unambiguous "I sent
+ * this" stamp — so manual Mark-as-Sent invoices never fire this prompt.
+ */
+function buildSentNotViewedPrompt(user, invoice) {
+  if (!user || !invoice || invoice.id == null) return null;
+  if (!invoice.sent_via_share_intent_at) return null;
+  const sentMs = new Date(invoice.sent_via_share_intent_at).getTime();
+  if (!Number.isFinite(sentMs)) return null;
+  const elapsedMs = Math.max(0, Date.now() - sentMs);
+  const daysAgo = Math.max(1, Math.floor(elapsedMs / 86400000));
+  const hoursAgo = Math.max(1, Math.floor(elapsedMs / 3600000));
+  return {
+    id: invoice.id,
+    invoiceNumber: invoice.invoice_number || '',
+    clientName: invoice.client_name || '',
+    total: Number(invoice.total) || 0,
+    daysAgo,
+    hoursAgo,
     status: invoice.status || 'sent'
   };
 }
@@ -1199,12 +1243,14 @@ module.exports.buildRecentRevenueCard = buildRecentRevenueCard;
 module.exports.buildAnnualUpgradePrompt = buildAnnualUpgradePrompt;
 module.exports.buildStaleDraftPrompt = buildStaleDraftPrompt;
 module.exports.buildClientViewedFollowupPrompt = buildClientViewedFollowupPrompt;
+module.exports.buildSentNotViewedPrompt = buildSentNotViewedPrompt;
 module.exports.buildFirstRealInvoicePrompt = buildFirstRealInvoicePrompt;
 module.exports.buildPendingQuickInvoiceBanner = buildPendingQuickInvoiceBanner;
 module.exports.readPendingQuickInvoice = readPendingQuickInvoice;
 module.exports.normalizePendingQuickInvoiceInput = normalizePendingQuickInvoiceInput;
 module.exports.loadOldestStaleDraft = loadOldestStaleDraft;
 module.exports.loadOldestClientViewedUnpaid = loadOldestClientViewedUnpaid;
+module.exports.loadOldestSentNotViewed = loadOldestSentNotViewed;
 module.exports.onboardingDismissHandler = onboardingDismissHandler;
 module.exports.ALLOWED_INVOICE_STATUSES = ALLOWED_INVOICE_STATUSES;
 module.exports.FREE_LIMIT = FREE_LIMIT;
