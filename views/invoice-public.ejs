@@ -58,7 +58,28 @@
        silently delays payment cycles. Works for every owner plan since the
        print path is purely client-side. Hidden on print itself via the
        @media-print rule above so the button doesn't end up on the PDF. -->
-  <div class="flex justify-end mb-4 print:hidden" data-testid="public-print-bar">
+  <div class="flex justify-end mb-4 print:hidden gap-2" data-testid="public-print-bar">
+    <%
+      // "Add to calendar" — only meaningful when there's an actual due date
+      // to remind about and the invoice is in an actionable state. Drafts
+      // shouldn't surface a public reminder; paid invoices have no upcoming
+      // action. Anchoring on sent/overdue keeps the affordance tight.
+      const showCalendarDownload = invoice.due_date
+        && (invoice.status === 'sent' || invoice.status === 'overdue')
+        && invoice.public_token;
+    %>
+    <% if (showCalendarDownload) { %>
+      <a
+        href="/i/<%= invoice.public_token %>/calendar.ics"
+        download
+        data-testid="public-calendar-download"
+        class="border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-gray-50 transition text-sm flex items-center gap-2"
+        aria-label="Add invoice due date to your calendar"
+      >
+        <span aria-hidden="true">📅</span>
+        Add to calendar
+      </a>
+    <% } %>
     <button
       type="button"
       onclick="window.print()"

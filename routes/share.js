@@ -18,6 +18,7 @@ const { isValidPublicToken } = require('../lib/share-link');
 const { isLikelyBotUserAgent } = require('../lib/client-view');
 const emailLib = require('../lib/email');
 const { triggerFirstSentCelebration } = require('../lib/first-sent-celebration');
+const { buildInvoiceIcs, buildIcsFilename } = require('../lib/calendar');
 
 const router = express.Router();
 
@@ -130,6 +131,90 @@ router.get('/i/:token', async (req, res) => {
     justClaimed: claimed,
     noindex: true
   });
+});
+
+/*
+ * "Add to calendar" download for the public invoice page (Milestone 4 — sent
+ * → paid). The client opens /i/<token>, clicks 📅 Add to calendar, and gets
+ * an .ics file pinning the due date in their native calendar app — Apple
+ * Calendar, Google Calendar (via .ics import), Outlook. A built-in VALARM
+ * fires a notification ~12h before the due day, which is the single most
+ * effective on-time-payment intervention you can ship without owning the
+ * client's notification surface.
+ *
+ * Auth model mirrors GET /i/<token>: no login required, the token IS the
+ * capability. 404s on bad-format token, missing invoice, paid invoice (no
+ * reminder needed), or missing due_date (nothing to remind about). The
+ * route is intentionally NOT exposed for status='draft' invoices either —
+ * a public share link for a draft is itself an out-of-flow state, and
+ * surfacing a calendar reminder for a not-yet-sent invoice would confuse
+ * the client.
+ */
+router.get('/i/:token/calendar.ics', async (req, res) => {
+  const token = req.params.token || '';
+  if (!isValidPublicToken(token)) {
+    res.status(404);
+    return res.render('not-found', {
+      title: 'Invoice not found — DecentInvoice',
+      homeHref: '/',
+      homeLabel: 'Go to home page',
+      noindex: true
+    });
+  }
+  let invoice;
+  try {
+    invoice = await db.getInvoiceByPublicToken(token.trim());
+  } catch (err) {
+    console.error('calendar.ics: lookup failed:', err && err.message);
+    res.status(500);
+    return res.render('not-found', {
+      title: 'Invoice unavailable — DecentInvoice',
+      homeHref: '/',
+      homeLabel: 'Go to home page',
+      noindex: true
+    });
+  }
+  if (!invoice) {
+    res.status(404);
+    return res.render('not-found', {
+      title: 'Invoice not found — DecentInvoice',
+      homeHref: '/',
+      homeLabel: 'Go to home page',
+      noindex: true
+    });
+  }
+  if (invoice.status === 'paid' || invoice.status === 'draft' || !invoice.due_date) {
+    res.status(404);
+    return res.render('not-found', {
+      title: 'No upcoming due date — DecentInvoice',
+      homeHref: '/',
+      homeLabel: 'Go to home page',
+      noindex: true
+    });
+  }
+  const body = buildInvoiceIcs(invoice, { appUrl: process.env.APP_URL });
+  if (!body) {
+    res.status(404);
+    return res.render('not-found', {
+      title: 'No upcoming due date — DecentInvoice',
+      homeHref: '/',
+      homeLabel: 'Go to home page',
+      noindex: true
+    });
+  }
+  res.set('Content-Type', 'text/calendar; charset=utf-8');
+  res.set('Content-Disposition',
+    `attachment; filename="${buildIcsFilename(invoice)}"`);
+  // Avoid intermediary caching — a paid flip / due-date edit on the
+  // freelancer side should be reflected the next time the client re-
+  // downloads (rare but real for invoices whose due date got updated).
+  res.set('Cache-Control', 'no-store');
+  // The .ics is a downloadable artifact, not a page. Strip the
+  // X-Robots-Tag header so crawlers don't waste budget on it AND don't
+  // accidentally index the bytes; this is belt-and-braces alongside the
+  // global noindex on /i/<token>.
+  res.set('X-Robots-Tag', 'noindex');
+  return res.send(body);
 });
 
 /*
