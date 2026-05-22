@@ -26,6 +26,42 @@
     </div>
   <% } %>
 
+  <!-- Seed-invoice "this is a sample" banner (Milestone 2 — first dashboard
+       re-entry → first real invoice created). A brand-new user who clicks
+       the seed sample from the dashboard lands here and sees a normal
+       invoice view whose most prominent button is "Mark as Sent" — a
+       confusing dead-end on a placeholder row. The banner above the action
+       bar reframes the page ("this is just a sample") and points the
+       primary next-action at /invoices/quick, the 3-field express form
+       that already covers the brand-new-user activation path. Sits above
+       the existing action bar so the next-real-action signal wins the
+       visual hierarchy. print:hidden so a user who prints the sample for
+       reference doesn't ship the banner with the artifact. -->
+  <% if (invoice.is_seed) { %>
+    <div
+      data-testid="seed-invoice-view-banner"
+      class="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 flex flex-wrap items-center gap-4 print:hidden"
+      role="region"
+      aria-label="This is a sample invoice"
+    >
+      <div class="flex-1 min-w-0">
+        <p class="text-base font-semibold text-amber-900">
+          👋 This is the sample invoice we made for you.
+        </p>
+        <p class="text-sm text-amber-800 mt-1">
+          Take a look around — then make your real first invoice in 60 seconds.
+        </p>
+      </div>
+      <a
+        href="/invoices/quick"
+        data-testid="seed-invoice-view-banner-cta"
+        class="bg-brand-600 text-white font-semibold px-5 py-2.5 rounded-lg hover:bg-brand-700 transition whitespace-nowrap"
+      >
+        📝 Create your real first invoice →
+      </a>
+    </div>
+  <% } %>
+
   <!-- Action bar -->
   <div class="flex flex-wrap gap-3 mb-8">
     <% if (invoice.status === 'draft') { %>
