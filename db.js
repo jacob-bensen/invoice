@@ -448,6 +448,47 @@ const db = {
   },
 
   /*
+   * Returns the user's single oldest unpaid invoice with an open
+   * client-reported payment claim (the client clicked "I've sent payment"
+   * on the public /i/<token> share page — see lib/share.js and
+   * recordPaymentClaim above). Powers the in-app dashboard
+   * "💰 client says they sent payment — confirm & mark paid" prompt.
+   *
+   * Cohort: status <> 'paid' AND payment_claimed_at IS NOT NULL AND
+   * is_seed=false. The payment-claim email back to the freelancer
+   * (sendPaymentClaimedEmail) is fire-and-forget and a Resend outage can
+   * eat it; if the freelancer never sees the email, the only existing
+   * surface today is a tiny row badge inside the dashboard invoice table
+   * that's easy to miss. This banner makes the claim the first thing the
+   * freelancer sees on their next dashboard load — collapsing the
+   * "client says paid → freelancer flips status=paid" loop into one click
+   * fires the entire downstream conversion stack (first-paid celebration,
+   * referral CTA, annual-upgrade prompt, activation-funnel paid stage).
+   *
+   * ORDER BY payment_claimed_at ASC LIMIT 1 surfaces the oldest pending
+   * claim first — peak urgency (the longer it sits unconfirmed, the more
+   * likely the freelancer forgets or the client follows up confused).
+   */
+  async getOldestPendingPaymentClaim(userId) {
+    if (!userId) return null;
+    const { rows } = await pool.query(
+      `SELECT id, invoice_number, client_name, total, status, due_date,
+              payment_claimed_at, payment_claim_method,
+              payment_claim_reference, payment_claim_note,
+              first_viewed_at
+         FROM invoices
+        WHERE user_id = $1
+          AND status <> 'paid'
+          AND is_seed = false
+          AND payment_claimed_at IS NOT NULL
+        ORDER BY payment_claimed_at ASC
+        LIMIT 1`,
+      [userId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Trial-nudge query (INTERNAL_TODO #29). Returns trial users whose
    * `trial_ends_at` falls in the day-3-to-day-5 window from now and who
    * haven't been nudged yet. The `trial_nudge_sent_at IS NULL` filter is the

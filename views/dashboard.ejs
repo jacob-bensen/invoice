@@ -274,6 +274,64 @@
     </div>
   <% } %>
 
+  <% if (locals.paymentClaimPrompt && paymentClaimPrompt) { %>
+    <div
+      data-testid="payment-claim-prompt"
+      data-invoice-id="<%= paymentClaimPrompt.id %>"
+      data-claim-method="<%= paymentClaimPrompt.method %>"
+      data-hours-ago="<%= paymentClaimPrompt.hoursAgo %>"
+      class="mb-6 rounded-xl border border-emerald-300 bg-emerald-50 px-5 py-4 flex items-start gap-3 print:hidden"
+      role="region"
+      aria-label="Client reports they sent payment — confirm and mark paid"
+    >
+      <div class="text-emerald-700 text-xl leading-none mt-0.5" aria-hidden="true">&#128176;</div>
+      <div class="flex-1 text-sm">
+        <p class="font-semibold text-emerald-900">
+          <% if (paymentClaimPrompt.clientName) { %>
+            <strong data-testid="payment-claim-client-name"><%= paymentClaimPrompt.clientName %></strong> says they sent payment &mdash; confirm to close the loop.
+          <% } else { %>
+            Your client says they sent payment &mdash; confirm to close the loop.
+          <% } %>
+        </p>
+        <p class="text-emerald-800 mt-0.5">
+          <span data-testid="payment-claim-invoice-number"><%= paymentClaimPrompt.invoiceNumber %></span>
+          ($<span data-testid="payment-claim-total"><%= paymentClaimPrompt.total.toFixed(2) %></span>)
+          via
+          <strong data-testid="payment-claim-method-label"><%= paymentClaimPrompt.methodLabel %></strong><% if (paymentClaimPrompt.reference) { %>
+            &middot; ref: <span data-testid="payment-claim-reference"><%= paymentClaimPrompt.reference %></span><% } %>.
+        </p>
+        <% if (paymentClaimPrompt.note) { %>
+          <p class="text-emerald-700 text-xs mt-1" data-testid="payment-claim-note-line">
+            &ldquo;<span data-testid="payment-claim-note"><%= paymentClaimPrompt.note %></span>&rdquo;
+          </p>
+        <% } %>
+        <p class="text-emerald-700 text-xs mt-1">
+          Check your <%= paymentClaimPrompt.methodLabel %> account for the funds, then mark this invoice paid &mdash; the receipt and any follow-up automations fire on that flip.
+        </p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <form action="/invoices/<%= paymentClaimPrompt.id %>/status" method="POST" class="inline">
+            <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+            <input type="hidden" name="status" value="paid">
+            <button
+              type="submit"
+              data-testid="payment-claim-mark-paid"
+              class="bg-emerald-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-emerald-700 transition text-sm"
+            >
+              &#10003; Confirm &amp; mark paid
+            </button>
+          </form>
+          <a
+            href="/invoices/<%= paymentClaimPrompt.id %>"
+            data-testid="payment-claim-open-invoice"
+            class="border border-emerald-300 text-emerald-800 font-semibold px-4 py-2 rounded-lg hover:bg-emerald-100 transition text-sm"
+          >
+            Open invoice to verify &rarr;
+          </a>
+        </div>
+      </div>
+    </div>
+  <% } %>
+
   <% if (locals.clientViewedFollowupPrompt && clientViewedFollowupPrompt) { %>
     <div
       data-testid="client-viewed-followup-prompt"

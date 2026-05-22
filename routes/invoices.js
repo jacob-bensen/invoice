@@ -30,14 +30,15 @@ const RECENT_REVENUE_WINDOWS = [7, 30, 90];
 
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const [invoices, user, recentRevenue, oldestStaleDraft, oldestClientViewedUnpaid, oldestSentNotViewed, oldestOverdue] = await Promise.all([
+    const [invoices, user, recentRevenue, oldestStaleDraft, oldestClientViewedUnpaid, oldestSentNotViewed, oldestOverdue, oldestPendingPaymentClaim] = await Promise.all([
       db.getInvoicesByUser(req.session.user.id),
       db.getUserById(req.session.user.id),
       loadRecentRevenueStats(req.session.user.id),
       loadOldestStaleDraft(req.session.user.id),
       loadOldestClientViewedUnpaid(req.session.user.id),
       loadOldestSentNotViewed(req.session.user.id),
-      loadOldestOverdueInvoice(req.session.user.id)
+      loadOldestOverdueInvoice(req.session.user.id),
+      loadOldestPendingPaymentClaim(req.session.user.id)
     ]);
     const flash = req.session.flash;
     delete req.session.flash;
@@ -74,11 +75,12 @@ router.get('/', requireAuth, async (req, res) => {
       : null;
     const celebration = await loadCelebration(user).catch(() => null);
     const staleDraftPrompt = buildStaleDraftPrompt(user, oldestStaleDraft);
-    const clientViewedFollowupPrompt = buildClientViewedFollowupPrompt(user, oldestClientViewedUnpaid);
+    const paymentClaimPrompt = buildPaymentClaimPrompt(user, oldestPendingPaymentClaim);
+    const clientViewedFollowupPrompt = buildClientViewedFollowupPrompt(user, oldestClientViewedUnpaid, { paymentClaimPrompt });
     const sentNotViewedPrompt = buildSentNotViewedPrompt(user, oldestSentNotViewed);
-    const overduePrompt = buildOverduePrompt(user, oldestOverdue, { clientViewedFollowupPrompt, sentNotViewedPrompt });
+    const overduePrompt = buildOverduePrompt(user, oldestOverdue, { clientViewedFollowupPrompt, sentNotViewedPrompt, paymentClaimPrompt });
     const firstRealInvoicePrompt = buildFirstRealInvoicePrompt(user, invoices);
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, clientViewedFollowupPrompt, sentNotViewedPrompt, overduePrompt, firstRealInvoicePrompt, pendingQuickInvoice, noindex: true });
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, paymentClaimPrompt, clientViewedFollowupPrompt, sentNotViewedPrompt, overduePrompt, firstRealInvoicePrompt, pendingQuickInvoice, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
@@ -86,7 +88,8 @@ router.get('/', requireAuth, async (req, res) => {
       flash: null, days_left_in_trial: 0, onboarding: null,
       invoiceLimitProgress: null, recentRevenue: null,
       annualUpgradePrompt: null, socialProof: null, celebration: null,
-      staleDraftPrompt: null, clientViewedFollowupPrompt: null,
+      staleDraftPrompt: null, paymentClaimPrompt: null,
+      clientViewedFollowupPrompt: null,
       sentNotViewedPrompt: null,
       overduePrompt: null,
       firstRealInvoicePrompt: null,
@@ -215,6 +218,16 @@ async function loadOldestOverdueInvoice(userId) {
   }
 }
 
+async function loadOldestPendingPaymentClaim(userId) {
+  if (!userId || typeof db.getOldestPendingPaymentClaim !== 'function') return null;
+  try {
+    return await db.getOldestPendingPaymentClaim(userId);
+  } catch (err) {
+    console.error('Pending payment-claim lookup failed:', err && err.message);
+    return null;
+  }
+}
+
 /*
  * Persistent "Create your first real invoice" hero (Milestone 2). The
  * signup seed (#39) gives the dashboard a populated table on day-1, but
@@ -337,11 +350,19 @@ function buildStaleDraftPrompt(user, draft) {
  * grammatical without a name; null first_viewed_at short-circuits to
  * null (SQL guarantees this never happens but defence-in-depth).
  */
-function buildClientViewedFollowupPrompt(user, invoice) {
+function buildClientViewedFollowupPrompt(user, invoice, otherPrompts) {
   if (!user || !invoice || invoice.id == null) return null;
   if (!invoice.first_viewed_at) return null;
   const viewedMs = new Date(invoice.first_viewed_at).getTime();
   if (!Number.isFinite(viewedMs)) return null;
+  // Suppress when paymentClaimPrompt already targets the same invoice id.
+  // The payment-claim banner is more action-specific (the client already
+  // claimed they paid) and converts higher — let it own the surface.
+  const others = otherPrompts || {};
+  if (others.paymentClaimPrompt && others.paymentClaimPrompt.id != null
+      && String(others.paymentClaimPrompt.id) === String(invoice.id)) {
+    return null;
+  }
   const elapsedMs = Math.max(0, Date.now() - viewedMs);
   const daysAgo = Math.max(1, Math.floor(elapsedMs / 86400000));
   const hoursAgo = Math.max(1, Math.floor(elapsedMs / 3600000));
@@ -390,6 +411,71 @@ function buildSentNotViewedPrompt(user, invoice) {
 }
 
 /*
+ * Highest-converting Milestone 4 cohort: the client already clicked
+ * "I've sent payment" on the public /i/<token> share page (routes/share.js
+ * → db.recordPaymentClaim), so the row carries `payment_claimed_at`. The
+ * freelancer's remaining step is to verify the funds landed and flip the
+ * invoice to status='paid' — which fires the entire downstream conversion
+ * stack (first-paid celebration, referral CTA, annual-upgrade prompt,
+ * activation-funnel "got paid" stage). The existing surface today is a
+ * small amber row badge inside the dashboard invoice table that's easy to
+ * miss, plus a fire-and-forget Resend email back to the freelancer that
+ * can be eaten by an API outage. The banner makes the claim the first
+ * thing the freelancer sees on their next dashboard load.
+ *
+ * Method whitelist mirrors PAYMENT_CLAIM_METHODS in routes/share.js
+ * (cash|check|venmo|zelle|bank_transfer|paypal|other). Anything else
+ * coerces to 'other' so a deprecated method on an old row still renders
+ * the banner with a sensible label.
+ */
+const CLAIM_METHOD_LABELS = {
+  cash: 'Cash',
+  check: 'Cheque',
+  venmo: 'Venmo',
+  zelle: 'Zelle',
+  bank_transfer: 'Bank transfer',
+  paypal: 'PayPal',
+  other: 'Other'
+};
+
+function buildPaymentClaimPrompt(user, invoice) {
+  if (!user || !invoice || invoice.id == null) return null;
+  if (!invoice.payment_claimed_at) return null;
+  // Defence-in-depth: the SQL already filters status<>'paid', but if a
+  // caller passes a paid row directly to the builder, suppress.
+  if (invoice.status === 'paid') return null;
+  const claimedMs = new Date(invoice.payment_claimed_at).getTime();
+  if (!Number.isFinite(claimedMs)) return null;
+  const elapsedMs = Math.max(0, Date.now() - claimedMs);
+  const hoursAgo = Math.max(0, Math.floor(elapsedMs / 3600000));
+  const daysAgo = Math.max(0, Math.floor(elapsedMs / 86400000));
+  const rawMethod = invoice.payment_claim_method
+    ? String(invoice.payment_claim_method).trim().toLowerCase()
+    : '';
+  const method = CLAIM_METHOD_LABELS[rawMethod] ? rawMethod : 'other';
+  const methodLabel = CLAIM_METHOD_LABELS[method];
+  const reference = (typeof invoice.payment_claim_reference === 'string'
+    ? invoice.payment_claim_reference.trim()
+    : '') || null;
+  const note = (typeof invoice.payment_claim_note === 'string'
+    ? invoice.payment_claim_note.trim()
+    : '') || null;
+  return {
+    id: invoice.id,
+    invoiceNumber: invoice.invoice_number || '',
+    clientName: invoice.client_name || '',
+    total: Number(invoice.total) || 0,
+    method,
+    methodLabel,
+    reference,
+    note,
+    hoursAgo,
+    daysAgo,
+    status: invoice.status || 'sent'
+  };
+}
+
+/*
  * In-app dashboard analog of the daily overdue-freelancer-digest email cron.
  * Surfaces the user's single oldest sent/overdue invoice whose due_date has
  * passed. Anchors on the contract signal (past due_date) so it catches the
@@ -415,6 +501,9 @@ function buildOverduePrompt(user, invoice, otherPrompts) {
   }
   if (others.sentNotViewedPrompt && others.sentNotViewedPrompt.id != null) {
     suppressIds.add(String(others.sentNotViewedPrompt.id));
+  }
+  if (others.paymentClaimPrompt && others.paymentClaimPrompt.id != null) {
+    suppressIds.add(String(others.paymentClaimPrompt.id));
   }
   if (suppressIds.has(String(invoice.id))) return null;
   const elapsedMs = Math.max(0, Date.now() - dueMs);
@@ -1298,6 +1387,7 @@ module.exports.buildStaleDraftPrompt = buildStaleDraftPrompt;
 module.exports.buildClientViewedFollowupPrompt = buildClientViewedFollowupPrompt;
 module.exports.buildSentNotViewedPrompt = buildSentNotViewedPrompt;
 module.exports.buildOverduePrompt = buildOverduePrompt;
+module.exports.buildPaymentClaimPrompt = buildPaymentClaimPrompt;
 module.exports.buildFirstRealInvoicePrompt = buildFirstRealInvoicePrompt;
 module.exports.buildPendingQuickInvoiceBanner = buildPendingQuickInvoiceBanner;
 module.exports.readPendingQuickInvoice = readPendingQuickInvoice;
@@ -1306,6 +1396,7 @@ module.exports.loadOldestStaleDraft = loadOldestStaleDraft;
 module.exports.loadOldestClientViewedUnpaid = loadOldestClientViewedUnpaid;
 module.exports.loadOldestSentNotViewed = loadOldestSentNotViewed;
 module.exports.loadOldestOverdueInvoice = loadOldestOverdueInvoice;
+module.exports.loadOldestPendingPaymentClaim = loadOldestPendingPaymentClaim;
 module.exports.onboardingDismissHandler = onboardingDismissHandler;
 module.exports.ALLOWED_INVOICE_STATUSES = ALLOWED_INVOICE_STATUSES;
 module.exports.FREE_LIMIT = FREE_LIMIT;
