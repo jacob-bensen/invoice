@@ -346,6 +346,36 @@ const db = {
   },
 
   /*
+   * Returns the user's oldest sent/overdue invoice whose client demonstrably
+   * opened the public /i/<token> link at least `minAgeHours` ago (and not
+   * paid). Powers the in-app dashboard "client opened — send a follow-up"
+   * prompt — mirrors the cohort of jobs/client-viewed-followup.js (the 48h
+   * email cron) but fires in-app the moment the freelancer returns to the
+   * dashboard, regardless of whether the cron has run yet. is_seed=false so
+   * the sample never triggers; the post-view follow-up is the highest-
+   * converting moment so we surface the OLDEST eligible invoice first.
+   */
+  async getOldestClientViewedUnpaid(userId, minAgeHours = 48) {
+    if (!userId) return null;
+    const hours = Number.isFinite(minAgeHours) && minAgeHours > 0
+      ? Math.floor(minAgeHours)
+      : 48;
+    const { rows } = await pool.query(
+      `SELECT id, invoice_number, client_name, total, first_viewed_at, view_count, status
+         FROM invoices
+        WHERE user_id = $1
+          AND status IN ('sent', 'overdue')
+          AND is_seed = false
+          AND first_viewed_at IS NOT NULL
+          AND first_viewed_at <= NOW() - ($2 * INTERVAL '1 hour')
+        ORDER BY first_viewed_at ASC
+        LIMIT 1`,
+      [userId, hours]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Trial-nudge query (INTERNAL_TODO #29). Returns trial users whose
    * `trial_ends_at` falls in the day-3-to-day-5 window from now and who
    * haven't been nudged yet. The `trial_nudge_sent_at IS NULL` filter is the

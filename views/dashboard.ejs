@@ -274,6 +274,60 @@
     </div>
   <% } %>
 
+  <% if (locals.clientViewedFollowupPrompt && clientViewedFollowupPrompt) { %>
+    <div
+      data-testid="client-viewed-followup-prompt"
+      data-invoice-id="<%= clientViewedFollowupPrompt.id %>"
+      data-days-ago="<%= clientViewedFollowupPrompt.daysAgo %>"
+      data-view-count="<%= clientViewedFollowupPrompt.viewCount %>"
+      class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4 flex items-start gap-3 print:hidden"
+      role="region"
+      aria-label="Client opened your invoice — send a follow-up"
+    >
+      <div class="text-emerald-600 text-xl leading-none mt-0.5" aria-hidden="true">&#128064;</div>
+      <div class="flex-1 text-sm">
+        <p class="font-semibold text-emerald-900">
+          <% if (clientViewedFollowupPrompt.clientName) { %>
+            <strong data-testid="client-viewed-followup-client-name"><%= clientViewedFollowupPrompt.clientName %></strong> opened your invoice but hasn't paid yet.
+          <% } else { %>
+            Your client opened your invoice but hasn't paid yet.
+          <% } %>
+        </p>
+        <p class="text-emerald-800 mt-0.5">
+          <span data-testid="client-viewed-followup-invoice-number"><%= clientViewedFollowupPrompt.invoiceNumber %></span>
+          ($<span data-testid="client-viewed-followup-total"><%= clientViewedFollowupPrompt.total.toFixed(2) %></span>)
+          was viewed <span data-testid="client-viewed-followup-days-ago"><%= clientViewedFollowupPrompt.daysAgo %></span>
+          day<% if (clientViewedFollowupPrompt.daysAgo !== 1) { %>s<% } %> ago<% if (clientViewedFollowupPrompt.viewCount > 1) { %>
+            &middot; opened <span data-testid="client-viewed-followup-view-count"><%= clientViewedFollowupPrompt.viewCount %></span> times
+          <% } %>.
+        </p>
+        <p class="text-emerald-700 text-xs mt-1">
+          A short friendly nudge at this exact moment is the highest-converting follow-up window.
+        </p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <a
+            href="/invoices/<%= clientViewedFollowupPrompt.id %>"
+            data-testid="client-viewed-followup-cta"
+            class="bg-emerald-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-emerald-700 transition text-sm"
+          >
+            &#128228; Open invoice &amp; send a follow-up &rarr;
+          </a>
+          <form action="/invoices/<%= clientViewedFollowupPrompt.id %>/status" method="POST" class="inline">
+            <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+            <input type="hidden" name="status" value="paid">
+            <button
+              type="submit"
+              data-testid="client-viewed-followup-mark-paid"
+              class="border border-emerald-300 text-emerald-800 font-semibold px-4 py-2 rounded-lg hover:bg-emerald-100 transition text-sm"
+            >
+              &#10003; Mark as paid
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  <% } %>
+
   <% if (locals.invoiceLimitProgress) { %>
     <div
       data-testid="invoice-limit-progress"

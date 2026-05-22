@@ -30,11 +30,12 @@ const RECENT_REVENUE_WINDOWS = [7, 30, 90];
 
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const [invoices, user, recentRevenue, oldestStaleDraft] = await Promise.all([
+    const [invoices, user, recentRevenue, oldestStaleDraft, oldestClientViewedUnpaid] = await Promise.all([
       db.getInvoicesByUser(req.session.user.id),
       db.getUserById(req.session.user.id),
       loadRecentRevenueStats(req.session.user.id),
-      loadOldestStaleDraft(req.session.user.id)
+      loadOldestStaleDraft(req.session.user.id),
+      loadOldestClientViewedUnpaid(req.session.user.id)
     ]);
     const flash = req.session.flash;
     delete req.session.flash;
@@ -71,8 +72,9 @@ router.get('/', requireAuth, async (req, res) => {
       : null;
     const celebration = await loadCelebration(user).catch(() => null);
     const staleDraftPrompt = buildStaleDraftPrompt(user, oldestStaleDraft);
+    const clientViewedFollowupPrompt = buildClientViewedFollowupPrompt(user, oldestClientViewedUnpaid);
     const firstRealInvoicePrompt = buildFirstRealInvoicePrompt(user, invoices);
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, firstRealInvoicePrompt, pendingQuickInvoice, noindex: true });
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, clientViewedFollowupPrompt, firstRealInvoicePrompt, pendingQuickInvoice, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
@@ -80,7 +82,8 @@ router.get('/', requireAuth, async (req, res) => {
       flash: null, days_left_in_trial: 0, onboarding: null,
       invoiceLimitProgress: null, recentRevenue: null,
       annualUpgradePrompt: null, socialProof: null, celebration: null,
-      staleDraftPrompt: null, firstRealInvoicePrompt: null,
+      staleDraftPrompt: null, clientViewedFollowupPrompt: null,
+      firstRealInvoicePrompt: null,
       pendingQuickInvoice: null, noindex: true
     });
   }
@@ -172,6 +175,16 @@ async function loadOldestStaleDraft(userId) {
     return await db.getOldestStaleDraft(userId);
   } catch (err) {
     console.error('Stale draft lookup failed:', err && err.message);
+    return null;
+  }
+}
+
+async function loadOldestClientViewedUnpaid(userId) {
+  if (!userId || typeof db.getOldestClientViewedUnpaid !== 'function') return null;
+  try {
+    return await db.getOldestClientViewedUnpaid(userId);
+  } catch (err) {
+    console.error('Client-viewed unpaid lookup failed:', err && err.message);
     return null;
   }
 }
@@ -281,6 +294,41 @@ function buildStaleDraftPrompt(user, draft) {
     clientName: draft.client_name || '',
     total: Number(draft.total) || 0,
     hoursOld
+  };
+}
+
+/*
+ * In-app dashboard analog of the 48h client-viewed-followup email cron.
+ * When the freelancer returns to the dashboard and has at least one
+ * sent/overdue invoice the client opened 48h+ ago, surface a single
+ * prompt deep-linking back to the invoice (where the share-intent buttons
+ * + mark-as-paid live). days/hours since view is rendered as a soft
+ * "X days ago" anchor — exact same framing as the email body.
+ *
+ * Single banner at a time (LIMIT 1 in the SQL) — the oldest viewed
+ * invoice surfaces first, peak conversion-likelihood ordering. Empty
+ * client_name falls back to "your client" so the banner copy stays
+ * grammatical without a name; null first_viewed_at short-circuits to
+ * null (SQL guarantees this never happens but defence-in-depth).
+ */
+function buildClientViewedFollowupPrompt(user, invoice) {
+  if (!user || !invoice || invoice.id == null) return null;
+  if (!invoice.first_viewed_at) return null;
+  const viewedMs = new Date(invoice.first_viewed_at).getTime();
+  if (!Number.isFinite(viewedMs)) return null;
+  const elapsedMs = Math.max(0, Date.now() - viewedMs);
+  const daysAgo = Math.max(1, Math.floor(elapsedMs / 86400000));
+  const hoursAgo = Math.max(1, Math.floor(elapsedMs / 3600000));
+  const viewCount = Math.max(1, parseInt(invoice.view_count, 10) || 1);
+  return {
+    id: invoice.id,
+    invoiceNumber: invoice.invoice_number || '',
+    clientName: invoice.client_name || '',
+    total: Number(invoice.total) || 0,
+    daysAgo,
+    hoursAgo,
+    viewCount,
+    status: invoice.status || 'sent'
   };
 }
 
@@ -1150,11 +1198,13 @@ module.exports.buildInvoiceLimitProgress = buildInvoiceLimitProgress;
 module.exports.buildRecentRevenueCard = buildRecentRevenueCard;
 module.exports.buildAnnualUpgradePrompt = buildAnnualUpgradePrompt;
 module.exports.buildStaleDraftPrompt = buildStaleDraftPrompt;
+module.exports.buildClientViewedFollowupPrompt = buildClientViewedFollowupPrompt;
 module.exports.buildFirstRealInvoicePrompt = buildFirstRealInvoicePrompt;
 module.exports.buildPendingQuickInvoiceBanner = buildPendingQuickInvoiceBanner;
 module.exports.readPendingQuickInvoice = readPendingQuickInvoice;
 module.exports.normalizePendingQuickInvoiceInput = normalizePendingQuickInvoiceInput;
 module.exports.loadOldestStaleDraft = loadOldestStaleDraft;
+module.exports.loadOldestClientViewedUnpaid = loadOldestClientViewedUnpaid;
 module.exports.onboardingDismissHandler = onboardingDismissHandler;
 module.exports.ALLOWED_INVOICE_STATUSES = ALLOWED_INVOICE_STATUSES;
 module.exports.FREE_LIMIT = FREE_LIMIT;
