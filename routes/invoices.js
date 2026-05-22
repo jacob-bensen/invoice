@@ -30,13 +30,14 @@ const RECENT_REVENUE_WINDOWS = [7, 30, 90];
 
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const [invoices, user, recentRevenue, oldestStaleDraft, oldestClientViewedUnpaid, oldestSentNotViewed] = await Promise.all([
+    const [invoices, user, recentRevenue, oldestStaleDraft, oldestClientViewedUnpaid, oldestSentNotViewed, oldestOverdue] = await Promise.all([
       db.getInvoicesByUser(req.session.user.id),
       db.getUserById(req.session.user.id),
       loadRecentRevenueStats(req.session.user.id),
       loadOldestStaleDraft(req.session.user.id),
       loadOldestClientViewedUnpaid(req.session.user.id),
-      loadOldestSentNotViewed(req.session.user.id)
+      loadOldestSentNotViewed(req.session.user.id),
+      loadOldestOverdueInvoice(req.session.user.id)
     ]);
     const flash = req.session.flash;
     delete req.session.flash;
@@ -75,8 +76,9 @@ router.get('/', requireAuth, async (req, res) => {
     const staleDraftPrompt = buildStaleDraftPrompt(user, oldestStaleDraft);
     const clientViewedFollowupPrompt = buildClientViewedFollowupPrompt(user, oldestClientViewedUnpaid);
     const sentNotViewedPrompt = buildSentNotViewedPrompt(user, oldestSentNotViewed);
+    const overduePrompt = buildOverduePrompt(user, oldestOverdue, { clientViewedFollowupPrompt, sentNotViewedPrompt });
     const firstRealInvoicePrompt = buildFirstRealInvoicePrompt(user, invoices);
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, clientViewedFollowupPrompt, sentNotViewedPrompt, firstRealInvoicePrompt, pendingQuickInvoice, noindex: true });
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, clientViewedFollowupPrompt, sentNotViewedPrompt, overduePrompt, firstRealInvoicePrompt, pendingQuickInvoice, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
@@ -86,6 +88,7 @@ router.get('/', requireAuth, async (req, res) => {
       annualUpgradePrompt: null, socialProof: null, celebration: null,
       staleDraftPrompt: null, clientViewedFollowupPrompt: null,
       sentNotViewedPrompt: null,
+      overduePrompt: null,
       firstRealInvoicePrompt: null,
       pendingQuickInvoice: null, noindex: true
     });
@@ -198,6 +201,16 @@ async function loadOldestSentNotViewed(userId) {
     return await db.getOldestSentNotViewed(userId);
   } catch (err) {
     console.error('Sent-not-viewed lookup failed:', err && err.message);
+    return null;
+  }
+}
+
+async function loadOldestOverdueInvoice(userId) {
+  if (!userId || typeof db.getOldestOverdueInvoice !== 'function') return null;
+  try {
+    return await db.getOldestOverdueInvoice(userId);
+  } catch (err) {
+    console.error('Overdue invoice lookup failed:', err && err.message);
     return null;
   }
 }
@@ -372,6 +385,46 @@ function buildSentNotViewedPrompt(user, invoice) {
     total: Number(invoice.total) || 0,
     daysAgo,
     hoursAgo,
+    status: invoice.status || 'sent'
+  };
+}
+
+/*
+ * In-app dashboard analog of the daily overdue-freelancer-digest email cron.
+ * Surfaces the user's single oldest sent/overdue invoice whose due_date has
+ * passed. Anchors on the contract signal (past due_date) so it catches the
+ * cohort the other two M4 prompts miss: manually Mark-as-Sent invoices
+ * (no share-intent stamp), /:id/email-client sends (no share-intent stamp),
+ * and invoices viewed <48h ago but already past their due_date.
+ *
+ * Suppression: if the OTHER M4 prompts (clientViewedFollowup, sentNotViewed)
+ * already target the same invoice id, we collapse to one banner — the
+ * existing prompt copy is more action-specific. This avoids stacking three
+ * red/orange/emerald banners on the same invoice. The overdue prompt only
+ * fires when it would surface a DIFFERENT invoice than the other two.
+ */
+function buildOverduePrompt(user, invoice, otherPrompts) {
+  if (!user || !invoice || invoice.id == null) return null;
+  if (!invoice.due_date) return null;
+  const dueMs = new Date(invoice.due_date).getTime();
+  if (!Number.isFinite(dueMs)) return null;
+  const others = otherPrompts || {};
+  const suppressIds = new Set();
+  if (others.clientViewedFollowupPrompt && others.clientViewedFollowupPrompt.id != null) {
+    suppressIds.add(String(others.clientViewedFollowupPrompt.id));
+  }
+  if (others.sentNotViewedPrompt && others.sentNotViewedPrompt.id != null) {
+    suppressIds.add(String(others.sentNotViewedPrompt.id));
+  }
+  if (suppressIds.has(String(invoice.id))) return null;
+  const elapsedMs = Math.max(0, Date.now() - dueMs);
+  const daysPastDue = Math.max(1, Math.floor(elapsedMs / 86400000));
+  return {
+    id: invoice.id,
+    invoiceNumber: invoice.invoice_number || '',
+    clientName: invoice.client_name || '',
+    total: Number(invoice.total) || 0,
+    daysPastDue,
     status: invoice.status || 'sent'
   };
 }
@@ -1244,6 +1297,7 @@ module.exports.buildAnnualUpgradePrompt = buildAnnualUpgradePrompt;
 module.exports.buildStaleDraftPrompt = buildStaleDraftPrompt;
 module.exports.buildClientViewedFollowupPrompt = buildClientViewedFollowupPrompt;
 module.exports.buildSentNotViewedPrompt = buildSentNotViewedPrompt;
+module.exports.buildOverduePrompt = buildOverduePrompt;
 module.exports.buildFirstRealInvoicePrompt = buildFirstRealInvoicePrompt;
 module.exports.buildPendingQuickInvoiceBanner = buildPendingQuickInvoiceBanner;
 module.exports.readPendingQuickInvoice = readPendingQuickInvoice;
@@ -1251,6 +1305,7 @@ module.exports.normalizePendingQuickInvoiceInput = normalizePendingQuickInvoiceI
 module.exports.loadOldestStaleDraft = loadOldestStaleDraft;
 module.exports.loadOldestClientViewedUnpaid = loadOldestClientViewedUnpaid;
 module.exports.loadOldestSentNotViewed = loadOldestSentNotViewed;
+module.exports.loadOldestOverdueInvoice = loadOldestOverdueInvoice;
 module.exports.onboardingDismissHandler = onboardingDismissHandler;
 module.exports.ALLOWED_INVOICE_STATUSES = ALLOWED_INVOICE_STATUSES;
 module.exports.FREE_LIMIT = FREE_LIMIT;

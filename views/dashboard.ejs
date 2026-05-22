@@ -379,6 +379,57 @@
     </div>
   <% } %>
 
+  <% if (locals.overduePrompt && overduePrompt) { %>
+    <div
+      data-testid="overdue-prompt"
+      data-invoice-id="<%= overduePrompt.id %>"
+      data-days-past-due="<%= overduePrompt.daysPastDue %>"
+      class="mb-6 rounded-xl border border-red-200 bg-red-50 px-5 py-4 flex items-start gap-3 print:hidden"
+      role="region"
+      aria-label="Invoice past due — chase it now"
+    >
+      <div class="text-red-600 text-xl leading-none mt-0.5" aria-hidden="true">&#128197;</div>
+      <div class="flex-1 text-sm">
+        <p class="font-semibold text-red-900">
+          <% if (overduePrompt.clientName) { %>
+            <strong data-testid="overdue-client-name"><%= overduePrompt.clientName %></strong>'s invoice is past due — time to chase it.
+          <% } else { %>
+            Your invoice is past due — time to chase it.
+          <% } %>
+        </p>
+        <p class="text-red-800 mt-0.5">
+          <span data-testid="overdue-invoice-number"><%= overduePrompt.invoiceNumber %></span>
+          ($<span data-testid="overdue-total"><%= overduePrompt.total.toFixed(2) %></span>)
+          is <span data-testid="overdue-days-past-due"><%= overduePrompt.daysPastDue %></span>
+          day<% if (overduePrompt.daysPastDue !== 1) { %>s<% } %> past due.
+        </p>
+        <p class="text-red-700 text-xs mt-1">
+          A short, polite follow-up at this exact moment lands more reliably than waiting another week.
+        </p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <a
+            href="/invoices/<%= overduePrompt.id %>"
+            data-testid="overdue-cta"
+            class="bg-red-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-red-700 transition text-sm"
+          >
+            &#128203; Open invoice &amp; chase it &rarr;
+          </a>
+          <form action="/invoices/<%= overduePrompt.id %>/status" method="POST" class="inline">
+            <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+            <input type="hidden" name="status" value="paid">
+            <button
+              type="submit"
+              data-testid="overdue-mark-paid"
+              class="border border-red-300 text-red-800 font-semibold px-4 py-2 rounded-lg hover:bg-red-100 transition text-sm"
+            >
+              &#10003; Mark as paid
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  <% } %>
+
   <% if (locals.invoiceLimitProgress) { %>
     <div
       data-testid="invoice-limit-progress"

@@ -3,6 +3,13 @@
 ---
 
 ## 2026-05-22
+Shipped: in-app dashboard "📅 invoice past due — time to chase it" prompt for the contractual-late cohort (sent/overdue, `due_date < CURRENT_DATE`, `is_seed=false`). New `db.getOldestOverdueInvoice(userId)` + `routes/invoices.loadOldestOverdueInvoice` + `buildOverduePrompt` + red-tone banner sitting below `sentNotViewedPrompt` and above `invoiceLimitProgress`, with "📋 Open invoice & chase it →" CTA + one-tap "Mark as paid". In-app analog of `jobs/overdue-freelancer-digest.js` (daily 13:00 UTC, 7-day cooldown) — fires the moment the freelancer returns to the dashboard, closing the cooldown gap. Anchors on `due_date < CURRENT_DATE` instead of viewing/share signals so it catches the cohort the other two M4 prompts miss: manually Mark-as-Sent invoices (no share-intent stamp), `/:id/email-client` sends, and invoices viewed <48h ago but already past due. `buildOverduePrompt` suppresses to null when `clientViewedFollowupPrompt` or `sentNotViewedPrompt` already targets the same invoice id (string-safe Set) — avoids three banners on one invoice. 41 new assertions in `tests/overdue-prompt.test.js` across db SQL contract, route loader, builder (including same-id suppression), and view rendering. Full suite passes.
+Advances: Milestone 4 (first invoice sent → first payment received)
+Master action: none — pure-code db helper + route loader + view banner + tests; no schema migration (uses existing `due_date` + `status` columns), no env vars, no new dependencies.
+
+---
+
+## 2026-05-22
 Shipped: in-app dashboard "📡 client hasn't opened your invoice — try another channel" prompt for the silent-failure cohort (sent via share-intent 72h+ ago, `first_viewed_at IS NULL`). New `db.getOldestSentNotViewed` + `routes/invoices.buildSentNotViewedPrompt` + orange-tone banner that sits below the client-viewed-followup, with "Open invoice & re-share →" CTA + one-tap "Mark as paid"; the in-app analog of `jobs/sent-not-viewed-nudge.js` (the 72h email cron) — fires the moment the freelancer returns to the dashboard, regardless of cron tick. Not plan-gated. 36 new assertions in `tests/sent-not-viewed-prompt.test.js` across db SQL contract, route loader, builder, and view rendering. Full suite passes.
 Advances: Milestone 4 (first invoice sent → first payment received)
 Master action: none — pure-code db helper + route loader + view banner + tests; no schema migration, no env vars, no new dependencies.

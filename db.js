@@ -409,6 +409,45 @@ const db = {
   },
 
   /*
+   * Returns the user's single oldest sent/overdue invoice whose due_date has
+   * passed. Powers the in-app dashboard "📅 invoice past due — chase it now"
+   * prompt. Mirrors the cohort of jobs/overdue-freelancer-digest.js (the
+   * daily 13:00 UTC freelancer email) but fires the moment the freelancer
+   * returns to the dashboard, regardless of whether the cron has run yet —
+   * the overdue digest enforces a 7-day per-user cooldown, so a freelancer
+   * who returns daily otherwise gets at most one nudge per week.
+   *
+   * The anchor is `due_date < CURRENT_DATE` (NOT first_viewed_at, NOT
+   * sent_via_share_intent_at) — the contractual signal that the payment is
+   * late, independent of share gesture or view event. Catches the cohort the
+   * other two M4 prompts miss:
+   *   - manually Mark-as-Sent invoices (no sent_via_share_intent_at stamp)
+   *   - server-side /:id/email-client sends (no share-intent stamp)
+   *   - invoices viewed <48h ago but already past due
+   *
+   * is_seed=false so the dashboard sample (whose due_date can be in the
+   * past depending on seed strategy) never triggers. ORDER BY due_date ASC
+   * LIMIT 1 surfaces the most-overdue invoice first — peak action priority.
+   */
+  async getOldestOverdueInvoice(userId) {
+    if (!userId) return null;
+    const { rows } = await pool.query(
+      `SELECT id, invoice_number, client_name, total, due_date, status,
+              first_viewed_at, sent_via_share_intent_at
+         FROM invoices
+        WHERE user_id = $1
+          AND status IN ('sent', 'overdue')
+          AND is_seed = false
+          AND due_date IS NOT NULL
+          AND due_date < CURRENT_DATE
+        ORDER BY due_date ASC
+        LIMIT 1`,
+      [userId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Trial-nudge query (INTERNAL_TODO #29). Returns trial users whose
    * `trial_ends_at` falls in the day-3-to-day-5 window from now and who
    * haven't been nudged yet. The `trial_nudge_sent_at IS NULL` filter is the
