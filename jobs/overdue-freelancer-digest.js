@@ -15,6 +15,16 @@
  *     trial-urgency stack, upgrade modal, and celebration banner — every
  *     return-to-app event is upstream of the conversion stack.
  *
+ * Magic-login bake-in (Milestone 4 friction-removal): for each cohort row
+ * we mint a 7-day magic-login token (lib/magic-login.mintMagicLoginToken)
+ * and bake the auto-sign-in URL into the "Open your dashboard →" CTA with
+ * `?next=/invoices`. A user reading the digest on mobile or a fresh device
+ * with an expired session lands signed-in directly on the dashboard where
+ * they can chase the invoice, instead of bouncing at /auth/login (the
+ * cohort hit hardest by login-friction is the same cohort least likely to
+ * remember a six-month-old password). Mint failures soft-fall back to the
+ * plain APP_URL CTA; the digest is never sacrificed to a mint hiccup.
+ *
  * Design mirrors jobs/no-invoice-nudge.js / jobs/stale-draft-email.js:
  *   - `processOverdueDigest({ db, sendEmail, now, cooldownDays, log })` is
  *     the pure orchestrator. Dependency-injected, no module state. Returns a
@@ -32,9 +42,16 @@
 const { db: realDb } = require('../db');
 const { sendEmail: realSendEmail } = require('../lib/email');
 const { escapeHtml, formatMoney } = require('../lib/html');
+const { mintMagicLoginToken: realMintMagicLoginToken } = require('../lib/magic-login');
 
 const DEFAULT_COOLDOWN_DAYS = 7;
 const DEFAULT_SCHEDULE = '0 13 * * *'; // 13:00 UTC daily (after no-invoice at 12:00)
+// 7 days — matches the welcome / stale-draft / no-invoice-nudge magic-login
+// TTLs. The digest fires daily on a 7-day cooldown; the recipient may not
+// click for several more days, especially over a weekend. A 7-day window is
+// loose enough to still auto-sign-in then, tight enough that the token
+// rotates well before any practical mailbox-leak horizon.
+const DIGEST_TTL_MINUTES = 7 * 24 * 60;
 
 function greetingName(row) {
   return (row && (row.name || row.business_name)) || 'there';
@@ -45,7 +62,18 @@ function resolveReplyTo(row) {
   return row.reply_to_email || row.business_email || row.email || null;
 }
 
-function dashboardUrl() {
+function dashboardUrl(opts) {
+  // When a one-shot magic-login URL is supplied (processOverdueDigest mints
+  // one per cohort row), bake it into the CTA with ?next=/invoices so the
+  // click auto-signs-in and lands directly on the dashboard. Falls back to
+  // the plain APP_URL path when no magic URL is available (mint failed, no
+  // DB, etc.) so the digest is still actionable — the user just has to
+  // authenticate manually first.
+  const magicLoginUrl = opts && typeof opts.magicLoginUrl === 'string'
+    ? opts.magicLoginUrl.trim() : '';
+  if (magicLoginUrl) {
+    return `${magicLoginUrl}?next=/invoices`;
+  }
   const base = (process.env.APP_URL || '').replace(/\/+$/, '');
   return base ? `${base}/invoices` : '';
 }
@@ -66,12 +94,12 @@ function buildOverdueDigestSubject(row) {
   return `You have ${n} overdue invoices — time to follow up`;
 }
 
-function buildOverdueDigestHtml(row, now = new Date()) {
+function buildOverdueDigestHtml(row, now = new Date(), opts) {
   const greeting = greetingName(row);
   const n = parseInt(row && row.overdue_count, 10) || 0;
   const total = formatMoney(row && row.overdue_total);
   const oldest = daysOverdue(row && row.oldest_due_date, now);
-  const dashUrl = dashboardUrl();
+  const dashUrl = dashboardUrl(opts);
   const dashButton = dashUrl
     ? `<p style="margin:24px 0;"><a href="${escapeHtml(dashUrl)}" style="background:#b91c1c;color:#fff;text-decoration:none;font-weight:600;padding:12px 20px;border-radius:8px;display:inline-block;">Open your dashboard →</a></p>`
     : '';
@@ -101,12 +129,12 @@ function buildOverdueDigestHtml(row, now = new Date()) {
 </body></html>`;
 }
 
-function buildOverdueDigestText(row, now = new Date()) {
+function buildOverdueDigestText(row, now = new Date(), opts) {
   const greeting = greetingName(row);
   const n = parseInt(row && row.overdue_count, 10) || 0;
   const total = formatMoney(row && row.overdue_total);
   const oldest = daysOverdue(row && row.oldest_due_date, now);
-  const dashUrl = dashboardUrl();
+  const dashUrl = dashboardUrl(opts);
   const noun = n === 1 ? 'invoice' : 'invoices';
   const lines = [
     `Hi ${greeting},`,
@@ -135,8 +163,12 @@ function buildOverdueDigestText(row, now = new Date()) {
 async function processOverdueDigest(opts = {}) {
   const db = opts.db || realDb;
   const sendEmail = opts.sendEmail || realSendEmail;
+  const mintMagicLoginToken = opts.mintMagicLoginToken || realMintMagicLoginToken;
   const now = opts.now || new Date();
   const cooldownDays = opts.cooldownDays || DEFAULT_COOLDOWN_DAYS;
+  const ttlMinutes = Number.isFinite(opts.ttlMinutes) && opts.ttlMinutes > 0
+    ? Math.floor(opts.ttlMinutes)
+    : DIGEST_TTL_MINUTES;
   const log = opts.log || console;
 
   const summary = { found: 0, sent: 0, skipped: 0, errors: 0, notConfigured: 0 };
@@ -158,13 +190,36 @@ async function processOverdueDigest(opts = {}) {
       continue;
     }
 
+    // Best-effort: mint a magic-login URL so the CTA auto-signs-in the user
+    // and lands on the dashboard. Any failure falls back to the plain
+    // APP_URL path — we never sacrifice the digest send to a mint hiccup.
+    let magicLoginUrl = '';
+    try {
+      const mint = await mintMagicLoginToken(db, row.user_id, { ttlMinutes });
+      if (mint && mint.ok && mint.url) {
+        magicLoginUrl = mint.url;
+      } else if (mint && !mint.ok) {
+        log.warn && log.warn(
+          `overdue-digest magic-link mint skipped for user ${row.user_id}: ${mint.reason}`
+        );
+      }
+    } catch (err) {
+      // Defence-in-depth: mintMagicLoginToken catches internally, but a
+      // future refactor that lets it throw must NEVER drop the digest.
+      log.warn && log.warn(
+        `overdue-digest magic-link mint threw for user ${row.user_id}:`,
+        err && err.message
+      );
+    }
+    const buildOpts = magicLoginUrl ? { magicLoginUrl } : undefined;
+
     let result;
     try {
       result = await sendEmail({
         to: row.email,
         subject: buildOverdueDigestSubject(row, now),
-        html: buildOverdueDigestHtml(row, now),
-        text: buildOverdueDigestText(row, now),
+        html: buildOverdueDigestHtml(row, now, buildOpts),
+        text: buildOverdueDigestText(row, now, buildOpts),
         replyTo: resolveReplyTo(row)
       });
     } catch (err) {
@@ -254,5 +309,6 @@ module.exports = {
   daysOverdue,
   DEFAULT_COOLDOWN_DAYS,
   DEFAULT_SCHEDULE,
+  DIGEST_TTL_MINUTES,
   _internal: { escapeHtml, formatMoney, greetingName, resolveReplyTo, dashboardUrl }
 };

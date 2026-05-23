@@ -21,6 +21,11 @@
  *  14. cooldownDays opt threaded through to db helper.
  *  15. SQL contract checks on db.getUsersWithOverdueInvoicesForDigest.
  *  16. db.markOverdueDigestSent: falsy-userId short-circuit.
+ *  17. Magic-login: per-cohort mint + URL baked into CTA + per-user isolation.
+ *  18. Magic-login: mint failure falls back to plain dash URL gracefully.
+ *  19. Magic-login: mint throws → soft-fail to plain dash URL.
+ *  20. Magic-login: ttlMinutes opt overrides DIGEST_TTL_MINUTES.
+ *  21. Magic-login: emitted ?next= passes lib/magic-login.safeNextPath.
  *
  * Run: NODE_ENV=test node tests/overdue-freelancer-digest.test.js
  */
@@ -206,6 +211,117 @@ test('happy path: sends and stamps', async () => {
   assert.match(sends[0].subject, /3 overdue invoices/);
   assert.match(sends[0].html, /Hi Sam/);
   assert.match(sends[0].text, /Hi Sam/);
+});
+
+test('magic-login: mints once per cohort row + bakes the URL into the sent email', async () => {
+  process.env.APP_URL = 'https://decentinvoice.com';
+  const sends = [];
+  const mintCalls = [];
+  const db = fakeDb([
+    cohortRow({ user_id: 7, email: 'a@a.com', name: 'A' }),
+    cohortRow({ user_id: 8, email: 'b@b.com', name: 'B' })
+  ]);
+  await digest.processOverdueDigest({
+    db,
+    sendEmail: async (p) => { sends.push(p); return { ok: true, id: 'em' }; },
+    mintMagicLoginToken: async (_db, userId, opts) => {
+      mintCalls.push({ userId, opts });
+      return { ok: true, url: `https://decentinvoice.com/auth/magic/tok-${userId}`, ttlMinutes: opts.ttlMinutes };
+    },
+    now: new Date('2026-05-16T13:00:00Z'),
+    log: { error: () => {}, warn: () => {}, log: () => {} }
+  });
+  assert.strictEqual(mintCalls.length, 2, 'mint called exactly once per cohort row');
+  assert.strictEqual(mintCalls[0].userId, 7,
+    'mint must use row.user_id (token belongs to the freelancer)');
+  assert.strictEqual(mintCalls[0].opts.ttlMinutes, digest.DIGEST_TTL_MINUTES,
+    'mint uses the 7-day TTL');
+  assert.strictEqual(mintCalls[1].userId, 8);
+  assert.match(sends[0].html, /\/auth\/magic\/tok-7\?next=\/invoices/,
+    'user 7 receives the user 7 magic URL with ?next=/invoices');
+  assert.match(sends[1].html, /\/auth\/magic\/tok-8\?next=\/invoices/,
+    'user 8 receives the user 8 magic URL (no cross-user token leak)');
+  assert.ok(!/\/auth\/magic\/tok-7/.test(sends[1].html),
+    'user 8 must NOT receive user 7 token');
+  assert.ok(!/\/auth\/magic\/tok-8/.test(sends[0].html),
+    'user 7 must NOT receive user 8 token');
+  assert.match(sends[0].text, /\/auth\/magic\/tok-7\?next=\/invoices/,
+    'text part must also carry the magic URL — plain-text email clients still get auto-sign-in');
+});
+
+test('magic-login: mint failure falls back to plain CTA + email still ships + stamp still lands', async () => {
+  process.env.APP_URL = 'https://decentinvoice.com';
+  const sends = [];
+  const warns = [];
+  const db = fakeDb([cohortRow({ user_id: 99, email: 'q@q.com', name: 'Q' })]);
+  const summary = await digest.processOverdueDigest({
+    db,
+    sendEmail: async (p) => { sends.push(p); return { ok: true, id: 'em_99' }; },
+    mintMagicLoginToken: async () => ({ ok: false, reason: 'db_error', error: 'PG hiccup' }),
+    now: new Date('2026-05-16T13:00:00Z'),
+    log: { error: () => {}, warn: (...a) => warns.push(a), log: () => {} }
+  });
+  assert.strictEqual(summary.sent, 1, 'mint failure does NOT block the send');
+  assert.deepStrictEqual(db.stamped, [99], 'stamp lands on send success regardless of mint outcome');
+  assert.match(sends[0].html, /https:\/\/decentinvoice\.com\/invoices/,
+    'falls back to the plain /invoices CTA');
+  assert.ok(!/\/auth\/magic\//.test(sends[0].html),
+    'no magic URL in the body when mint failed');
+  assert.ok(warns.some(args => /magic-link mint skipped/.test(args.join(' '))),
+    'warn logged for operator visibility');
+});
+
+test('magic-login: mint throws → soft-fails to plain CTA + email still ships', async () => {
+  process.env.APP_URL = 'https://decentinvoice.com';
+  const sends = [];
+  const db = fakeDb([cohortRow({ user_id: 5, email: 'z@z.com' })]);
+  const summary = await digest.processOverdueDigest({
+    db,
+    sendEmail: async (p) => { sends.push(p); return { ok: true }; },
+    mintMagicLoginToken: async () => { throw new Error('mint exploded'); },
+    now: new Date('2026-05-16T13:00:00Z'),
+    log: { error: () => {}, warn: () => {}, log: () => {} }
+  });
+  assert.strictEqual(summary.sent, 1);
+  assert.strictEqual(summary.errors, 0,
+    'mint throw is a soft-fail — must not count as a send error');
+  assert.match(sends[0].html, /https:\/\/decentinvoice\.com\/invoices/);
+  assert.ok(!/\/auth\/magic\//.test(sends[0].html));
+});
+
+test('magic-login: ttlMinutes opt overrides DIGEST_TTL_MINUTES on the mint call', async () => {
+  process.env.APP_URL = 'https://decentinvoice.com';
+  let capturedTtl = null;
+  const db = fakeDb([cohortRow({ user_id: 1, email: 'a@a.com' })]);
+  await digest.processOverdueDigest({
+    db,
+    sendEmail: async () => ({ ok: true }),
+    mintMagicLoginToken: async (_db, _uid, opts) => {
+      capturedTtl = opts.ttlMinutes;
+      return { ok: true, url: 'https://x/auth/magic/t' };
+    },
+    ttlMinutes: 60,
+    log: { error: () => {}, warn: () => {}, log: () => {} }
+  });
+  assert.strictEqual(capturedTtl, 60);
+});
+
+test('magic-login: ?next= deep-link passes lib/magic-login.safeNextPath validation', () => {
+  // The auth/magic consume route gates ?next= through safeNextPath. If the
+  // emitted next path doesn't pass that filter, the CTA silently degrades to
+  // /dashboard — losing the friction-removal benefit of baking in a deep link.
+  delete require.cache[require.resolve('../lib/magic-login')];
+  const { safeNextPath } = require('../lib/magic-login');
+  process.env.APP_URL = 'https://decentinvoice.com';
+  const html = digest.buildOverdueDigestHtml(
+    cohortRow(),
+    new Date('2026-05-16T13:00:00Z'),
+    { magicLoginUrl: 'https://decentinvoice.com/auth/magic/tok' }
+  );
+  const m = /next=(\/invoices(?:\/[^"' )]*)?)/.exec(html);
+  assert.ok(m, 'CTA must carry a ?next=/invoices deep-link');
+  assert.strictEqual(safeNextPath(m[1]), m[1],
+    'the emitted next= path must be accepted by safeNextPath');
 });
 
 test('replyTo precedence: reply_to_email > business_email > email', async () => {
