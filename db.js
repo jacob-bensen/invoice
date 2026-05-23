@@ -985,6 +985,88 @@ const db = {
   },
 
   /*
+   * Pending-payment-claim follow-up cron query (Milestone 4 — sent → paid).
+   * Picks up invoices where the CLIENT clicked "I've sent payment" on the
+   * public /i/<token> share page `minHours` ago (stamping payment_claimed_at)
+   * but the freelancer still hasn't flipped status to 'paid'. Closes the
+   * silent-failure gap that today's surfaces miss: the original
+   * sendPaymentClaimedEmail (fired the instant the client claims) is
+   * fire-and-forget and a Resend outage or spam-folder swallow can eat it,
+   * after which the only freelancer-side surface is the dashboard
+   * payment_claim_prompt (which only fires on dashboard return). A 48h second
+   * nudge catches the cohort that bounced off the dashboard and missed the
+   * original email — the relationship-degrading window where the client
+   * believes they paid and the freelancer hasn't acknowledged.
+   *
+   * Predicates:
+   *   - status <> 'paid' — only invoices the freelancer hasn't confirmed yet.
+   *     If they marked paid before the 48h window opens, this never fires.
+   *   - is_seed=false — never email about the seed sample.
+   *   - payment_claimed_at IS NOT NULL — the client demonstrably claimed.
+   *   - payment_claimed_at <= NOW() - minHours — 48h grace before nudging.
+   *   - payment_claimed_at > NOW() - maxDays — cap how far back we look (14d).
+   *     Beyond 14d the overdue-digest + payment-claim dashboard prompt own it.
+   *   - payment_claim_followup_sent_at IS NULL — one-shot per invoice.
+   *   - u.welcome_email_sent_at IS NOT NULL — activation ordering.
+   *   - u.email IS NOT NULL — defence-in-depth.
+   *
+   * LIMIT 500 caps the cron tick. ORDER BY payment_claimed_at ASC drains the
+   * oldest pending claims first — peak urgency.
+   */
+  async getInvoicesForPaymentClaimFollowup(minHours = 48, maxDays = 14) {
+    const hours = Number.isFinite(minHours) && minHours > 0
+      ? Math.floor(minHours)
+      : 48;
+    const max = Number.isFinite(maxDays) && maxDays > 0
+      ? Math.floor(maxDays)
+      : 14;
+    const { rows } = await pool.query(
+      `SELECT
+         i.id                          AS invoice_id,
+         i.user_id                     AS user_id,
+         i.invoice_number              AS invoice_number,
+         i.client_name                 AS client_name,
+         i.total                       AS invoice_total,
+         i.payment_claimed_at          AS payment_claimed_at,
+         i.payment_claim_method        AS payment_claim_method,
+         i.payment_claim_reference     AS payment_claim_reference,
+         i.payment_claim_note          AS payment_claim_note,
+         i.status                      AS status,
+         u.email                       AS email,
+         u.name                        AS name,
+         u.business_name               AS business_name,
+         u.reply_to_email              AS reply_to_email,
+         u.business_email              AS business_email
+       FROM invoices i
+       JOIN users u ON u.id = i.user_id
+       WHERE i.status <> 'paid'
+         AND i.is_seed = false
+         AND i.payment_claimed_at IS NOT NULL
+         AND i.payment_claimed_at <= NOW() - ($1 * INTERVAL '1 hour')
+         AND i.payment_claimed_at > NOW() - ($2 * INTERVAL '1 day')
+         AND i.payment_claim_followup_sent_at IS NULL
+         AND u.email IS NOT NULL
+         AND u.welcome_email_sent_at IS NOT NULL
+       ORDER BY i.payment_claimed_at ASC
+       LIMIT 500`,
+      [hours, max]
+    );
+    return rows;
+  },
+
+  async markPaymentClaimFollowupSent(invoiceId) {
+    if (!invoiceId) return null;
+    const { rows } = await pool.query(
+      `UPDATE invoices SET payment_claim_followup_sent_at = NOW(), updated_at = NOW()
+         WHERE id = $1
+           AND payment_claim_followup_sent_at IS NULL
+         RETURNING id, payment_claim_followup_sent_at`,
+      [invoiceId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Recent paid-revenue stats for the dashboard "what you collected lately"
    * row (INTERNAL_TODO #107). Returns SUM(total), COUNT(*) and a count of
    * distinct paying clients (deduped on lowercased email-or-name) over a

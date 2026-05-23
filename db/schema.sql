@@ -291,6 +291,24 @@ CREATE INDEX IF NOT EXISTS idx_invoices_sent_not_viewed_nudge
 -- receipt.
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_paid_receipt_sent_at TIMESTAMP;
 
+-- Pending-payment-claim follow-up email stamp (Milestone 4 — first invoice
+-- sent → first payment received). When the CLIENT clicks "I've sent payment"
+-- on the public /i/<token> page we fire sendPaymentClaimedEmail to the
+-- freelancer immediately. If 48h pass and the freelancer still hasn't flipped
+-- the invoice to paid, the relationship is degrading silently — the client
+-- thinks they did their part, the freelancer might never have seen the email
+-- (Resend outage, spam folder, mid-batch send failure). This cron fires a
+-- second nudge in that exact window, baking a 7-day magic-login URL straight
+-- to /invoices/<id> where the freelancer can one-tap Mark-as-Paid. One stamp
+-- per invoice — a future claim on a different invoice gets its own window.
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_claim_followup_sent_at TIMESTAMP;
+CREATE INDEX IF NOT EXISTS idx_invoices_payment_claim_followup
+  ON invoices(payment_claimed_at)
+  WHERE status <> 'paid'
+    AND is_seed = false
+    AND payment_claimed_at IS NOT NULL
+    AND payment_claim_followup_sent_at IS NULL;
+
 -- Password reset / magic-link sign-in (Milestone 1 — signup → first dashboard
 -- re-entry). A user who loses their session has to be able to get back into
 -- their seeded dashboard or the activation funnel breaks at step 1. Tokens

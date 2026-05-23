@@ -241,5 +241,14 @@ app.listen(PORT, () => {
     } catch (err) {
       console.error('[sent-not-viewed-nudge] startup failed:', err && err.message);
     }
+
+    try {
+      const { startPaymentClaimFollowupJob } = require('./jobs/pending-payment-claim-followup');
+      const pc = startPaymentClaimFollowupJob();
+      if (pc && pc.ok) console.log(`[payment-claim-followup] scheduled (${pc.schedule})`);
+      else console.warn('[payment-claim-followup] not scheduled:', pc && pc.reason);
+    } catch (err) {
+      console.error('[payment-claim-followup] startup failed:', err && err.message);
+    }
   }
 });
