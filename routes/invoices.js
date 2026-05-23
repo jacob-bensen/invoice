@@ -81,8 +81,9 @@ router.get('/', requireAuth, async (req, res) => {
     const sentNotViewedPrompt = buildSentNotViewedPrompt(user, oldestSentNotViewed);
     const overduePrompt = buildOverduePrompt(user, oldestOverdue, { clientViewedFollowupPrompt, sentNotViewedPrompt, paymentClaimPrompt });
     const firstRealInvoicePrompt = buildFirstRealInvoicePrompt(user, invoices);
+    const freshDraftPrompt = buildFreshDraftPrompt(user, invoices, { staleDraftPrompt });
     const repeatClientPrompt = buildRepeatClientPrompt(invoices);
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, paymentClaimPrompt, clientViewedFollowupPrompt, sentNotViewedPrompt, overduePrompt, firstRealInvoicePrompt, repeatClientPrompt, pendingQuickInvoice, noindex: true });
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, paymentClaimPrompt, clientViewedFollowupPrompt, sentNotViewedPrompt, overduePrompt, firstRealInvoicePrompt, freshDraftPrompt, repeatClientPrompt, pendingQuickInvoice, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
@@ -95,6 +96,7 @@ router.get('/', requireAuth, async (req, res) => {
       sentNotViewedPrompt: null,
       overduePrompt: null,
       firstRealInvoicePrompt: null,
+      freshDraftPrompt: null,
       repeatClientPrompt: null,
       pendingQuickInvoice: null, noindex: true
     });
@@ -336,6 +338,59 @@ function buildStaleDraftPrompt(user, draft) {
     clientName: draft.client_name || '',
     total: Number(draft.total) || 0,
     hoursOld
+  };
+}
+
+/*
+ * Fresh-draft "send your invoice" momentum prompt — closes the 0–24h window
+ * between a brand-new user creating their first invoice and the
+ * stale-draft prompt / stale-draft email firing at 24h. The cohort: a user
+ * who has NEVER sent an invoice (`users.first_sent_at IS NULL`) and has a
+ * non-seed draft created in the last `FRESH_DRAFT_MAX_AGE_HOURS` hours.
+ * They just made their first invoice ever; without this prompt, the
+ * dashboard surfaces it only as a row in the invoice table — no momentum
+ * push toward the share action that completes Milestone 3.
+ *
+ * Pure-JS derivation: we already loaded the full invoices list and the
+ * user row, so no extra DB call. We pick the MOST RECENTLY created
+ * eligible draft (newest first) — that's the one the user just clicked
+ * away from, peak attention. The `staleDraftPrompt` suppression keeps the
+ * dashboard from rendering two "send your draft" banners when the user
+ * has both an old and a new unsent draft (rare, but possible if they
+ * created a draft yesterday and another one this morning); the older
+ * stale-draft prompt wins because the older draft is the stronger signal
+ * of a stuck-in-draft pattern.
+ */
+const FRESH_DRAFT_MAX_AGE_HOURS = 24;
+
+function buildFreshDraftPrompt(user, invoices, otherPrompts) {
+  if (!user) return null;
+  if (user.first_sent_at) return null;
+  if (otherPrompts && otherPrompts.staleDraftPrompt) return null;
+  const list = Array.isArray(invoices) ? invoices : [];
+  const cutoffMs = Date.now() - FRESH_DRAFT_MAX_AGE_HOURS * 3600000;
+  let best = null;
+  let bestMs = -Infinity;
+  for (const inv of list) {
+    if (!inv || inv.id == null) continue;
+    if (inv.status !== 'draft') continue;
+    if (inv.is_seed) continue;
+    const createdMs = inv.created_at ? new Date(inv.created_at).getTime() : NaN;
+    if (!Number.isFinite(createdMs)) continue;
+    if (createdMs < cutoffMs) continue;
+    if (createdMs > bestMs) {
+      best = inv;
+      bestMs = createdMs;
+    }
+  }
+  if (!best) return null;
+  const ageMinutes = Math.max(0, Math.floor((Date.now() - bestMs) / 60000));
+  return {
+    id: best.id,
+    invoiceNumber: best.invoice_number || '',
+    clientName: best.client_name || '',
+    total: Number(best.total) || 0,
+    ageMinutes
   };
 }
 
@@ -1470,6 +1525,8 @@ module.exports.buildSentNotViewedPrompt = buildSentNotViewedPrompt;
 module.exports.buildOverduePrompt = buildOverduePrompt;
 module.exports.buildPaymentClaimPrompt = buildPaymentClaimPrompt;
 module.exports.buildFirstRealInvoicePrompt = buildFirstRealInvoicePrompt;
+module.exports.buildFreshDraftPrompt = buildFreshDraftPrompt;
+module.exports.FRESH_DRAFT_MAX_AGE_HOURS = FRESH_DRAFT_MAX_AGE_HOURS;
 module.exports.buildRepeatClientPrompt = buildRepeatClientPrompt;
 module.exports.buildPendingQuickInvoiceBanner = buildPendingQuickInvoiceBanner;
 module.exports.readPendingQuickInvoice = readPendingQuickInvoice;

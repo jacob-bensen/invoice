@@ -229,6 +229,53 @@
     </div>
   <% } %>
 
+  <% if (locals.freshDraftPrompt && freshDraftPrompt) { %>
+    <div
+      data-testid="fresh-draft-prompt"
+      data-invoice-id="<%= freshDraftPrompt.id %>"
+      data-age-minutes="<%= freshDraftPrompt.ageMinutes %>"
+      class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4 flex items-start gap-3 print:hidden"
+      role="region"
+      aria-label="You created an invoice — send it to your client"
+    >
+      <div class="text-emerald-600 text-xl leading-none mt-0.5" aria-hidden="true">&#128640;</div>
+      <div class="flex-1 text-sm">
+        <p class="font-semibold text-emerald-900">
+          <% if (freshDraftPrompt.clientName) { %>
+            You made an invoice for <strong data-testid="fresh-draft-client-name"><%= freshDraftPrompt.clientName %></strong> &mdash; now send it.
+          <% } else { %>
+            You made your first invoice &mdash; now send it to your client.
+          <% } %>
+        </p>
+        <p class="text-emerald-800 mt-0.5">
+          <span data-testid="fresh-draft-invoice-number"><%= freshDraftPrompt.invoiceNumber %></span>
+          ($<span data-testid="fresh-draft-total"><%= freshDraftPrompt.total.toFixed(2) %></span>)
+          is sitting as a draft. Your client can't see it until you share the link.
+        </p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <a
+            href="/invoices/<%= freshDraftPrompt.id %>"
+            data-testid="fresh-draft-open-link"
+            class="bg-emerald-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-emerald-700 transition text-sm"
+          >
+            &#128228; Open &amp; send invoice &rarr;
+          </a>
+          <form action="/invoices/<%= freshDraftPrompt.id %>/status" method="POST" class="inline">
+            <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+            <input type="hidden" name="status" value="sent">
+            <button
+              type="submit"
+              data-testid="fresh-draft-mark-sent"
+              class="border border-emerald-300 text-emerald-800 font-semibold px-4 py-2 rounded-lg hover:bg-emerald-100 transition text-sm"
+            >
+              Already sent it? Mark as sent
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  <% } %>
+
   <% if (locals.staleDraftPrompt && staleDraftPrompt) { %>
     <div
       data-testid="stale-draft-prompt"
