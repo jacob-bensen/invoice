@@ -488,6 +488,50 @@
     </div>
   <% } %>
 
+  <% if (locals.repeatClientPrompt && repeatClientPrompt) { %>
+    <div
+      data-testid="repeat-client-prompt"
+      data-source-id="<%= repeatClientPrompt.sourceId %>"
+      data-days-ago="<%= repeatClientPrompt.daysAgo %>"
+      class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4 flex items-start gap-3 print:hidden"
+      role="region"
+      aria-label="Send the next invoice to a recently paid client"
+    >
+      <div class="text-emerald-600 text-xl leading-none mt-0.5" aria-hidden="true">&#128176;</div>
+      <div class="flex-1 text-sm">
+        <p class="font-semibold text-emerald-900">
+          <strong data-testid="repeat-client-name"><%= repeatClientPrompt.clientName %></strong> just paid &mdash; send the next invoice while you&rsquo;re top of mind.
+        </p>
+        <p class="text-emerald-800 mt-0.5">
+          <span data-testid="repeat-client-invoice-number"><%= repeatClientPrompt.invoiceNumber %></span>
+          ($<span data-testid="repeat-client-total"><%= repeatClientPrompt.total.toFixed(2) %></span>)
+          was paid
+          <% if (repeatClientPrompt.daysAgo === 0) { %>
+            <span data-testid="repeat-client-days-ago">today</span>.
+          <% } else { %>
+            <span data-testid="repeat-client-days-ago"><%= repeatClientPrompt.daysAgo %></span>
+            day<% if (repeatClientPrompt.daysAgo !== 1) { %>s<% } %> ago.
+          <% } %>
+        </p>
+        <p class="text-emerald-700 text-xs mt-1">
+          Next retainer, next phase, follow-up project &mdash; the second invoice converts faster than the first.
+        </p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <form action="/invoices/<%= repeatClientPrompt.sourceId %>/duplicate" method="POST" class="inline">
+            <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+            <button
+              type="submit"
+              data-testid="repeat-client-cta"
+              class="bg-emerald-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-emerald-700 transition text-sm"
+            >
+              &#128228; Send another invoice to <%= repeatClientPrompt.clientName %> &rarr;
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  <% } %>
+
   <% if (locals.invoiceLimitProgress) { %>
     <div
       data-testid="invoice-limit-progress"

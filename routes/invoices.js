@@ -80,7 +80,8 @@ router.get('/', requireAuth, async (req, res) => {
     const sentNotViewedPrompt = buildSentNotViewedPrompt(user, oldestSentNotViewed);
     const overduePrompt = buildOverduePrompt(user, oldestOverdue, { clientViewedFollowupPrompt, sentNotViewedPrompt, paymentClaimPrompt });
     const firstRealInvoicePrompt = buildFirstRealInvoicePrompt(user, invoices);
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, paymentClaimPrompt, clientViewedFollowupPrompt, sentNotViewedPrompt, overduePrompt, firstRealInvoicePrompt, pendingQuickInvoice, noindex: true });
+    const repeatClientPrompt = buildRepeatClientPrompt(invoices);
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, paymentClaimPrompt, clientViewedFollowupPrompt, sentNotViewedPrompt, overduePrompt, firstRealInvoicePrompt, repeatClientPrompt, pendingQuickInvoice, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
@@ -93,6 +94,7 @@ router.get('/', requireAuth, async (req, res) => {
       sentNotViewedPrompt: null,
       overduePrompt: null,
       firstRealInvoicePrompt: null,
+      repeatClientPrompt: null,
       pendingQuickInvoice: null, noindex: true
     });
   }
@@ -489,6 +491,77 @@ function buildPaymentClaimPrompt(user, invoice) {
  * red/orange/emerald banners on the same invoice. The overdue prompt only
  * fires when it would surface a DIFFERENT invoice than the other two.
  */
+/*
+ * Repeat-client prompt — surfaces on the dashboard when the user has a
+ * recently-paid invoice (status='paid', updated_at within the last 7 days)
+ * AND the same client has no currently-open invoice (no draft/sent/overdue
+ * row with a case-insensitive matching client_name). One prompt at a time:
+ * the single most-recent qualifying paid invoice. CTA POSTs to the existing
+ * /invoices/:id/duplicate route — the user lands on /edit on a fresh draft
+ * pre-filled with the client + items, reviews, and sends.
+ *
+ * Why this advances the Primary Objective: every new draft created from
+ * this prompt re-enters the full create→sent→paid funnel — multiplying
+ * the activation events per signup. A freelancer who just got paid is in
+ * the exact moment the client relationship is fresh (next retainer cycle,
+ * next phase deposit, follow-up project), and the next invoice converts
+ * at the highest rate. This turns a one-shot paid moment into recurring
+ * revenue without requiring a full recurring-invoices feature.
+ *
+ * The "no open invoice for same client" gate avoids prompting to invoice
+ * a client who already has work in flight (we'd be racing the user's
+ * current draft / overdue / sent flow). Name match is case-insensitive
+ * trim — same normalization the recent-clients widget already applies.
+ *
+ * updated_at as the "paid recency" signal: the schema doesn't have a
+ * per-invoice paid_at column, but updated_at gets bumped on every status
+ * change, including the sent→paid flip. The false-positive case (paid
+ * 30 days ago, edited 5 days ago) is harmless — the prompt is non-
+ * destructive; the user reviews the duplicate before sending.
+ */
+function buildRepeatClientPrompt(invoices, opts) {
+  if (!Array.isArray(invoices)) return null;
+  const now = (opts && Number.isFinite(opts.now)) ? opts.now : Date.now();
+  const windowMs = 7 * 86400000;
+  const real = invoices.filter((i) => i && !i.is_seed);
+  const normalizeName = (s) =>
+    typeof s === 'string' ? s.trim().toLowerCase() : '';
+  const openClientNames = new Set();
+  for (const inv of real) {
+    if (inv.status === 'draft' || inv.status === 'sent' || inv.status === 'overdue') {
+      const key = normalizeName(inv.client_name);
+      if (key) openClientNames.add(key);
+    }
+  }
+  let best = null;
+  let bestMs = -Infinity;
+  for (const inv of real) {
+    if (inv.status !== 'paid') continue;
+    if (inv.id == null) continue;
+    const nameKey = normalizeName(inv.client_name);
+    if (!nameKey) continue;
+    if (openClientNames.has(nameKey)) continue;
+    const stampedMs = inv.updated_at ? new Date(inv.updated_at).getTime() : NaN;
+    if (!Number.isFinite(stampedMs)) continue;
+    const ageMs = now - stampedMs;
+    if (ageMs < 0) continue;
+    if (ageMs > windowMs) continue;
+    if (stampedMs > bestMs) {
+      bestMs = stampedMs;
+      best = inv;
+    }
+  }
+  if (!best) return null;
+  const daysAgo = Math.max(0, Math.floor((now - bestMs) / 86400000));
+  return {
+    sourceId: best.id,
+    invoiceNumber: best.invoice_number || '',
+    clientName: (best.client_name || '').trim(),
+    total: Number(best.total) || 0,
+    daysAgo
+  };
+}
+
 function buildOverduePrompt(user, invoice, otherPrompts) {
   if (!user || !invoice || invoice.id == null) return null;
   if (!invoice.due_date) return null;
@@ -1389,6 +1462,7 @@ module.exports.buildSentNotViewedPrompt = buildSentNotViewedPrompt;
 module.exports.buildOverduePrompt = buildOverduePrompt;
 module.exports.buildPaymentClaimPrompt = buildPaymentClaimPrompt;
 module.exports.buildFirstRealInvoicePrompt = buildFirstRealInvoicePrompt;
+module.exports.buildRepeatClientPrompt = buildRepeatClientPrompt;
 module.exports.buildPendingQuickInvoiceBanner = buildPendingQuickInvoiceBanner;
 module.exports.readPendingQuickInvoice = readPendingQuickInvoice;
 module.exports.normalizePendingQuickInvoiceInput = normalizePendingQuickInvoiceInput;
