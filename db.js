@@ -963,6 +963,28 @@ const db = {
   },
 
   /*
+   * Idempotent stamp for the client-facing paid receipt (Milestone 4 —
+   * close-the-loop). Called from both the manual mark-paid flow
+   * (routes/invoices.js POST /:id/status) and the Stripe Payment Link
+   * webhook (routes/billing.js). The IS NULL guard collapses concurrent
+   * stamps — a Stripe webhook retry that arrives at the same time as a
+   * race-condition mark-paid flip will both hit RETURNING zero rows
+   * except for exactly one of them, so the receipt fires exactly once
+   * per invoice for its lifetime.
+   */
+  async markClientPaidReceiptSent(invoiceId) {
+    if (!invoiceId) return null;
+    const { rows } = await pool.query(
+      `UPDATE invoices SET client_paid_receipt_sent_at = NOW(), updated_at = NOW()
+         WHERE id = $1
+           AND client_paid_receipt_sent_at IS NULL
+         RETURNING id, client_paid_receipt_sent_at`,
+      [invoiceId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Recent paid-revenue stats for the dashboard "what you collected lately"
    * row (INTERNAL_TODO #107). Returns SUM(total), COUNT(*) and a count of
    * distinct paying clients (deduped on lowercased email-or-name) over a

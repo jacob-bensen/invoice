@@ -278,6 +278,19 @@ CREATE INDEX IF NOT EXISTS idx_invoices_sent_not_viewed_nudge
     AND sent_via_share_intent_at IS NOT NULL
     AND sent_not_viewed_nudge_sent_at IS NULL;
 
+-- Paid-receipt-to-client stamp (Milestone 4 — first invoice sent → first
+-- payment received). When an invoice flips to paid (manual Mark-as-Paid OR
+-- Stripe Payment Link webhook), the client receives a short "Paid — thanks"
+-- confirmation email so the close-the-loop moment isn't silent. This builds
+-- the trust momentum that drives repeat business (the `repeat-client-prompt`
+-- on the freelancer's dashboard is the other half of the same loop). Stamp
+-- is idempotent — a second flip (e.g. unpaid→paid→unpaid→paid via the
+-- Stripe webhook retry) never re-sends. NULL on no client_email or when
+-- Resend is not_configured (next mark-paid retries safely). One stamp per
+-- invoice, not per user, since each client/invoice pairing deserves its own
+-- receipt.
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_paid_receipt_sent_at TIMESTAMP;
+
 -- Password reset / magic-link sign-in (Milestone 1 — signup → first dashboard
 -- re-entry). A user who loses their session has to be able to get back into
 -- their seeded dashboard or the activation funnel breaks at step 1. Tokens

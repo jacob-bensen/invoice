@@ -18,6 +18,7 @@ const {
 const { loadProSubscriberCount } = require('../lib/pro-subscriber-count');
 const { triggerFirstPaidCelebration, buildReferralUrl } = require('../lib/celebration');
 const { triggerFirstSentCelebration } = require('../lib/first-sent-celebration');
+const { triggerPaidReceipt } = require('../lib/paid-receipt');
 const { buildShareSurfaceForInvoice } = require('../lib/share-link');
 
 const router = express.Router();
@@ -1216,6 +1217,13 @@ router.post('/:id/status', requireAuth, async (req, res) => {
       // once per user, on the very first invoice flipped to paid.
       triggerFirstPaidCelebration(db, req.session.user.id)
         .catch(e => console.error('First-paid celebration error:', e && e.message));
+      // Client-facing paid receipt — confirms the close-the-loop moment to
+      // the client when client_email is set. Idempotent per invoice; safe
+      // to call on every paid flip (manual mark-paid, payment-claim confirm).
+      if (user) {
+        triggerPaidReceipt(db, updated, user)
+          .catch(e => console.error('Paid-receipt error:', e && e.message));
+      }
     }
 
     req.session.flash = { type: 'success', message: `Invoice marked as ${newStatus}.` };

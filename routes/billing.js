@@ -6,6 +6,7 @@ const { isValidWebhookUrl, firePaidWebhook, buildPaidPayload } = require('../lib
 const { sendPaidNotificationEmail } = require('../lib/email');
 const { getCompetitorPricing } = require('../lib/competitor-pricing');
 const { triggerFirstPaidCelebration } = require('../lib/celebration');
+const { triggerPaidReceipt } = require('../lib/paid-receipt');
 const { creditReferrerForSubscription } = require('../lib/referral');
 
 const router = express.Router();
@@ -315,6 +316,14 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             if (owner) {
               triggerFirstPaidCelebration(db, owner.id)
                 .catch(e => console.error('First-paid celebration error:', e && e.message));
+            }
+            // Client-facing paid receipt — fires the close-the-loop email to
+            // the client when client_email is set on the invoice. Idempotent
+            // per invoice; a Stripe webhook retry on the same payment_link
+            // never re-sends.
+            if (owner) {
+              triggerPaidReceipt(db, updated, owner)
+                .catch(e => console.error('Paid-receipt error:', e && e.message));
             }
           }
         }
