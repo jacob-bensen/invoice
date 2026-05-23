@@ -599,6 +599,7 @@ const db = {
           AND email IS NOT NULL
           AND welcome_email_sent_at IS NOT NULL
           AND no_invoice_nudge_sent_at IS NULL
+          AND pending_invoice_nudge_sent_at IS NULL
           AND created_at <= NOW() - ($1 * INTERVAL '1 hour')
         ORDER BY created_at ASC
         LIMIT 500`,
@@ -644,6 +645,7 @@ const db = {
           AND email IS NOT NULL
           AND welcome_email_sent_at IS NOT NULL
           AND second_no_invoice_nudge_sent_at IS NULL
+          AND pending_invoice_nudge_sent_at IS NULL
           AND created_at <= NOW() - ($1 * INTERVAL '1 hour')
           AND (no_invoice_nudge_sent_at IS NULL
                OR no_invoice_nudge_sent_at <= NOW() - INTERVAL '4 days')
@@ -661,6 +663,55 @@ const db = {
          WHERE id = $1
            AND second_no_invoice_nudge_sent_at IS NULL
          RETURNING id, second_no_invoice_nudge_sent_at`,
+      [userId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
+   * Pending-quick-invoice nudge cron query (Milestone 2). Picks up users who
+   * autosaved a /invoices/quick draft (pending_quick_invoice IS NOT NULL),
+   * bounced before submitting, and are now `minAgeHours` past their last
+   * autosave keystroke with no real invoice created. Stronger conversion
+   * signal than the generic 48h nudge — they typed something, we know what,
+   * the copy can name it. Gated on the same activation prereqs (welcome
+   * stamped + email present) plus the one-shot stamp. We deliberately keep
+   * users who already received either generic nudge OUT of this cohort (the
+   * two `IS NULL` gates) so a user never gets a "did you forget?" email and
+   * a "you started X for Y" email — the more specific one wins for first-
+   * time-typers, the generic one wins for never-typers.
+   */
+  async getUsersForPendingQuickInvoiceNudge(minAgeHours = 24) {
+    const hours = Number.isFinite(minAgeHours) && minAgeHours > 0
+      ? Math.floor(minAgeHours)
+      : 24;
+    const { rows } = await pool.query(
+      `SELECT id, email, name, business_name, reply_to_email, business_email,
+              pending_quick_invoice, pending_quick_invoice_updated_at
+         FROM users
+        WHERE invoice_count = 0
+          AND email IS NOT NULL
+          AND welcome_email_sent_at IS NOT NULL
+          AND pending_quick_invoice IS NOT NULL
+          AND pending_quick_invoice_updated_at IS NOT NULL
+          AND pending_invoice_nudge_sent_at IS NULL
+          AND no_invoice_nudge_sent_at IS NULL
+          AND second_no_invoice_nudge_sent_at IS NULL
+          AND pending_quick_invoice_updated_at <= NOW() - ($1 * INTERVAL '1 hour')
+        ORDER BY pending_quick_invoice_updated_at ASC
+        LIMIT 500`,
+      [hours]
+    );
+    return rows;
+  },
+
+  async markPendingQuickInvoiceNudgeSent(userId) {
+    if (!userId) return null;
+    const { rows } = await pool.query(
+      `UPDATE users SET pending_invoice_nudge_sent_at = NOW(), updated_at = NOW()
+         WHERE id = $1
+           AND pending_invoice_nudge_sent_at IS NULL
+         RETURNING id, pending_invoice_nudge_sent_at`,
       [userId]
     );
     return rows[0] || null;

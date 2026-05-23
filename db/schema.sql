@@ -329,6 +329,15 @@ CREATE INDEX IF NOT EXISTS idx_invoices_reminder_due
 ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_quick_invoice JSONB;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_quick_invoice_updated_at TIMESTAMP;
 
+-- Specific re-engagement stamp for users who autosaved a /invoices/quick draft
+-- and then bounced. Fires 24h after pending_quick_invoice_updated_at with copy
+-- that names the half-typed client/amount/description and a magic-login CTA
+-- straight back into /invoices/quick. Distinct from the generic 48h/7d
+-- no-invoice-nudge stamps because the cohort signal is stronger (they typed)
+-- and the copy is data-specific. One-shot per user; pairs with new gates on
+-- the generic nudges so a pending-nudged user isn't dupe-emailed.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_invoice_nudge_sent_at TIMESTAMP;
+
 -- Conversion-intelligence signals captured from the upgrade-modal "What's
 -- missing?" widget (#145). user_id is nullable so the table also accepts
 -- anonymous pricing-page submissions; ON DELETE SET NULL preserves the

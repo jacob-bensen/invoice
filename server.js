@@ -207,6 +207,15 @@ app.listen(PORT, () => {
     }
 
     try {
+      const { startPendingQuickInvoiceNudgeJob } = require('./jobs/pending-quick-invoice-nudge');
+      const pq = startPendingQuickInvoiceNudgeJob();
+      if (pq && pq.ok) console.log(`[pending-quick-invoice-nudge] scheduled (${pq.schedule})`);
+      else console.warn('[pending-quick-invoice-nudge] not scheduled:', pq && pq.reason);
+    } catch (err) {
+      console.error('[pending-quick-invoice-nudge] startup failed:', err && err.message);
+    }
+
+    try {
       const { startOverdueDigestJob } = require('./jobs/overdue-freelancer-digest');
       const o = startOverdueDigestJob();
       if (o && o.ok) console.log(`[overdue-digest] scheduled (${o.schedule})`);

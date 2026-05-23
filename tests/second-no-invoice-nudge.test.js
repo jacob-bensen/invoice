@@ -469,6 +469,8 @@ test('SQL: query gates on invoice_count=0, welcome stamped, second_no_invoice_nu
       'welcome must have fired before this nudge');
     assert.match(captured.sql, /second_no_invoice_nudge_sent_at\s+IS\s+NULL/i,
       'one-shot idempotency on the second-nudge stamp');
+    assert.match(captured.sql, /pending_invoice_nudge_sent_at\s+IS\s+NULL/i,
+      'mutual-exclusion with the pending-quick-invoice nudge');
     assert.match(captured.sql, /email\s+IS\s+NOT\s+NULL/i,
       'email gate — defence in depth');
     assert.match(captured.sql, /created_at\s*<=\s*NOW\(\)\s*-\s*\(\$1\s*\*\s*INTERVAL\s*'1 hour'\)/i,
