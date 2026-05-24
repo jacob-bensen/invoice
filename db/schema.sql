@@ -415,3 +415,29 @@ CREATE INDEX IF NOT EXISTS idx_feedback_signals_source_reason ON feedback_signal
 -- It is NOT stamped during the auto-signin from POST /auth/register — that's
 -- the signup itself, not a re-entry.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP;
+
+-- Self-serve lifecycle-email unsubscribe (CAN-SPAM + RFC 8058 one-click
+-- `List-Unsubscribe`). Every lifecycle / re-engagement / activation email
+-- the platform sends to its users (welcome, no-invoice nudge x2, pending-
+-- quick-invoice nudge, stale-draft email x2, trial-nudge, overdue-digest,
+-- client-viewed-followup, sent-not-viewed nudge, pending-payment-claim
+-- followup) carries an opaque-token unsubscribe link AND a
+-- `List-Unsubscribe`/`List-Unsubscribe-Post` header pair. The link/header
+-- hit `POST /unsubscribe/<token>` which stamps
+-- `lifecycle_emails_opted_out_at = NOW()`, after which every lifecycle
+-- cron query gates with `AND lifecycle_emails_opted_out_at IS NULL` so
+-- the user permanently drops off the marketing-email cohort. The user
+-- can resubscribe at any time via `POST /unsubscribe/<token>/resubscribe`
+-- (the success page exposes the button) — the same token resolves both
+-- ways. Transactional emails (invoice-to-client, paid-receipt-to-client,
+-- magic-login, password-reset, paid-notification-to-freelancer,
+-- first-sent-celebration, client-viewed-real-time, payment-claimed-real-
+-- time, referral-celebration) are NOT gated by this stamp — they fire on
+-- specific user-initiated events and remain legally transactional. The
+-- token is lazy-generated on first need (mirrors referral_code,
+-- public_token): 16 hex chars (8 random bytes), UNIQUE for direct
+-- lookup. Stable per user — never rotated — so an old email's link still
+-- works months later (the value of the link rises with age; rotating it
+-- would orphan inboxes).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS unsubscribe_token VARCHAR(32) UNIQUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS lifecycle_emails_opted_out_at TIMESTAMP;

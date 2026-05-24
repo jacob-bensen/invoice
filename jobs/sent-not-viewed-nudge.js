@@ -50,6 +50,7 @@ const {
   buildSentNotViewedNudgeText
 } = require('../lib/email');
 const { mintMagicLoginToken: realMintMagicLoginToken } = require('../lib/magic-login');
+const { resolveUnsubscribeUrlForRow } = require('../lib/unsubscribe');
 
 const DEFAULT_MIN_HOURS = 72;
 const DEFAULT_MAX_DAYS = 14;
@@ -111,6 +112,8 @@ async function processSentNotViewedNudge(opts = {}) {
     }
     const buildOpts = magicLoginUrl ? { magicLoginUrl } : undefined;
 
+    const unsubscribeUrl = await resolveUnsubscribeUrlForRow(db, { id: row.user_id, unsubscribe_token: row.unsubscribe_token });
+
     let result;
     try {
       result = await sendEmail({
@@ -118,7 +121,8 @@ async function processSentNotViewedNudge(opts = {}) {
         subject: buildSentNotViewedNudgeSubject(row),
         html: buildSentNotViewedNudgeHtml(row, now, buildOpts),
         text: buildSentNotViewedNudgeText(row, now, buildOpts),
-        replyTo: resolveReplyTo(row)
+        replyTo: resolveReplyTo(row),
+        unsubscribeUrl: unsubscribeUrl || undefined
       });
     } catch (err) {
       log.error && log.error(

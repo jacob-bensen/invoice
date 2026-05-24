@@ -35,6 +35,7 @@ const { db: realDb } = require('../db');
 const { sendEmail: realSendEmail } = require('../lib/email');
 const { escapeHtml, formatMoney } = require('../lib/html');
 const { mintMagicLoginToken: realMintMagicLoginToken } = require('../lib/magic-login');
+const { resolveUnsubscribeUrlForRow } = require('../lib/unsubscribe');
 
 const DEFAULT_MIN_AGE_HOURS = 24;
 const DEFAULT_FIRST_SENT_GAP_DAYS = 7;
@@ -191,6 +192,8 @@ async function processSecondStaleDraftEmails(opts = {}) {
     }
     const buildOpts = magicLoginUrl ? { magicLoginUrl } : undefined;
 
+    const unsubscribeUrl = await resolveUnsubscribeUrlForRow(db, { id: row.user_id, unsubscribe_token: row.unsubscribe_token });
+
     let result;
     try {
       result = await sendEmail({
@@ -198,7 +201,8 @@ async function processSecondStaleDraftEmails(opts = {}) {
         subject: buildSecondStaleDraftSubject(row, now),
         html: buildSecondStaleDraftHtml(row, now, buildOpts),
         text: buildSecondStaleDraftText(row, now, buildOpts),
-        replyTo: resolveReplyTo(row)
+        replyTo: resolveReplyTo(row),
+        unsubscribeUrl: unsubscribeUrl || undefined
       });
     } catch (err) {
       log.error && log.error(`second-stale-draft email send threw for user ${row.user_id}:`, err && err.message);

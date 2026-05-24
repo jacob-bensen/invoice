@@ -46,6 +46,7 @@ const { db: realDb } = require('../db');
 const { sendEmail: realSendEmail } = require('../lib/email');
 const { escapeHtml } = require('../lib/html');
 const { mintMagicLoginToken: realMintMagicLoginToken } = require('../lib/magic-login');
+const { resolveUnsubscribeUrlForRow } = require('../lib/unsubscribe');
 
 const DEFAULT_MIN_AGE_HOURS = 24;
 const DEFAULT_SCHEDULE = '0 9 * * *'; // 09:00 UTC daily (before all other re-engagement crons)
@@ -311,6 +312,8 @@ async function processPendingQuickInvoiceNudges(opts = {}) {
     const buildOpts = { payload };
     if (magicLoginUrl) buildOpts.magicLoginUrl = magicLoginUrl;
 
+    const unsubscribeUrl = await resolveUnsubscribeUrlForRow(db, row);
+
     let result;
     try {
       result = await sendEmail({
@@ -318,7 +321,8 @@ async function processPendingQuickInvoiceNudges(opts = {}) {
         subject: buildPendingQuickInvoiceNudgeSubject(row, now, buildOpts),
         html: buildPendingQuickInvoiceNudgeHtml(row, now, buildOpts),
         text: buildPendingQuickInvoiceNudgeText(row, now, buildOpts),
-        replyTo: resolveReplyTo(row)
+        replyTo: resolveReplyTo(row),
+        unsubscribeUrl: unsubscribeUrl || undefined
       });
     } catch (err) {
       log.error && log.error(`pending-quick-invoice-nudge send threw for user ${row.id}:`, err && err.message);

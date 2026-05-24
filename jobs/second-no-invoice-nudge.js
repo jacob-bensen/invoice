@@ -27,6 +27,7 @@ const { db: realDb } = require('../db');
 const { sendEmail: realSendEmail } = require('../lib/email');
 const { escapeHtml } = require('../lib/html');
 const { mintMagicLoginToken: realMintMagicLoginToken } = require('../lib/magic-login');
+const { resolveUnsubscribeUrlForRow } = require('../lib/unsubscribe');
 
 const DEFAULT_MIN_AGE_HOURS = 168; // 7 days
 const DEFAULT_SCHEDULE = '0 13 * * *'; // 13:00 UTC daily (after no-invoice-nudge at 12:00)
@@ -168,6 +169,8 @@ async function processSecondNoInvoiceNudges(opts = {}) {
     }
     const buildOpts = magicLoginUrl ? { magicLoginUrl } : undefined;
 
+    const unsubscribeUrl = await resolveUnsubscribeUrlForRow(db, row);
+
     let result;
     try {
       result = await sendEmail({
@@ -175,7 +178,8 @@ async function processSecondNoInvoiceNudges(opts = {}) {
         subject: buildSecondNoInvoiceNudgeSubject(row, now),
         html: buildSecondNoInvoiceNudgeHtml(row, now, buildOpts),
         text: buildSecondNoInvoiceNudgeText(row, now, buildOpts),
-        replyTo: resolveReplyTo(row)
+        replyTo: resolveReplyTo(row),
+        unsubscribeUrl: unsubscribeUrl || undefined
       });
     } catch (err) {
       log.error && log.error(`second-no-invoice-nudge send threw for user ${row.id}:`, err && err.message);

@@ -28,6 +28,7 @@ const { db: realDb } = require('../db');
 const { sendEmail: realSendEmail } = require('../lib/email');
 const { mintMagicLoginToken: realMintMagicLoginToken } = require('../lib/magic-login');
 const { escapeHtml } = require('../lib/html');
+const { resolveUnsubscribeUrlForRow } = require('../lib/unsubscribe');
 
 const DEFAULT_SCHEDULE = '0 10 * * *'; // 10:00 UTC daily
 // 7-day TTL on the baked magic-login token. The cohort is users mid-trial
@@ -180,13 +181,16 @@ async function processTrialNudges(opts = {}) {
     }
     const buildOpts = magicLoginUrl ? { magicLoginUrl } : undefined;
 
+    const unsubscribeUrl = await resolveUnsubscribeUrlForRow(db, user);
+
     let result;
     try {
       result = await sendEmail({
         to: user.email,
         subject: buildTrialNudgeSubject(user, now),
         html: buildTrialNudgeHtml(user, now, buildOpts),
-        text: buildTrialNudgeText(user, now, buildOpts)
+        text: buildTrialNudgeText(user, now, buildOpts),
+        unsubscribeUrl: unsubscribeUrl || undefined
       });
     } catch (err) {
       log.error && log.error(`trial nudge send threw for user ${user.id}:`, err && err.message);

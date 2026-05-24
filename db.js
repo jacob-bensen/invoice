@@ -500,13 +500,15 @@ const db = {
    */
   async getTrialUsersNeedingNudge() {
     const { rows } = await pool.query(
-      `SELECT id, email, name, business_name, trial_ends_at, invoice_count
+      `SELECT id, email, name, business_name, trial_ends_at, invoice_count,
+              unsubscribe_token
          FROM users
         WHERE plan = 'pro'
           AND trial_ends_at IS NOT NULL
           AND trial_ends_at BETWEEN NOW() + INTERVAL '2 days'
                                 AND NOW() + INTERVAL '4 days'
           AND trial_nudge_sent_at IS NULL
+          AND lifecycle_emails_opted_out_at IS NULL
           AND (subscription_status IS NULL OR subscription_status = 'trialing')
         ORDER BY trial_ends_at ASC
         LIMIT 500`
@@ -544,17 +546,18 @@ const db = {
       : 7;
     const { rows } = await pool.query(
       `SELECT DISTINCT ON (i.user_id)
-         i.user_id        AS user_id,
-         i.id             AS invoice_id,
-         i.invoice_number AS invoice_number,
-         i.client_name    AS client_name,
-         i.total          AS invoice_total,
-         i.created_at     AS draft_created_at,
-         u.email          AS email,
-         u.name           AS name,
-         u.business_name  AS business_name,
-         u.reply_to_email AS reply_to_email,
-         u.business_email AS business_email
+         i.user_id           AS user_id,
+         i.id                AS invoice_id,
+         i.invoice_number    AS invoice_number,
+         i.client_name       AS client_name,
+         i.total             AS invoice_total,
+         i.created_at        AS draft_created_at,
+         u.email             AS email,
+         u.name              AS name,
+         u.business_name     AS business_name,
+         u.reply_to_email    AS reply_to_email,
+         u.business_email    AS business_email,
+         u.unsubscribe_token AS unsubscribe_token
        FROM invoices i
        JOIN users u ON u.id = i.user_id
        WHERE i.status = 'draft'
@@ -562,6 +565,7 @@ const db = {
          AND i.created_at <= NOW() - ($1 * INTERVAL '1 hour')
          AND u.email IS NOT NULL
          AND u.welcome_email_sent_at IS NOT NULL
+         AND u.lifecycle_emails_opted_out_at IS NULL
          AND u.second_stale_draft_email_sent_at IS NULL
          AND (u.stale_draft_email_sent_at IS NULL
               OR u.stale_draft_email_sent_at < NOW() - ($2 * INTERVAL '1 day'))
@@ -600,17 +604,18 @@ const db = {
       : 7;
     const { rows } = await pool.query(
       `SELECT DISTINCT ON (i.user_id)
-         i.user_id        AS user_id,
-         i.id             AS invoice_id,
-         i.invoice_number AS invoice_number,
-         i.client_name    AS client_name,
-         i.total          AS invoice_total,
-         i.created_at     AS draft_created_at,
-         u.email          AS email,
-         u.name           AS name,
-         u.business_name  AS business_name,
-         u.reply_to_email AS reply_to_email,
-         u.business_email AS business_email
+         i.user_id           AS user_id,
+         i.id                AS invoice_id,
+         i.invoice_number    AS invoice_number,
+         i.client_name       AS client_name,
+         i.total             AS invoice_total,
+         i.created_at        AS draft_created_at,
+         u.email             AS email,
+         u.name              AS name,
+         u.business_name     AS business_name,
+         u.reply_to_email    AS reply_to_email,
+         u.business_email    AS business_email,
+         u.unsubscribe_token AS unsubscribe_token
        FROM invoices i
        JOIN users u ON u.id = i.user_id
        WHERE i.status = 'draft'
@@ -618,6 +623,7 @@ const db = {
          AND i.created_at <= NOW() - ($1 * INTERVAL '1 hour')
          AND u.email IS NOT NULL
          AND u.welcome_email_sent_at IS NOT NULL
+         AND u.lifecycle_emails_opted_out_at IS NULL
          AND u.stale_draft_email_sent_at IS NOT NULL
          AND u.stale_draft_email_sent_at <= NOW() - ($2 * INTERVAL '1 day')
          AND u.second_stale_draft_email_sent_at IS NULL
@@ -695,11 +701,13 @@ const db = {
       ? Math.floor(minAgeHours)
       : 48;
     const { rows } = await pool.query(
-      `SELECT id, email, name, business_name, reply_to_email, business_email, created_at
+      `SELECT id, email, name, business_name, reply_to_email, business_email,
+              created_at, unsubscribe_token
          FROM users
         WHERE invoice_count = 0
           AND email IS NOT NULL
           AND welcome_email_sent_at IS NOT NULL
+          AND lifecycle_emails_opted_out_at IS NULL
           AND no_invoice_nudge_sent_at IS NULL
           AND pending_invoice_nudge_sent_at IS NULL
           AND created_at <= NOW() - ($1 * INTERVAL '1 hour')
@@ -741,11 +749,13 @@ const db = {
       ? Math.floor(minAgeHours)
       : 168;
     const { rows } = await pool.query(
-      `SELECT id, email, name, business_name, reply_to_email, business_email, created_at
+      `SELECT id, email, name, business_name, reply_to_email, business_email,
+              created_at, unsubscribe_token
          FROM users
         WHERE invoice_count = 0
           AND email IS NOT NULL
           AND welcome_email_sent_at IS NOT NULL
+          AND lifecycle_emails_opted_out_at IS NULL
           AND second_no_invoice_nudge_sent_at IS NULL
           AND pending_invoice_nudge_sent_at IS NULL
           AND created_at <= NOW() - ($1 * INTERVAL '1 hour')
@@ -789,11 +799,13 @@ const db = {
       : 24;
     const { rows } = await pool.query(
       `SELECT id, email, name, business_name, reply_to_email, business_email,
-              pending_quick_invoice, pending_quick_invoice_updated_at
+              pending_quick_invoice, pending_quick_invoice_updated_at,
+              unsubscribe_token
          FROM users
         WHERE invoice_count = 0
           AND email IS NOT NULL
           AND welcome_email_sent_at IS NOT NULL
+          AND lifecycle_emails_opted_out_at IS NULL
           AND pending_quick_invoice IS NOT NULL
           AND pending_quick_invoice_updated_at IS NOT NULL
           AND pending_invoice_nudge_sent_at IS NULL
@@ -854,17 +866,18 @@ const db = {
       : 7;
     const { rows } = await pool.query(
       `SELECT
-         u.id              AS user_id,
-         u.email           AS email,
-         u.name            AS name,
-         u.business_name   AS business_name,
-         u.reply_to_email  AS reply_to_email,
-         u.business_email  AS business_email,
-         u.plan            AS plan,
-         COUNT(i.id)::int  AS overdue_count,
+         u.id                 AS user_id,
+         u.email              AS email,
+         u.name               AS name,
+         u.business_name      AS business_name,
+         u.reply_to_email     AS reply_to_email,
+         u.business_email     AS business_email,
+         u.plan               AS plan,
+         u.unsubscribe_token  AS unsubscribe_token,
+         COUNT(i.id)::int     AS overdue_count,
          COALESCE(SUM(i.total), 0)::text AS overdue_total,
-         MIN(i.due_date)   AS oldest_due_date,
-         MAX(i.due_date)   AS newest_due_date
+         MIN(i.due_date)      AS oldest_due_date,
+         MAX(i.due_date)      AS newest_due_date
        FROM users u
        JOIN invoices i ON i.user_id = u.id
        WHERE i.status = 'sent'
@@ -872,10 +885,11 @@ const db = {
          AND i.due_date < CURRENT_DATE
          AND u.email IS NOT NULL
          AND u.welcome_email_sent_at IS NOT NULL
+         AND u.lifecycle_emails_opted_out_at IS NULL
          AND (u.overdue_digest_sent_at IS NULL
               OR u.overdue_digest_sent_at < NOW() - ($1 * INTERVAL '1 day'))
        GROUP BY u.id, u.email, u.name, u.business_name, u.reply_to_email,
-                u.business_email, u.plan
+                u.business_email, u.plan, u.unsubscribe_token
        ORDER BY MIN(i.due_date) ASC
        LIMIT 500`,
       [cooldown]
@@ -942,7 +956,8 @@ const db = {
          u.name              AS name,
          u.business_name     AS business_name,
          u.reply_to_email    AS reply_to_email,
-         u.business_email    AS business_email
+         u.business_email    AS business_email,
+         u.unsubscribe_token AS unsubscribe_token
        FROM invoices i
        JOIN users u ON u.id = i.user_id
        WHERE i.status IN ('sent', 'overdue')
@@ -953,6 +968,7 @@ const db = {
          AND i.client_viewed_followup_sent_at IS NULL
          AND u.email IS NOT NULL
          AND u.welcome_email_sent_at IS NOT NULL
+         AND u.lifecycle_emails_opted_out_at IS NULL
        ORDER BY i.first_viewed_at ASC
        LIMIT 500`,
       [hours, max]
@@ -1033,7 +1049,8 @@ const db = {
          u.name                        AS name,
          u.business_name               AS business_name,
          u.reply_to_email              AS reply_to_email,
-         u.business_email              AS business_email
+         u.business_email              AS business_email,
+         u.unsubscribe_token           AS unsubscribe_token
        FROM invoices i
        JOIN users u ON u.id = i.user_id
        WHERE i.status IN ('sent', 'overdue')
@@ -1045,6 +1062,7 @@ const db = {
          AND i.sent_not_viewed_nudge_sent_at IS NULL
          AND u.email IS NOT NULL
          AND u.welcome_email_sent_at IS NOT NULL
+         AND u.lifecycle_emails_opted_out_at IS NULL
        ORDER BY i.sent_via_share_intent_at ASC
        LIMIT 500`,
       [hours, max]
@@ -1138,7 +1156,8 @@ const db = {
          u.name                        AS name,
          u.business_name               AS business_name,
          u.reply_to_email              AS reply_to_email,
-         u.business_email              AS business_email
+         u.business_email              AS business_email,
+         u.unsubscribe_token           AS unsubscribe_token
        FROM invoices i
        JOIN users u ON u.id = i.user_id
        WHERE i.status <> 'paid'
@@ -1149,6 +1168,7 @@ const db = {
          AND i.payment_claim_followup_sent_at IS NULL
          AND u.email IS NOT NULL
          AND u.welcome_email_sent_at IS NOT NULL
+         AND u.lifecycle_emails_opted_out_at IS NULL
        ORDER BY i.payment_claimed_at ASC
        LIMIT 500`,
       [hours, max]
@@ -1375,7 +1395,8 @@ const db = {
               updated_at            = NOW()
         WHERE id = $1
           AND welcome_email_sent_at IS NULL
-        RETURNING id, email, name, business_name, business_email, reply_to_email, plan`,
+        RETURNING id, email, name, business_name, business_email, reply_to_email,
+                  plan, unsubscribe_token`,
       [userId]
     );
     return rows[0] || null;
@@ -1875,6 +1896,110 @@ const db = {
          FROM credited c
          JOIN users u ON u.id = c.referrer_id`,
       [referredUserId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
+   * Lazy-generate the stable per-user unsubscribe token (CAN-SPAM + RFC
+   * 8058 `List-Unsubscribe`). Mirrors the getOrCreateReferralCode /
+   * getOrCreatePublicToken pattern: SELECT first; if missing, UPDATE
+   * with a 16-hex token (8 random bytes, ~2^64 collision space);
+   * UNIQUE-violation retry up to 3 times; concurrent callers race the
+   * UPDATE but only one write lands, both see the same final value on
+   * the follow-up SELECT. Stable forever — never rotated — so an old
+   * email's unsubscribe link still works months later (a rotating
+   * token would orphan every previously-sent email's footer link).
+   */
+  async getOrCreateUnsubscribeToken(userId) {
+    if (!userId) return null;
+    const existing = await pool.query(
+      'SELECT unsubscribe_token FROM users WHERE id = $1',
+      [userId]
+    );
+    if (!existing.rows[0]) return null;
+    const current = existing.rows[0].unsubscribe_token;
+    if (current) return current;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const token = crypto.randomBytes(8).toString('hex');
+      try {
+        const { rows } = await pool.query(
+          `UPDATE users
+              SET unsubscribe_token = $2,
+                  updated_at        = NOW()
+            WHERE id = $1
+              AND unsubscribe_token IS NULL
+            RETURNING unsubscribe_token`,
+          [userId, token]
+        );
+        if (rows[0] && rows[0].unsubscribe_token) return rows[0].unsubscribe_token;
+        const reread = await pool.query(
+          'SELECT unsubscribe_token FROM users WHERE id = $1',
+          [userId]
+        );
+        if (reread.rows[0] && reread.rows[0].unsubscribe_token) {
+          return reread.rows[0].unsubscribe_token;
+        }
+      } catch (err) {
+        if (!err || err.code !== '23505') throw err;
+      }
+    }
+    return null;
+  },
+
+  /*
+   * Look up a user by their unsubscribe token. Returns the small public
+   * shape the unsubscribe routes need (id, email, opt-out stamp) — never
+   * the full user row. Bad/empty token short-circuits without a DB hit.
+   */
+  async findUserByUnsubscribeToken(token) {
+    if (!token || typeof token !== 'string') return null;
+    const trimmed = token.trim().slice(0, 32);
+    if (!/^[a-f0-9]{8,32}$/i.test(trimmed)) return null;
+    const { rows } = await pool.query(
+      `SELECT id, email, name, business_name, lifecycle_emails_opted_out_at
+         FROM users
+        WHERE unsubscribe_token = $1`,
+      [trimmed]
+    );
+    return rows[0] || null;
+  },
+
+  /*
+   * Idempotent stamp: lifecycle_emails_opted_out_at = NOW() the first
+   * time, no-op on every subsequent call. Returns the row on a real
+   * write, null when the stamp was already present (so the route can
+   * still render the success page either way without distinguishing —
+   * but tests can assert the one-shot semantic).
+   */
+  async markLifecycleOptOut(userId) {
+    if (!userId) return null;
+    const { rows } = await pool.query(
+      `UPDATE users
+          SET lifecycle_emails_opted_out_at = NOW(),
+              updated_at                     = NOW()
+        WHERE id = $1
+          AND lifecycle_emails_opted_out_at IS NULL
+        RETURNING id, lifecycle_emails_opted_out_at`,
+      [userId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
+   * Clear the opt-out stamp so the user re-enters every lifecycle-cron
+   * cohort. Idempotent: a no-op when the stamp is already NULL.
+   */
+  async markLifecycleResubscribe(userId) {
+    if (!userId) return null;
+    const { rows } = await pool.query(
+      `UPDATE users
+          SET lifecycle_emails_opted_out_at = NULL,
+              updated_at                     = NOW()
+        WHERE id = $1
+          AND lifecycle_emails_opted_out_at IS NOT NULL
+        RETURNING id, lifecycle_emails_opted_out_at`,
+      [userId]
     );
     return rows[0] || null;
   }

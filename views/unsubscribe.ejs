@@ -1,0 +1,41 @@
+<%- include('partials/head') %>
+<%- include('partials/nav') %>
+
+<main class="min-h-[60vh] flex items-center justify-center px-4 py-16">
+  <div class="max-w-md w-full bg-white rounded-2xl border border-gray-200 p-8 text-center">
+    <p class="text-5xl mb-4" aria-hidden="true">📭</p>
+    <h1 class="text-2xl font-bold text-gray-900 mb-2" data-testid="unsubscribe-title">
+      Stop lifecycle emails?
+    </h1>
+    <p class="text-gray-500 text-sm mb-6">
+      We'll stop sending re-engagement, activation, and reminder emails to
+      <strong data-testid="unsubscribe-email"><%= email %></strong>.
+      Transactional emails (paid receipts, magic-login codes, password resets,
+      real-time client-action notifications) will keep working — those aren't
+      marketing.
+    </p>
+
+    <% if (alreadyOptedOut) { %>
+      <p data-testid="unsubscribe-already" class="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 mb-6">
+        You're already unsubscribed. Tapping the button below is a no-op.
+      </p>
+    <% } %>
+
+    <form method="POST" action="/unsubscribe/<%= encodeURIComponent(token) %>" data-testid="unsubscribe-form">
+      <button type="submit"
+        data-testid="unsubscribe-confirm"
+        class="w-full bg-gray-900 text-white font-semibold px-6 py-3 rounded-xl hover:bg-gray-800 transition">
+        Yes, unsubscribe me
+      </button>
+    </form>
+
+    <p class="text-xs text-gray-400 mt-6">
+      Changed your mind? Close this page — nothing will change.
+    </p>
+  </div>
+</main>
+
+<%- include('partials/footer') %>
+
+</body>
+</html>

@@ -9,6 +9,15 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 // Stripe-Signature header instead.
 const EXEMPT_PATHS = new Set(['/billing/webhook']);
 
+// Path-prefix CSRF bypass. The lifecycle-email unsubscribe routes
+// (RFC 8058 `List-Unsubscribe-Post` one-click) are POSTed by mail
+// clients (Gmail, Apple Mail, Outlook) that never carry a session
+// cookie. Authority for the write is the opaque 16-hex token in the
+// URL — see routes/unsubscribe.js. Tightly prefix-scoped to
+// `/unsubscribe/` so future POSTs added under this app cannot
+// accidentally inherit the bypass.
+const EXEMPT_PREFIXES = ['/unsubscribe/'];
+
 function generateToken() {
   return crypto.randomBytes(24).toString('hex');
 }
@@ -23,6 +32,9 @@ function timingSafeStringEqual(a, b) {
 
 function csrfProtection(req, res, next) {
   if (EXEMPT_PATHS.has(req.path)) return next();
+  for (const prefix of EXEMPT_PREFIXES) {
+    if (req.path.startsWith(prefix)) return next();
+  }
   if (!req.session) return next();
 
   if (!req.session.csrfToken) {

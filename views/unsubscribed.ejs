@@ -1,0 +1,59 @@
+<%- include('partials/head') %>
+<%- include('partials/nav') %>
+
+<main class="min-h-[60vh] flex items-center justify-center px-4 py-16">
+  <div class="max-w-md w-full bg-white rounded-2xl border border-gray-200 p-8 text-center">
+    <% if (status === 'opted_out') { %>
+      <p class="text-5xl mb-4" aria-hidden="true">✅</p>
+      <h1 class="text-2xl font-bold text-gray-900 mb-2" data-testid="unsubscribed-title">
+        You're unsubscribed
+      </h1>
+      <p class="text-gray-500 text-sm mb-6">
+        We won't send any more lifecycle emails to
+        <strong data-testid="unsubscribed-email"><%= email %></strong>.
+        Transactional emails (paid receipts, magic-login codes, password
+        resets, real-time client-action notifications) will continue to fire
+        as needed.
+      </p>
+      <form method="POST" action="/unsubscribe/<%= encodeURIComponent(token) %>/resubscribe" data-testid="resubscribe-form">
+        <button type="submit"
+          data-testid="resubscribe-confirm"
+          class="w-full bg-brand-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-brand-700 transition">
+          Actually, resubscribe me
+        </button>
+      </form>
+    <% } else if (status === 'resubscribed') { %>
+      <p class="text-5xl mb-4" aria-hidden="true">🎉</p>
+      <h1 class="text-2xl font-bold text-gray-900 mb-2" data-testid="resubscribed-title">
+        Welcome back
+      </h1>
+      <p class="text-gray-500 text-sm mb-6">
+        <strong data-testid="resubscribed-email"><%= email %></strong> is back
+        on the lifecycle-email list. You can unsubscribe again any time from
+        the footer of any email we send.
+      </p>
+      <a href="/invoices"
+        data-testid="resubscribed-dashboard"
+        class="inline-block w-full bg-brand-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-brand-700 transition">
+        Open your dashboard
+      </a>
+    <% } else { %>
+      <p class="text-5xl mb-4" aria-hidden="true">⚠️</p>
+      <h1 class="text-2xl font-bold text-gray-900 mb-2" data-testid="unsubscribe-error-title">
+        Something went wrong
+      </h1>
+      <p class="text-gray-500 text-sm mb-6" data-testid="unsubscribe-error-message">
+        <%= message || 'We hit a hiccup. Please try again in a moment.' %>
+      </p>
+      <a href="/unsubscribe/<%= encodeURIComponent(token) %>"
+        class="inline-block w-full bg-brand-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-brand-700 transition">
+        Try again
+      </a>
+    <% } %>
+  </div>
+</main>
+
+<%- include('partials/footer') %>
+
+</body>
+</html>

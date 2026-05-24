@@ -43,6 +43,7 @@ const { db: realDb } = require('../db');
 const { sendEmail: realSendEmail } = require('../lib/email');
 const { escapeHtml } = require('../lib/html');
 const { mintMagicLoginToken: realMintMagicLoginToken } = require('../lib/magic-login');
+const { resolveUnsubscribeUrlForRow } = require('../lib/unsubscribe');
 
 const DEFAULT_MIN_AGE_HOURS = 48;
 const DEFAULT_SCHEDULE = '0 12 * * *'; // 12:00 UTC daily (after stale-draft at 11:00, trial-nudge at 10:00)
@@ -190,6 +191,12 @@ async function processNoInvoiceNudges(opts = {}) {
     }
     const buildOpts = magicLoginUrl ? { magicLoginUrl } : undefined;
 
+    // Best-effort: resolve a stable per-user unsubscribe URL so the email
+    // carries a visible footer + RFC 8058 `List-Unsubscribe` header pair.
+    // A mint hiccup falls back to a footer-less send — never sacrifices
+    // the nudge itself.
+    const unsubscribeUrl = await resolveUnsubscribeUrlForRow(db, row);
+
     let result;
     try {
       result = await sendEmail({
@@ -197,7 +204,8 @@ async function processNoInvoiceNudges(opts = {}) {
         subject: buildNoInvoiceNudgeSubject(row, now),
         html: buildNoInvoiceNudgeHtml(row, now, buildOpts),
         text: buildNoInvoiceNudgeText(row, now, buildOpts),
-        replyTo: resolveReplyTo(row)
+        replyTo: resolveReplyTo(row),
+        unsubscribeUrl: unsubscribeUrl || undefined
       });
     } catch (err) {
       log.error && log.error(`no-invoice-nudge send threw for user ${row.id}:`, err && err.message);

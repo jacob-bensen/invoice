@@ -43,6 +43,7 @@ const { db: realDb } = require('../db');
 const { sendEmail: realSendEmail } = require('../lib/email');
 const { escapeHtml, formatMoney } = require('../lib/html');
 const { mintMagicLoginToken: realMintMagicLoginToken } = require('../lib/magic-login');
+const { resolveUnsubscribeUrlForRow } = require('../lib/unsubscribe');
 
 const DEFAULT_COOLDOWN_DAYS = 7;
 const DEFAULT_SCHEDULE = '0 13 * * *'; // 13:00 UTC daily (after no-invoice at 12:00)
@@ -213,6 +214,8 @@ async function processOverdueDigest(opts = {}) {
     }
     const buildOpts = magicLoginUrl ? { magicLoginUrl } : undefined;
 
+    const unsubscribeUrl = await resolveUnsubscribeUrlForRow(db, { id: row.user_id, unsubscribe_token: row.unsubscribe_token });
+
     let result;
     try {
       result = await sendEmail({
@@ -220,7 +223,8 @@ async function processOverdueDigest(opts = {}) {
         subject: buildOverdueDigestSubject(row, now),
         html: buildOverdueDigestHtml(row, now, buildOpts),
         text: buildOverdueDigestText(row, now, buildOpts),
-        replyTo: resolveReplyTo(row)
+        replyTo: resolveReplyTo(row),
+        unsubscribeUrl: unsubscribeUrl || undefined
       });
     } catch (err) {
       log.error && log.error(`overdue-digest send threw for user ${row.user_id}:`, err && err.message);

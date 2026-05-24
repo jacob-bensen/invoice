@@ -51,6 +51,7 @@ const {
   buildClientViewedFollowupText
 } = require('../lib/email');
 const { mintMagicLoginToken: realMintMagicLoginToken } = require('../lib/magic-login');
+const { resolveUnsubscribeUrlForRow } = require('../lib/unsubscribe');
 
 const DEFAULT_MIN_HOURS = 48;
 const DEFAULT_MAX_DAYS = 14;
@@ -121,6 +122,8 @@ async function processClientViewedFollowup(opts = {}) {
     }
     const buildOpts = magicLoginUrl ? { magicLoginUrl } : undefined;
 
+    const unsubscribeUrl = await resolveUnsubscribeUrlForRow(db, { id: row.user_id, unsubscribe_token: row.unsubscribe_token });
+
     let result;
     try {
       result = await sendEmail({
@@ -128,7 +131,8 @@ async function processClientViewedFollowup(opts = {}) {
         subject: buildClientViewedFollowupSubject(row),
         html: buildClientViewedFollowupHtml(row, now, buildOpts),
         text: buildClientViewedFollowupText(row, now, buildOpts),
-        replyTo: resolveReplyTo(row)
+        replyTo: resolveReplyTo(row),
+        unsubscribeUrl: unsubscribeUrl || undefined
       });
     } catch (err) {
       log.error && log.error(
