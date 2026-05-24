@@ -590,6 +590,136 @@ async function testPostPaymentInstructionsUpdateFailureDoesNotBlockRedirect() {
 }
 
 // ============================================================================
+// Layer 2d — POST /invoices/quick inline business_name capture
+// ============================================================================
+//
+// A brand-new user lands on /invoices/quick before they've ever opened
+// /billing/settings, so users.business_name is NULL. The rendered
+// /invoices/:id header then says "Your Business" and the public
+// /i/<token> page introduces them as "A DecentInvoice user" — both
+// strong deterrents to clicking Send. Capturing the brand on /quick
+// (before the invoice exists) means the very first share already
+// carries the user's real business name on every surface their client
+// sees. Server hard-gates on the current value being empty so a forged
+// payload can't stomp an existing brand. Plan-agnostic (Pro/Agency
+// users who upgraded before filling in settings hit the same gap).
+
+async function testPostBusinessNameSavesForUserWithoutBusinessName() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com', business_name: null });
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'free', invoice_count: 0 }, routes);
+
+  const res = await request(app, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    description: 'Work',
+    amount: '500',
+    business_name: '  Acme Studio  '
+  });
+  assert.strictEqual(res.status, 302, 'happy path still redirects to /invoices/:id');
+  assert.strictEqual(createCalls.length, 1, 'invoice is created');
+  assert.strictEqual(updateUserCalls.length, 1,
+    'user with no existing business_name: updateUser called exactly once');
+  assert.strictEqual(updateUserCalls[0].id, 1, 'updateUser carries the session user id');
+  assert.deepStrictEqual(updateUserCalls[0].fields, { business_name: 'Acme Studio' },
+    'business_name is trimmed and saved alone — no other user fields are stomped');
+}
+
+async function testPostBusinessNameSavesForProUser() {
+  // Plan-agnostic: a Pro/Agency user who upgraded before filling in settings
+  // has the same NULL business_name gap. The view shows the block; the
+  // server must persist it.
+  resetStore();
+  users.set(1, { id: 1, plan: 'pro', invoice_count: 0, name: 'Alice', email: 'a@x.com', business_name: null });
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'pro', invoice_count: 0 }, routes);
+
+  await request(app, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    description: 'Work',
+    amount: '500',
+    business_name: 'Acme Studio'
+  });
+  assert.strictEqual(createCalls.length, 1, 'invoice still created for Pro');
+  assert.strictEqual(updateUserCalls.length, 1,
+    'Pro plan: business-name capture must still persist (gap is plan-agnostic)');
+  assert.deepStrictEqual(updateUserCalls[0].fields, { business_name: 'Acme Studio' });
+}
+
+async function testPostBusinessNameSkippedWhenUserAlreadyHasOne() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com', business_name: 'Existing Studio' });
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'free', invoice_count: 0 }, routes);
+
+  await request(app, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    description: 'Work',
+    amount: '500',
+    business_name: 'Try to overwrite'
+  });
+  assert.strictEqual(createCalls.length, 1, 'invoice still created');
+  assert.strictEqual(updateUserCalls.length, 0,
+    'existing business_name must NOT be overwritten via the quick form (forged-payload guard)');
+}
+
+async function testPostBusinessNameEmptyDoesNotCallUpdateUser() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com', business_name: null });
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'free', invoice_count: 0 }, routes);
+
+  await request(app, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    description: 'Work',
+    amount: '500',
+    business_name: '   '
+  });
+  assert.strictEqual(createCalls.length, 1, 'invoice created on blank business_name');
+  assert.strictEqual(updateUserCalls.length, 0,
+    'whitespace-only business_name must NOT call updateUser (avoids storing empty string)');
+}
+
+async function testPostBusinessNameOverLimitSilentlyIgnored() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com', business_name: null });
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'free', invoice_count: 0 }, routes);
+
+  const payload = 'x'.repeat(256);
+  const res = await request(app, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    description: 'Work',
+    amount: '500',
+    business_name: payload
+  });
+  assert.strictEqual(res.status, 302, 'oversize business_name must NOT block invoice creation');
+  assert.strictEqual(createCalls.length, 1, 'invoice still created even when business_name exceeds 255-char cap');
+  assert.strictEqual(updateUserCalls.length, 0,
+    'oversize business_name is silently ignored at the save layer (invoice create is the dominant goal)');
+}
+
+async function testPostBusinessNameUpdateFailureDoesNotBlockRedirect() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com', business_name: null });
+  updateUserImpl = async () => { throw new Error('DB down'); };
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'free', invoice_count: 0 }, routes);
+
+  const res = await request(app, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    description: 'Work',
+    amount: '500',
+    business_name: 'Acme Studio'
+  });
+  assert.strictEqual(res.status, 302, 'invoice redirect must still fire on a business-name save failure');
+  assert.ok(/^\/invoices\/\d+$/.test(res.headers.location),
+    'redirect target is the just-created invoice (best-effort semantics on the side-effect)');
+  assert.strictEqual(createCalls.length, 1, 'invoice still created');
+  assert.strictEqual(updateUserCalls.length, 1, 'updateUser was attempted exactly once');
+}
+
+// ============================================================================
 // Layer 2b — POST /invoices/quick with action=create_and_email (Pro/Agency)
 // ============================================================================
 //
@@ -961,6 +1091,69 @@ async function testViewRepopulatesPaymentInstructions() {
     'validation re-render must keep the typed payment_instructions value sticky');
 }
 
+// View tests for the inline "Your business name" capture block.
+// Visibility contract: shown only when users.business_name is empty/null
+// (the cohort the prompt targets). Hidden once a brand is set — we never
+// re-ask. Plan-agnostic, since the gap applies to any user who reached
+// /invoices/quick before /billing/settings.
+
+async function testViewRendersBusinessNameBlockWhenEmpty() {
+  const html = await renderQuickView({
+    user: { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com', business_name: null }
+  });
+  assert.ok(html.includes('data-testid="invoice-quick-business-name-block"'),
+    'user with no business_name sees the capture block');
+  assert.ok(html.includes('data-testid="invoice-quick-business-name-input"'),
+    'the input is rendered with the testid hook');
+  assert.ok(/name="business_name"/.test(html),
+    'input posts under name="business_name"');
+  assert.ok(/maxlength="255"/.test(html),
+    'maxlength matches the 255-char server cap (matches VARCHAR(255) column)');
+}
+
+async function testViewRendersBusinessNameBlockForProToo() {
+  // The gap is plan-agnostic: a Pro user who upgraded before filling in
+  // settings has the same NULL business_name and needs the same prompt.
+  const html = await renderQuickView({
+    user: { id: 1, plan: 'pro', invoice_count: 0, name: 'Alice', email: 'a@x.com', business_name: null }
+  });
+  assert.ok(html.includes('data-testid="invoice-quick-business-name-block"'),
+    'Pro user with no business_name sees the same capture block (plan-agnostic)');
+}
+
+async function testViewHidesBusinessNameBlockWhenAlreadySet() {
+  const html = await renderQuickView({
+    user: { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com', business_name: 'Existing Studio' }
+  });
+  assert.ok(!html.includes('data-testid="invoice-quick-business-name-block"'),
+    'user with an existing business_name does not see the capture block');
+}
+
+async function testViewHidesBusinessNameBlockWhenWhitespaceOnly() {
+  // Defence vs a DB row where business_name was set to "  " — treat as empty
+  // for the show/hide gate.
+  const html = await renderQuickView({
+    user: { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com', business_name: '   ' }
+  });
+  assert.ok(html.includes('data-testid="invoice-quick-business-name-block"'),
+    'whitespace-only business_name should still surface the prompt');
+}
+
+async function testViewRepopulatesBusinessName() {
+  const html = await renderQuickView({
+    user: { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com', business_name: null },
+    submitted: {
+      client_name: '',
+      client_email: '',
+      description: '',
+      amount: '',
+      business_name: 'Acme Studio'
+    }
+  });
+  assert.ok(html.includes('value="Acme Studio"'),
+    'validation re-render must keep the typed business_name value sticky');
+}
+
 // ============================================================================
 // Layer 4 — dashboard wiring
 // ============================================================================
@@ -1011,6 +1204,12 @@ async function run() {
     ['POST /invoices/quick: whitespace-only payment_instructions → no updateUser', testPostPaymentInstructionsEmptyDoesNotCallUpdateUser],
     ['POST /invoices/quick: oversize (>2000 char) payment_instructions silently ignored', testPostPaymentInstructionsOverLimitSilentlyIgnored],
     ['POST /invoices/quick: updateUser failure does not block invoice redirect', testPostPaymentInstructionsUpdateFailureDoesNotBlockRedirect],
+    ['POST /invoices/quick: user without business_name → updateUser called with trimmed business_name', testPostBusinessNameSavesForUserWithoutBusinessName],
+    ['POST /invoices/quick: Pro user without business_name → updateUser still called (plan-agnostic)', testPostBusinessNameSavesForProUser],
+    ['POST /invoices/quick: user with existing business_name → no overwrite', testPostBusinessNameSkippedWhenUserAlreadyHasOne],
+    ['POST /invoices/quick: whitespace-only business_name → no updateUser', testPostBusinessNameEmptyDoesNotCallUpdateUser],
+    ['POST /invoices/quick: oversize (>255 char) business_name silently ignored', testPostBusinessNameOverLimitSilentlyIgnored],
+    ['POST /invoices/quick: business_name updateUser failure does not block redirect', testPostBusinessNameUpdateFailureDoesNotBlockRedirect],
     ['POST /invoices/quick: action=create_and_email (Pro+email) → send + flip', testPostCreateAndEmailProHappyPath],
     ['POST /invoices/quick: action=create_and_email success flash names the recipient', testPostCreateAndEmailFlashOnSuccess],
     ['POST /invoices/quick: action=create_and_email (Free) → no send, no flip (defence-in-depth)', testPostCreateAndEmailFreeUserDefenceInDepth],
@@ -1030,6 +1229,11 @@ async function run() {
     ['view: Pro user does not see the payment_instructions capture block', testViewHidesPaymentInstructionsBlockForPro],
     ['view: free user with existing instructions does not see the capture block', testViewHidesPaymentInstructionsBlockWhenAlreadySet],
     ['view: validation re-render keeps payment_instructions value sticky', testViewRepopulatesPaymentInstructions],
+    ['view: user without business_name sees the business-name capture block', testViewRendersBusinessNameBlockWhenEmpty],
+    ['view: Pro user without business_name sees the same business-name block (plan-agnostic)', testViewRendersBusinessNameBlockForProToo],
+    ['view: user with existing business_name does not see the business-name block', testViewHidesBusinessNameBlockWhenAlreadySet],
+    ['view: whitespace-only business_name still surfaces the prompt', testViewHidesBusinessNameBlockWhenWhitespaceOnly],
+    ['view: validation re-render keeps business_name value sticky', testViewRepopulatesBusinessName],
     ['dashboard: primary CTA at /invoices/quick + advanced link at /invoices/new', testDashboardPrimaryCtaPointsAtQuick]
   ];
   let passed = 0;

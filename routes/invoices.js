@@ -857,7 +857,8 @@ router.post('/quick', requireAuth, [
         client_email: req.body.client_email || '',
         description: req.body.description || '',
         amount: req.body.amount || '',
-        payment_instructions: req.body.payment_instructions || ''
+        payment_instructions: req.body.payment_instructions || '',
+        business_name: req.body.business_name || ''
       },
       noindex: true
     });
@@ -925,6 +926,29 @@ router.post('/quick', requireAuth, [
       }
     }
 
+    // Inline business-name capture (Milestone 3 — first invoice created →
+    // first invoice sent). Signup form only collects name/email/password,
+    // so a brand-new user reaches /invoices/quick with users.business_name
+    // = NULL. Without this capture, the rendered /invoices/:id header
+    // shows "Your Business" and the public /i/<token> page introduces the
+    // sender to the client as "A DecentInvoice user" — both deterrents to
+    // hitting Send on the first invoice they create. Gated server-side
+    // on the user's current value being empty so a forged payload can't
+    // overwrite an already-set business name. Plan-agnostic — Pro/Agency
+    // users who upgraded before filling in settings hit the same gap.
+    // Best-effort: never blocks the invoice redirect.
+    if (typeof req.body.business_name === 'string'
+        && (!user.business_name || !String(user.business_name).trim())) {
+      const bizName = req.body.business_name.trim();
+      if (bizName.length > 0 && bizName.length <= 255) {
+        try {
+          await db.updateUser(req.session.user.id, { business_name: bizName });
+        } catch (e) {
+          console.error('Quick invoice business-name save failed:', e && e.message);
+        }
+      }
+    }
+
     // Combined create+send path: the freelancer ticked "Create & email to
     // client" on the form, which collapses the create → land on /:id →
     // click "Send by email" two-step into a single action. Gated on
@@ -985,7 +1009,8 @@ router.post('/quick', requireAuth, [
         client_email: req.body.client_email || '',
         description: req.body.description || '',
         amount: req.body.amount || '',
-        payment_instructions: req.body.payment_instructions || ''
+        payment_instructions: req.body.payment_instructions || '',
+        business_name: req.body.business_name || ''
       },
       noindex: true
     });

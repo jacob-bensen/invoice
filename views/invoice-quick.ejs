@@ -8,6 +8,7 @@
   const initialDescription = typeof sub.description === 'string' ? sub.description : '';
   const initialAmount = typeof sub.amount === 'string' || typeof sub.amount === 'number' ? sub.amount : '';
   const initialPaymentInstructions = typeof sub.payment_instructions === 'string' ? sub.payment_instructions : '';
+  const initialBusinessName = typeof sub.business_name === 'string' ? sub.business_name : '';
   const planName = (locals.user && typeof user.plan === 'string') ? user.plan : 'free';
   const canEmailFromForm = planName === 'pro' || planName === 'agency';
   // Free-tier users with no Stripe Pay button and no payment_instructions
@@ -18,6 +19,19 @@
   const ownerPaymentInstructions = (locals.user && typeof user.payment_instructions === 'string')
     ? user.payment_instructions.trim() : '';
   const showPaymentInstructionsCapture = planName === 'free' && ownerPaymentInstructions.length === 0;
+  // Inline business-name capture (Milestone 3 — first invoice created →
+  // first invoice sent). Signup only takes name/email/password — a fresh
+  // user reaching /invoices/quick has users.business_name = NULL, so the
+  // rendered invoice header says "Your Business" and the public share
+  // page introduces them to their client as "A DecentInvoice user". Both
+  // unsubtle deterrents to actually clicking Send. Capturing the brand
+  // here, before the invoice exists, means the very first share already
+  // carries the user's real business name on every surface the client
+  // sees. Plan-agnostic — Pro/Agency owners hit the exact same gap when
+  // they upgraded before filling in settings.
+  const ownerBusinessName = (locals.user && typeof user.business_name === 'string')
+    ? user.business_name.trim() : '';
+  const showBusinessNameCapture = ownerBusinessName.length === 0;
 %>
 
 <div class="max-w-xl mx-auto px-4 py-10" data-testid="invoice-quick">
@@ -54,6 +68,27 @@
     x-init="init()"
     @submit="onSubmit()">
     <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+
+    <% if (showBusinessNameCapture) { %>
+      <div data-testid="invoice-quick-business-name-block"
+        class="rounded-lg border border-sky-200 bg-sky-50 p-4">
+        <label class="block text-sm font-semibold text-sky-900 mb-1" for="quick-business-name">
+          💼 Your business name <span class="text-sky-700 font-normal text-xs">(appears as the sender on every invoice)</span>
+        </label>
+        <p class="text-xs text-sky-800 mb-2">
+          Without this your invoice will just say &ldquo;Your Business&rdquo; at the top &mdash; clients are less likely to pay something that doesn&rsquo;t look branded.
+        </p>
+        <input id="quick-business-name" type="text" name="business_name"
+          maxlength="255"
+          data-testid="invoice-quick-business-name-input"
+          placeholder="Acme Studio, or your own name"
+          value="<%= initialBusinessName %>"
+          class="w-full border border-sky-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400">
+        <p class="text-xs text-sky-700 mt-2">
+          Saved to your account &mdash; every invoice you share from now on will show this.
+        </p>
+      </div>
+    <% } %>
 
     <div>
       <label class="block text-sm font-medium text-gray-700 mb-1" for="quick-client-name">
