@@ -582,6 +582,49 @@ const db = {
   },
 
   /*
+   * Stamp users.last_login_at = NOW() unconditionally for an explicit
+   * re-entry (login, magic-link consume, password-reset consume). The
+   * throttled middleware wrapper passes `staleAfterMinutes` to skip the
+   * UPDATE when the existing stamp is recent enough; that branch is in
+   * lib/last-login.js so this helper stays a single, race-safe SQL write.
+   * Falsy userId short-circuits without touching the DB.
+   */
+  async markLastLogin(userId) {
+    if (!userId) return null;
+    const { rows } = await pool.query(
+      `UPDATE users SET last_login_at = NOW(), updated_at = NOW()
+         WHERE id = $1 RETURNING id, last_login_at`,
+      [userId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
+   * Conditional last_login_at bump used by the per-request middleware. Only
+   * UPDATEs when the existing stamp is NULL or older than `staleAfterMinutes`
+   * minutes, so a user clicking around their dashboard doesn't issue a write
+   * on every page load. The IS NULL OR < NOW() - interval guard is enforced
+   * at the SQL layer so concurrent requests collapse to a single UPDATE.
+   * Returns the row on a successful bump, null on a no-op (still-fresh) or
+   * falsy userId.
+   */
+  async bumpLastLoginIfStale(userId, staleAfterMinutes = 240) {
+    if (!userId) return null;
+    const minutes = Number.isFinite(staleAfterMinutes) && staleAfterMinutes > 0
+      ? Math.floor(staleAfterMinutes)
+      : 240;
+    const { rows } = await pool.query(
+      `UPDATE users SET last_login_at = NOW(), updated_at = NOW()
+         WHERE id = $1
+           AND (last_login_at IS NULL
+                OR last_login_at < NOW() - ($2 * INTERVAL '1 minute'))
+         RETURNING id, last_login_at`,
+      [userId, minutes]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * No-invoice-nudge cron query. Picks up users who got the welcome email,
    * are at least `minAgeHours` past signup, still have `invoice_count = 0`
    * (the seed insert deliberately skips that bump, so this is a clean "no

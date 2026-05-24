@@ -16,6 +16,8 @@ const { securityHeaders } = require('./middleware/security-headers');
 const { requireAuth } = require('./middleware/auth');
 const { formatTrialCountdown } = require('./lib/html');
 const { getCompetitorPricing } = require('./lib/competitor-pricing');
+const { bumpLastLoginMiddleware } = require('./lib/last-login');
+const { db } = require('./db');
 
 const app = express();
 
@@ -70,6 +72,15 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// Throttled `users.last_login_at` bump for authenticated requests. Fires
+// fire-and-forget; never blocks the request. The 4-hour stale window
+// ensures a session that lives across multiple days bumps once per visit
+// without spamming UPDATE on every page load, and the immediate post-signup
+// dashboard load doesn't pre-satisfy a "returned" funnel gate. Placed
+// before csrfProtection so an unauthenticated user's missing-CSRF 403 still
+// doesn't run the bump (the gate is req.session.user inside the middleware).
+app.use(bumpLastLoginMiddleware({ db }));
 
 app.use(csrfProtection);
 

@@ -387,3 +387,17 @@ CREATE TABLE IF NOT EXISTS feedback_signals (
 );
 CREATE INDEX IF NOT EXISTS idx_feedback_signals_created_at ON feedback_signals(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_feedback_signals_source_reason ON feedback_signals(source, reason);
+
+-- Last-login stamp (Milestone 1 — signup → first dashboard re-entry). PLAN.md's
+-- "Done means" lists five funnel stages: signups → re-entered → created real
+-- invoice → sent → got paid. The activation-funnel report has always had
+-- `welcomed` (welcome_email_sent_at IS NOT NULL) but no `returned` stage, so
+-- the operator couldn't see the welcome→return drop-off — the very first
+-- conversion gate in the funnel. last_login_at is stamped on every successful
+-- explicit re-entry (POST /auth/login, GET /auth/magic/<token>, POST
+-- /auth/reset/<token>) and on subsequent authenticated requests via a
+-- throttled middleware (writes at most once per 4-hour window per session) so
+-- a user with a still-valid session who returns via direct URL also counts.
+-- It is NOT stamped during the auto-signin from POST /auth/register — that's
+-- the signup itself, not a re-entry.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP;

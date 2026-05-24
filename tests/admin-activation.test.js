@@ -129,6 +129,7 @@ async function testLoadFunnelCountsIssuesRightSql() {
         rows: [{
           signed_up: '7',
           welcomed: '6',
+          returned: '5',
           created_real: '4',
           sent_one: 3,
           got_paid: 1
@@ -143,6 +144,8 @@ async function testLoadFunnelCountsIssuesRightSql() {
     'WHERE clause must bound by created_at on parameterised range');
   assert.ok(/welcome_email_sent_at IS NOT NULL/.test(calls[0].sql),
     'must aggregate welcomed via welcome_email_sent_at');
+  assert.ok(/last_login_at IS NOT NULL/.test(calls[0].sql),
+    'must aggregate returned via last_login_at (the post-signup re-entry stamp)');
   assert.ok(/invoice_count > 0/.test(calls[0].sql),
     'must aggregate created_real via invoice_count (seed inserts skip the bump)');
   assert.ok(/status IN \('sent','paid','overdue'\)/.test(calls[0].sql),
@@ -153,7 +156,7 @@ async function testLoadFunnelCountsIssuesRightSql() {
   assert.strictEqual(isoDate(calls[0].params[0]), '2026-05-01', 'param 1 is inclusive `from`');
   assert.strictEqual(isoDate(calls[0].params[1]), '2026-05-11', 'param 2 is exclusive (to + 1 day)');
   assert.deepStrictEqual(counts, {
-    signed_up: 7, welcomed: 6, created_real: 4, sent_one: 3, got_paid: 1
+    signed_up: 7, welcomed: 6, returned: 5, created_real: 4, sent_one: 3, got_paid: 1
   });
 }
 
@@ -161,9 +164,9 @@ async function testBuildStageRowsComputesRatios() {
   clearReq('../lib/activation-funnel');
   const { buildStageRows } = require('../lib/activation-funnel');
   const rows = buildStageRows({
-    signed_up: 100, welcomed: 80, created_real: 40, sent_one: 30, got_paid: 10
+    signed_up: 100, welcomed: 80, returned: 60, created_real: 40, sent_one: 30, got_paid: 10
   });
-  assert.strictEqual(rows.length, 5);
+  assert.strictEqual(rows.length, 6, 'returned stage adds a 6th row between welcomed and created_real');
   assert.strictEqual(rows[0].key, 'signed_up');
   assert.strictEqual(rows[0].count, 100);
   assert.strictEqual(rows[0].conversionFromPrev, null,
@@ -175,25 +178,30 @@ async function testBuildStageRowsComputesRatios() {
   assert.strictEqual(rows[1].conversionFromPrev, 0.8, 'welcomed/signed_up = 80/100');
   assert.strictEqual(rows[1].conversionFromCohort, 0.8);
 
-  assert.strictEqual(rows[2].key, 'created_real');
-  assert.strictEqual(rows[2].conversionFromPrev, 0.5, 'created_real/welcomed = 40/80');
-  assert.strictEqual(rows[2].conversionFromCohort, 0.4);
+  assert.strictEqual(rows[2].key, 'returned');
+  assert.strictEqual(rows[2].conversionFromPrev, 0.75, 'returned/welcomed = 60/80');
+  assert.strictEqual(rows[2].conversionFromCohort, 0.6);
 
-  assert.strictEqual(rows[3].key, 'sent_one');
-  assert.strictEqual(rows[3].conversionFromPrev, 0.75, 'sent_one/created_real = 30/40');
-  assert.strictEqual(rows[3].conversionFromCohort, 0.3);
+  assert.strictEqual(rows[3].key, 'created_real');
+  assert.ok(Math.abs(rows[3].conversionFromPrev - (40 / 60)) < 1e-9,
+    'created_real/returned = 40/60');
+  assert.strictEqual(rows[3].conversionFromCohort, 0.4);
 
-  assert.strictEqual(rows[4].key, 'got_paid');
-  assert.ok(Math.abs(rows[4].conversionFromPrev - 0.3333333333333333) < 1e-9,
+  assert.strictEqual(rows[4].key, 'sent_one');
+  assert.strictEqual(rows[4].conversionFromPrev, 0.75, 'sent_one/created_real = 30/40');
+  assert.strictEqual(rows[4].conversionFromCohort, 0.3);
+
+  assert.strictEqual(rows[5].key, 'got_paid');
+  assert.ok(Math.abs(rows[5].conversionFromPrev - 0.3333333333333333) < 1e-9,
     'got_paid/sent_one = 10/30');
-  assert.strictEqual(rows[4].conversionFromCohort, 0.1);
+  assert.strictEqual(rows[5].conversionFromCohort, 0.1);
 }
 
 async function testBuildStageRowsZeroCohortNoNaN() {
   clearReq('../lib/activation-funnel');
   const { buildStageRows } = require('../lib/activation-funnel');
   const rows = buildStageRows({
-    signed_up: 0, welcomed: 0, created_real: 0, sent_one: 0, got_paid: 0
+    signed_up: 0, welcomed: 0, returned: 0, created_real: 0, sent_one: 0, got_paid: 0
   });
   for (const r of rows) {
     assert.strictEqual(r.count, 0);
@@ -202,6 +210,24 @@ async function testBuildStageRowsZeroCohortNoNaN() {
     assert.strictEqual(r.conversionFromCohort === null || r.conversionFromCohort === undefined, true,
       `${r.key} must have null conversionFromCohort on zero cohort`);
   }
+}
+
+async function testReturnedStageOrderAndMilestoneLabel() {
+  clearReq('../lib/activation-funnel');
+  const { STAGE_DEFS } = require('../lib/activation-funnel');
+  // Lock in the canonical 6-stage order so a future edit that re-orders
+  // (e.g. accidentally moves returned after created_real) fails loudly.
+  assert.deepStrictEqual(
+    STAGE_DEFS.map((s) => s.key),
+    ['signed_up', 'welcomed', 'returned', 'created_real', 'sent_one', 'got_paid'],
+    'STAGE_DEFS must match the PLAN.md "Done means" ordering: signups → welcomed → re-entered → created → sent → paid'
+  );
+  const returnedDef = STAGE_DEFS.find((s) => s.key === 'returned');
+  assert.ok(returnedDef, 'returned stage must be present');
+  assert.strictEqual(returnedDef.label, 'Returned to app',
+    'human-readable label is what shows on the operator report');
+  assert.strictEqual(returnedDef.milestone, 'Milestone 1',
+    'returned advances Milestone 1 (signup → first dashboard re-entry)');
 }
 
 async function testFormatPct() {
@@ -251,7 +277,7 @@ async function testBuildReportHappyPath() {
   const fakeDb = {
     async query() {
       return { rows: [{
-        signed_up: 50, welcomed: 40, created_real: 20, sent_one: 15, got_paid: 5
+        signed_up: 50, welcomed: 40, returned: 30, created_real: 20, sent_one: 15, got_paid: 5
       }] };
     }
   };
@@ -265,9 +291,11 @@ async function testBuildReportHappyPath() {
   assert.strictEqual(r.range.to, '2026-05-10');
   assert.strictEqual(r.range.days, 10);
   assert.strictEqual(r.cohortSize, 50);
-  assert.strictEqual(r.stages.length, 5);
+  assert.strictEqual(r.stages.length, 6);
   assert.strictEqual(r.stages[0].count, 50);
-  assert.strictEqual(r.stages[4].count, 5);
+  assert.strictEqual(r.stages[2].key, 'returned');
+  assert.strictEqual(r.stages[2].count, 30);
+  assert.strictEqual(r.stages[5].count, 5);
   assert.ok(typeof r.generatedAt === 'string' && r.generatedAt.endsWith('Z'),
     'generatedAt must be ISO');
 }
@@ -282,7 +310,7 @@ const queryCalls = [];
 
 function resetDbStub() {
   nextRows = [{
-    signed_up: 12, welcomed: 9, created_real: 5, sent_one: 3, got_paid: 1
+    signed_up: 12, welcomed: 9, returned: 7, created_real: 5, sent_one: 3, got_paid: 1
   }];
   nextError = null;
   queryCalls.length = 0;
@@ -389,8 +417,12 @@ async function testRouteRendersHtmlForOperator() {
     'cohort-size field must render');
   assert.ok(/data-testid="admin-activation-stage-signed_up"/.test(res.body),
     'stage rows must render with per-stage testid');
+  assert.ok(/data-testid="admin-activation-stage-returned"/.test(res.body),
+    'new "Returned to app" stage row must render with its testid hook');
   assert.ok(/data-testid="admin-activation-stage-got_paid"/.test(res.body),
     'last stage (got_paid) must render');
+  assert.ok(/Returned to app/.test(res.body),
+    'human-readable label for the new stage must appear in the table');
   assert.ok(res.body.includes('12'),
     'cohort size 12 must appear in the body');
   assert.ok(res.body.includes('noindex'),
@@ -411,11 +443,14 @@ async function testRouteRendersJsonForOperator() {
   assert.strictEqual(body.range.from, '2026-04-01');
   assert.strictEqual(body.range.to, '2026-04-30');
   assert.strictEqual(body.cohortSize, 12);
-  assert.strictEqual(body.stages.length, 5);
+  assert.strictEqual(body.stages.length, 6);
   assert.strictEqual(body.stages[0].key, 'signed_up');
   assert.strictEqual(body.stages[0].count, 12);
-  assert.strictEqual(body.stages[4].key, 'got_paid');
-  assert.strictEqual(body.stages[4].count, 1);
+  assert.strictEqual(body.stages[2].key, 'returned',
+    'returned stage sits 3rd in the canonical order');
+  assert.strictEqual(body.stages[2].count, 7);
+  assert.strictEqual(body.stages[5].key, 'got_paid');
+  assert.strictEqual(body.stages[5].count, 1);
   assert.strictEqual(body.stages[1].conversionFromCohort, 9 / 12);
 }
 
@@ -493,6 +528,7 @@ async function run() {
     ['loadFunnelCounts issues the right SQL + params', testLoadFunnelCountsIssuesRightSql],
     ['buildStageRows computes from-prev / from-cohort', testBuildStageRowsComputesRatios],
     ['buildStageRows yields null ratios on zero cohort (no NaN)', testBuildStageRowsZeroCohortNoNaN],
+    ['STAGE_DEFS canonical order + returned stage label/milestone', testReturnedStageOrderAndMilestoneLabel],
     ['formatPct (12.3% / 100.0% / —)', testFormatPct],
     ['isOperator (env unset → false; match → true)', testIsOperator],
     ['buildReport short-circuits on bad input without SQL', testBuildReportErrorPath],

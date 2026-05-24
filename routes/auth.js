@@ -14,6 +14,7 @@ const {
   hashToken: hashMagicToken,
   safeNextPath
 } = require('../lib/magic-login');
+const { stampLastLogin } = require('../lib/last-login');
 
 const router = express.Router();
 
@@ -133,6 +134,9 @@ router.post('/login', redirectIfAuth, authLimiter, [
       subscription_status: user.subscription_status || null,
       trial_ends_at: user.trial_ends_at || null
     };
+    // Fire-and-forget last-login stamp for the activation funnel's
+    // `returned` stage. Never blocks the redirect.
+    stampLastLogin(db, user.id).catch((e) => console.error('stampLastLogin (login) error:', e && e.message));
     res.redirect('/dashboard');
   } catch (err) {
     console.error('Login error:', err);
@@ -267,6 +271,7 @@ router.post('/reset/:token', redirectIfAuth, authLimiter, [
       subscription_status: user.subscription_status || null,
       trial_ends_at: user.trial_ends_at || null
     };
+    stampLastLogin(db, user.id).catch((e) => console.error('stampLastLogin (reset) error:', e && e.message));
     req.session.flash = { type: 'success', message: 'Your password has been reset.' };
     return res.redirect('/dashboard');
   } catch (err) {
@@ -372,6 +377,7 @@ router.get('/magic/:token', authLimiter, async (req, res) => {
     subscription_status: user.subscription_status || null,
     trial_ends_at: user.trial_ends_at || null
   };
+  stampLastLogin(db, user.id).catch((e) => console.error('stampLastLogin (magic) error:', e && e.message));
   req.session.flash = { type: 'success', message: "You're signed in." };
   return res.redirect(next || '/dashboard');
 });
