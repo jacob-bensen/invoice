@@ -26,9 +26,13 @@
 
 const { db: realDb } = require('../db');
 const { sendEmail: realSendEmail } = require('../lib/email');
+const { mintMagicLoginToken: realMintMagicLoginToken } = require('../lib/magic-login');
 const { escapeHtml } = require('../lib/html');
 
 const DEFAULT_SCHEDULE = '0 10 * * *'; // 10:00 UTC daily
+// 7-day TTL on the baked magic-login token. The cohort is users mid-trial
+// (day 3-5 of a 7-day trial); a click on day-6 must still sign them in.
+const TRIAL_NUDGE_TTL_MINUTES = 7 * 24 * 60;
 
 function daysLeft(trialEndsAt, now = new Date()) {
   if (!trialEndsAt) return 0;
@@ -38,7 +42,19 @@ function daysLeft(trialEndsAt, now = new Date()) {
   return Math.max(0, Math.ceil(diff / 86400000));
 }
 
-function ctaUrl() {
+function dashboardUrl(opts) {
+  // When a one-shot magic-login URL is supplied (processTrialNudges mints
+  // one per cohort row), bake it into the CTA with ?next=/dashboard so the
+  // click auto-signs-in and lands directly on the dashboard where the
+  // upgrade modal + trial-urgency banner + add-payment-method CTAs live.
+  // Falls back to the plain APP_URL path when no magic URL is available
+  // (mint failed, no DB, etc.) so the nudge is still actionable — the
+  // user just has to authenticate manually first.
+  const magicLoginUrl = opts && typeof opts.magicLoginUrl === 'string'
+    ? opts.magicLoginUrl.trim() : '';
+  if (magicLoginUrl) {
+    return `${magicLoginUrl}?next=/dashboard`;
+  }
   const base = (process.env.APP_URL || '').replace(/\/+$/, '');
   return base ? `${base}/dashboard` : '';
 }
@@ -53,12 +69,12 @@ function buildTrialNudgeSubject(user, now = new Date()) {
   return `Your Pro trial ends in ${days} ${word} — don't lose your data`;
 }
 
-function buildTrialNudgeHtml(user, now = new Date()) {
+function buildTrialNudgeHtml(user, now = new Date(), opts) {
   const days = daysLeft(user.trial_ends_at, now);
   const word = days === 1 ? 'day' : 'days';
   const greeting = greetingName(user);
   const invoiceCount = Number(user.invoice_count) || 0;
-  const url = ctaUrl();
+  const url = dashboardUrl(opts);
   const ctaButton = url
     ? `<p style="margin:24px 0;"><a href="${escapeHtml(url)}" style="background:#4f46e5;color:#fff;text-decoration:none;font-weight:600;padding:12px 20px;border-radius:8px;display:inline-block;">Keep Pro → Add payment method</a></p>`
     : '';
@@ -87,12 +103,12 @@ function buildTrialNudgeHtml(user, now = new Date()) {
 </body></html>`;
 }
 
-function buildTrialNudgeText(user, now = new Date()) {
+function buildTrialNudgeText(user, now = new Date(), opts) {
   const days = daysLeft(user.trial_ends_at, now);
   const word = days === 1 ? 'day' : 'days';
   const greeting = greetingName(user);
   const invoiceCount = Number(user.invoice_count) || 0;
-  const url = ctaUrl();
+  const url = dashboardUrl(opts);
   const lines = [
     `Hi ${greeting},`,
     '',
@@ -115,7 +131,11 @@ function buildTrialNudgeText(user, now = new Date()) {
 async function processTrialNudges(opts = {}) {
   const db = opts.db || realDb;
   const sendEmail = opts.sendEmail || realSendEmail;
+  const mintMagicLoginToken = opts.mintMagicLoginToken || realMintMagicLoginToken;
   const now = opts.now || new Date();
+  const ttlMinutes = Number.isFinite(opts.ttlMinutes) && opts.ttlMinutes > 0
+    ? Math.floor(opts.ttlMinutes)
+    : TRIAL_NUDGE_TTL_MINUTES;
   const log = opts.log || console;
 
   const summary = { found: 0, sent: 0, skipped: 0, errors: 0, notConfigured: 0 };
@@ -137,13 +157,36 @@ async function processTrialNudges(opts = {}) {
       continue;
     }
 
+    // Best-effort: mint a magic-login URL so the CTA auto-signs-in the user
+    // and lands on the dashboard. Any failure falls back to the plain
+    // APP_URL path — we never sacrifice the nudge send to a mint hiccup.
+    let magicLoginUrl = '';
+    try {
+      const mint = await mintMagicLoginToken(db, user.id, { ttlMinutes });
+      if (mint && mint.ok && mint.url) {
+        magicLoginUrl = mint.url;
+      } else if (mint && !mint.ok) {
+        log.warn && log.warn(
+          `trial-nudge magic-link mint skipped for user ${user.id}: ${mint.reason}`
+        );
+      }
+    } catch (err) {
+      // Defence-in-depth: mintMagicLoginToken catches internally, but a
+      // future refactor that lets it throw must NEVER drop the nudge.
+      log.warn && log.warn(
+        `trial-nudge magic-link mint threw for user ${user.id}:`,
+        err && err.message
+      );
+    }
+    const buildOpts = magicLoginUrl ? { magicLoginUrl } : undefined;
+
     let result;
     try {
       result = await sendEmail({
         to: user.email,
         subject: buildTrialNudgeSubject(user, now),
-        html: buildTrialNudgeHtml(user, now),
-        text: buildTrialNudgeText(user, now)
+        html: buildTrialNudgeHtml(user, now, buildOpts),
+        text: buildTrialNudgeText(user, now, buildOpts)
       });
     } catch (err) {
       log.error && log.error(`trial nudge send threw for user ${user.id}:`, err && err.message);
@@ -231,5 +274,6 @@ module.exports = {
   buildTrialNudgeText,
   daysLeft,
   DEFAULT_SCHEDULE,
-  _internal: { escapeHtml, ctaUrl, greetingName }
+  TRIAL_NUDGE_TTL_MINUTES,
+  _internal: { escapeHtml, dashboardUrl, greetingName }
 };

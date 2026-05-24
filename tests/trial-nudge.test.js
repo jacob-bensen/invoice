@@ -301,6 +301,137 @@ async function testQueryFailureBubblesAsErrorSummary() {
 
 // ---- Cron wiring ---------------------------------------------------------
 
+// ---- Magic-login bake-in -------------------------------------------------
+
+async function testMagicLoginMintsOncePerCohortRow() {
+  process.env.APP_URL = 'https://decentinvoice.com';
+  const sends = [];
+  const mintCalls = [];
+  const db = fakeDb([
+    { id: 7, email: 'a@a.com', name: 'A',
+      trial_ends_at: new Date('2026-04-29T00:00:00Z'), invoice_count: 1 },
+    { id: 8, email: 'b@b.com', name: 'B',
+      trial_ends_at: new Date('2026-04-29T01:00:00Z'), invoice_count: 2 }
+  ]);
+  await trialNudge.processTrialNudges({
+    db,
+    sendEmail: async (p) => { sends.push(p); return { ok: true, id: 'em' }; },
+    mintMagicLoginToken: async (_db, userId, opts) => {
+      mintCalls.push({ userId, opts });
+      return { ok: true, url: `https://decentinvoice.com/auth/magic/tok-${userId}`, ttlMinutes: opts.ttlMinutes };
+    },
+    now: new Date('2026-04-26T10:00:00Z'),
+    log: { error: () => {}, warn: () => {}, log: () => {} }
+  });
+  assert.strictEqual(mintCalls.length, 2, 'mint called exactly once per cohort row');
+  assert.strictEqual(mintCalls[0].userId, 7,
+    'mint must use user.id (token belongs to the trialing freelancer)');
+  assert.strictEqual(mintCalls[0].opts.ttlMinutes, trialNudge.TRIAL_NUDGE_TTL_MINUTES,
+    'mint uses the 7-day TTL by default');
+  assert.strictEqual(mintCalls[1].userId, 8);
+  assert.match(sends[0].html, /\/auth\/magic\/tok-7\?next=\/dashboard/,
+    'user 7 receives the user 7 magic URL with ?next=/dashboard');
+  assert.match(sends[1].html, /\/auth\/magic\/tok-8\?next=\/dashboard/,
+    'user 8 receives the user 8 magic URL (no cross-user token leak)');
+  assert.ok(!/\/auth\/magic\/tok-7/.test(sends[1].html),
+    'user 8 must NOT receive user 7 token');
+  assert.ok(!/\/auth\/magic\/tok-8/.test(sends[0].html),
+    'user 7 must NOT receive user 8 token');
+  assert.match(sends[0].text, /\/auth\/magic\/tok-7\?next=\/dashboard/,
+    'text part must also carry the magic URL — plain-text email clients still get auto-sign-in');
+}
+
+async function testMagicLoginMintFailureFallsBackToPlainCta() {
+  process.env.APP_URL = 'https://decentinvoice.com';
+  const sends = [];
+  const warns = [];
+  const db = fakeDb([
+    { id: 99, email: 'q@q.com', name: 'Q',
+      trial_ends_at: new Date('2026-04-29T00:00:00Z'), invoice_count: 3 }
+  ]);
+  const summary = await trialNudge.processTrialNudges({
+    db,
+    sendEmail: async (p) => { sends.push(p); return { ok: true, id: 'em_99' }; },
+    mintMagicLoginToken: async () => ({ ok: false, reason: 'db_error', error: 'PG hiccup' }),
+    now: new Date('2026-04-26T10:00:00Z'),
+    log: { error: () => {}, warn: (...a) => warns.push(a), log: () => {} }
+  });
+  assert.strictEqual(summary.sent, 1, 'mint failure does NOT block the send');
+  assert.deepStrictEqual(db.stamped, [99],
+    'stamp lands on send success regardless of mint outcome');
+  assert.match(sends[0].html, /https:\/\/decentinvoice\.com\/dashboard/,
+    'falls back to the plain /dashboard CTA');
+  assert.ok(!/\/auth\/magic\//.test(sends[0].html),
+    'no magic URL in the body when mint failed');
+  assert.ok(warns.some(args => /magic-link mint skipped/.test(args.join(' '))),
+    'warn logged for operator visibility');
+}
+
+async function testMagicLoginMintThrowSoftFails() {
+  process.env.APP_URL = 'https://decentinvoice.com';
+  const sends = [];
+  const db = fakeDb([
+    { id: 5, email: 'z@z.com', name: 'Z',
+      trial_ends_at: new Date('2026-04-29T00:00:00Z'), invoice_count: 0 }
+  ]);
+  const summary = await trialNudge.processTrialNudges({
+    db,
+    sendEmail: async (p) => { sends.push(p); return { ok: true }; },
+    mintMagicLoginToken: async () => { throw new Error('mint exploded'); },
+    now: new Date('2026-04-26T10:00:00Z'),
+    log: { error: () => {}, warn: () => {}, log: () => {} }
+  });
+  assert.strictEqual(summary.sent, 1);
+  assert.strictEqual(summary.errors, 0,
+    'mint throw is a soft-fail — must not count as a send error');
+  assert.match(sends[0].html, /https:\/\/decentinvoice\.com\/dashboard/);
+  assert.ok(!/\/auth\/magic\//.test(sends[0].html));
+}
+
+async function testMagicLoginTtlMinutesOptOverride() {
+  process.env.APP_URL = 'https://decentinvoice.com';
+  let capturedTtl = null;
+  const db = fakeDb([
+    { id: 1, email: 'a@a.com', name: 'A',
+      trial_ends_at: new Date('2026-04-29T00:00:00Z'), invoice_count: 0 }
+  ]);
+  await trialNudge.processTrialNudges({
+    db,
+    sendEmail: async () => ({ ok: true }),
+    mintMagicLoginToken: async (_db, _uid, opts) => {
+      capturedTtl = opts.ttlMinutes;
+      return { ok: true, url: 'https://x/auth/magic/t' };
+    },
+    ttlMinutes: 60,
+    log: { error: () => {}, warn: () => {}, log: () => {} }
+  });
+  assert.strictEqual(capturedTtl, 60,
+    'opts.ttlMinutes threads through to the mint call');
+}
+
+function testMagicLoginNextDeepLinkPassesSafeNextPath() {
+  // The /auth/magic/:token consume route gates ?next= through safeNextPath.
+  // If the emitted next path doesn't pass that filter, the CTA silently
+  // degrades to /dashboard — losing the friction-removal benefit of baking
+  // in a deep link. (For trial-nudge the next IS /dashboard, so this also
+  // guards against a future refactor that switches the destination to a
+  // path not on the allow-list.)
+  delete require.cache[require.resolve('../lib/magic-login')];
+  const { safeNextPath } = require('../lib/magic-login');
+  process.env.APP_URL = 'https://decentinvoice.com';
+  const html = trialNudge.buildTrialNudgeHtml(
+    { name: 'Sam', trial_ends_at: new Date('2026-04-29T00:00:00Z'), invoice_count: 1 },
+    new Date('2026-04-26T10:00:00Z'),
+    { magicLoginUrl: 'https://decentinvoice.com/auth/magic/tok' }
+  );
+  const m = /next=(\/[^"' )]*)/.exec(html);
+  assert.ok(m, 'CTA must carry a ?next= deep-link');
+  assert.strictEqual(safeNextPath(m[1]), m[1],
+    'the emitted next= path must be accepted by safeNextPath');
+}
+
+// ---- Cron wiring ---------------------------------------------------------
+
 async function testStartTrialNudgeJobBlockedInTestEnv() {
   process.env.NODE_ENV = 'test';
   trialNudge.stopTrialNudgeJob();
@@ -376,6 +507,11 @@ async function run() {
     ['email error counts; batch continues; only success stamped', testEmailErrorContinuesBatch],
     ['idempotent across runs (filter respects stamp)', testIdempotentAcrossRuns],
     ['top-level query failure → errors=1', testQueryFailureBubblesAsErrorSummary],
+    ['magic-login: mints once per cohort row + bakes URL into sent email', testMagicLoginMintsOncePerCohortRow],
+    ['magic-login: mint failure → plain CTA + email still ships + stamp lands', testMagicLoginMintFailureFallsBackToPlainCta],
+    ['magic-login: mint throw → soft-fails to plain CTA + email still ships', testMagicLoginMintThrowSoftFails],
+    ['magic-login: ttlMinutes opt overrides TRIAL_NUDGE_TTL_MINUTES', testMagicLoginTtlMinutesOptOverride],
+    ['magic-login: emitted ?next= passes safeNextPath validation', testMagicLoginNextDeepLinkPassesSafeNextPath],
     ['startTrialNudgeJob refuses to schedule under NODE_ENV=test', testStartTrialNudgeJobBlockedInTestEnv],
     ['startTrialNudgeJob calls cron + tick triggers sends', testStartTrialNudgeJobUsesCronCallback],
     ['startTrialNudgeJob rejects double start', testStartTrialNudgeJobRefusesDoubleStart],
