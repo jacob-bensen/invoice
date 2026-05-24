@@ -9,6 +9,7 @@ const parsePaymentMethods = stripePaymentLinkLib.parsePaymentMethods || (() => [
 const { firePaidWebhook, buildPaidPayload } = require('../lib/outbound-webhook');
 const {
   sendInvoiceEmail,
+  sendInvoiceTestEmail,
   sendReferralCelebrationEmail,
   buildInvoiceSubject,
   buildInvoiceHtml,
@@ -1468,6 +1469,59 @@ router.post('/:id/email-client', requireAuth, async (req, res) => {
     });
   } catch (err) {
     console.error('email-client send error:', err && err.message);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
+/*
+ * Self-test send (Milestone 3 — first invoice created → first invoice
+ * sent). Sends the exact same email the client would receive, but to the
+ * authenticated freelancer's own inbox, so they can verify how it renders
+ * in their real mail client (Gmail / Apple Mail / Outlook) before tapping
+ * "send to client". Removes the dominant pre-send anxiety beat ("I don't
+ * know what this actually looks like to them") that survives the static
+ * iframe preview at /invoices/:id/preview-email.
+ *
+ * Distinctions from /:id/email-client:
+ *   - No plan gate. ALL plans (free / trial / pro / agency) can test-send
+ *     to themselves. Activation is the goal; we don't want to gate the
+ *     de-anxiety surface that converts drafts to sends.
+ *   - No client_email requirement. The recipient is hardcoded to the
+ *     freelancer's own user.email — they can verify the email even mid-
+ *     edit before adding a client email to the invoice.
+ *   - No status flip. The invoice stays in draft. This is a preview, not
+ *     a delivery.
+ *   - No first-sent celebration. This is not the user's first send.
+ *   - No payment-link auto-creation. The invoice is unchanged.
+ *
+ * Auth + ownership-gated (db.getInvoiceById's user_id filter). The send
+ * targets owner.email (hardcoded in lib/email.sendInvoiceTestEmail) so no
+ * spam vector exists — an authenticated user can only test-send to their
+ * own registered address.
+ */
+router.post('/:id/email-self', requireAuth, async (req, res) => {
+  try {
+    const user = await db.getUserById(req.session.user.id);
+    if (!user) return res.status(401).json({ error: 'unauthorized' });
+    if (!user.email) return res.status(400).json({ error: 'no_owner_email' });
+    const invoice = await db.getInvoiceById(req.params.id, req.session.user.id);
+    if (!invoice) return res.status(404).json({ error: 'not_found' });
+
+    const sendResult = await sendInvoiceTestEmail(invoice, user);
+    if (!sendResult || sendResult.ok !== true) {
+      const reason = (sendResult && sendResult.reason) || 'send_failed';
+      const status = reason === 'not_configured' ? 503 : 502;
+      return res.status(status).json({ error: reason });
+    }
+
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      sent_to: user.email,
+      message_id: sendResult.id || null
+    });
+  } catch (err) {
+    console.error('email-self send error:', err && err.message);
     res.status(500).json({ error: 'server_error' });
   }
 });
