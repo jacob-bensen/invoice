@@ -562,6 +562,7 @@ const db = {
          AND i.created_at <= NOW() - ($1 * INTERVAL '1 hour')
          AND u.email IS NOT NULL
          AND u.welcome_email_sent_at IS NOT NULL
+         AND u.second_stale_draft_email_sent_at IS NULL
          AND (u.stale_draft_email_sent_at IS NULL
               OR u.stale_draft_email_sent_at < NOW() - ($2 * INTERVAL '1 day'))
        ORDER BY i.user_id, i.created_at ASC
@@ -576,6 +577,64 @@ const db = {
     const { rows } = await pool.query(
       `UPDATE users SET stale_draft_email_sent_at = NOW(), updated_at = NOW()
          WHERE id = $1 RETURNING id, stale_draft_email_sent_at`,
+      [userId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
+   * Second stale-draft email cron query (Milestone 3 — first invoice created
+   * → first invoice sent). Mirrors getUsersWithStaleDraftForEmail but for the
+   * day-7+ cohort: users whose first stale-draft email fired at least
+   * `firstSentGapDays` ago and STILL have a real draft 24h+ old. One-shot via
+   * `second_stale_draft_email_sent_at IS NULL` so the terminal follow-up
+   * never repeats. DISTINCT ON (i.user_id) surfaces the oldest draft per user
+   * (one email per recipient per tick).
+   */
+  async getUsersForSecondStaleDraftEmail(minAgeHours = 24, firstSentGapDays = 7) {
+    const hours = Number.isFinite(minAgeHours) && minAgeHours > 0
+      ? Math.floor(minAgeHours)
+      : 24;
+    const gap = Number.isFinite(firstSentGapDays) && firstSentGapDays > 0
+      ? Math.floor(firstSentGapDays)
+      : 7;
+    const { rows } = await pool.query(
+      `SELECT DISTINCT ON (i.user_id)
+         i.user_id        AS user_id,
+         i.id             AS invoice_id,
+         i.invoice_number AS invoice_number,
+         i.client_name    AS client_name,
+         i.total          AS invoice_total,
+         i.created_at     AS draft_created_at,
+         u.email          AS email,
+         u.name           AS name,
+         u.business_name  AS business_name,
+         u.reply_to_email AS reply_to_email,
+         u.business_email AS business_email
+       FROM invoices i
+       JOIN users u ON u.id = i.user_id
+       WHERE i.status = 'draft'
+         AND i.is_seed = false
+         AND i.created_at <= NOW() - ($1 * INTERVAL '1 hour')
+         AND u.email IS NOT NULL
+         AND u.welcome_email_sent_at IS NOT NULL
+         AND u.stale_draft_email_sent_at IS NOT NULL
+         AND u.stale_draft_email_sent_at <= NOW() - ($2 * INTERVAL '1 day')
+         AND u.second_stale_draft_email_sent_at IS NULL
+       ORDER BY i.user_id, i.created_at ASC
+       LIMIT 500`,
+      [hours, gap]
+    );
+    return rows;
+  },
+
+  async markSecondStaleDraftEmailSent(userId) {
+    if (!userId) return null;
+    const { rows } = await pool.query(
+      `UPDATE users SET second_stale_draft_email_sent_at = NOW(), updated_at = NOW()
+         WHERE id = $1
+           AND second_stale_draft_email_sent_at IS NULL
+         RETURNING id, second_stale_draft_email_sent_at`,
       [userId]
     );
     return rows[0] || null;

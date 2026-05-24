@@ -191,6 +191,20 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS sent_via_share_intent_at TIMESTAMP
 -- never gets multiple emails in one tick.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS stale_draft_email_sent_at TIMESTAMP;
 
+-- Second stale-draft email stamp (one-shot terminal follow-up). 7+ days after
+-- the first stale-draft email fires, the same draft is still sitting unsent;
+-- the original cron would otherwise re-send the SAME copy every 7 days
+-- forever. This second pass replaces that repetition with a single, sharper
+-- "is anything specific stopping you? hit reply" email and then stops — the
+-- user who's silent after two distinct emails over a week+ isn't moved by a
+-- third. Mirrors the no-invoice / second-no-invoice nudge pair on Milestone 2,
+-- now applied to the Milestone 3 (created_real → sent_one) draft cohort.
+-- Originally-fired stale-draft is suppressed via an
+-- `AND second_stale_draft_email_sent_at IS NULL` gate on its query, so a user
+-- receives at most one first nudge + one terminal second nudge for their
+-- still-draft invoice and then drops off the email-cohort entirely.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS second_stale_draft_email_sent_at TIMESTAMP;
+
 -- No-invoice nudge stamp. The daily cron picks up users who got the welcome
 -- email, are at least 48h past signup, and still have invoice_count = 0
 -- (the seed insert deliberately skips that bump, so this column is a clean

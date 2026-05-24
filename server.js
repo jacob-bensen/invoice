@@ -200,6 +200,15 @@ app.listen(PORT, () => {
     }
 
     try {
+      const { startSecondStaleDraftEmailJob } = require('./jobs/second-stale-draft-email');
+      const s2 = startSecondStaleDraftEmailJob();
+      if (s2 && s2.ok) console.log(`[second-stale-draft-email] scheduled (${s2.schedule})`);
+      else console.warn('[second-stale-draft-email] not scheduled:', s2 && s2.reason);
+    } catch (err) {
+      console.error('[second-stale-draft-email] startup failed:', err && err.message);
+    }
+
+    try {
       const { startNoInvoiceNudgeJob } = require('./jobs/no-invoice-nudge');
       const n = startNoInvoiceNudgeJob();
       if (n && n.ok) console.log(`[no-invoice-nudge] scheduled (${n.schedule})`);
