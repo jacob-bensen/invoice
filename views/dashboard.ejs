@@ -299,6 +299,15 @@
               class="inline-flex items-center gap-1.5 bg-white border border-emerald-300 text-emerald-800 font-semibold px-3 py-1.5 rounded-lg hover:bg-blue-50 hover:border-blue-400 transition text-xs">
               <span aria-hidden="true">&#128241;</span><span>SMS</span>
             </a>
+            <% if (freshDraftPrompt.shareIntents.mailto) { %>
+              <a href="<%= freshDraftPrompt.shareIntents.mailto %>"
+                data-share="email"
+                data-testid="fresh-draft-share-email"
+                onclick="try { fetch('/invoices/<%= freshDraftPrompt.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'email' }) }).catch(function(){}); } catch (e) {}"
+                class="inline-flex items-center gap-1.5 bg-white border border-emerald-300 text-emerald-800 font-semibold px-3 py-1.5 rounded-lg hover:bg-indigo-50 hover:border-indigo-400 transition text-xs">
+                <span aria-hidden="true">&#9993;&#65039;</span><span>Email</span>
+              </a>
+            <% } %>
             <button type="button"
               data-share="copy"
               data-testid="fresh-draft-share-copy"
@@ -495,6 +504,15 @@
               class="inline-flex items-center gap-1.5 bg-white border border-fuchsia-300 text-fuchsia-800 font-semibold px-3 py-1.5 rounded-lg hover:bg-blue-50 hover:border-blue-400 transition text-xs">
               <span aria-hidden="true">&#128241;</span><span>SMS</span>
             </a>
+            <% if (recentViewPrompt.followUpIntents.mailto) { %>
+              <a href="<%= recentViewPrompt.followUpIntents.mailto %>"
+                data-share="email"
+                data-testid="recent-view-share-email"
+                onclick="try { fetch('/invoices/<%= recentViewPrompt.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'email' }) }).catch(function(){}); } catch (e) {}"
+                class="inline-flex items-center gap-1.5 bg-white border border-fuchsia-300 text-fuchsia-800 font-semibold px-3 py-1.5 rounded-lg hover:bg-indigo-50 hover:border-indigo-400 transition text-xs">
+                <span aria-hidden="true">&#9993;&#65039;</span><span>Email</span>
+              </a>
+            <% } %>
             <button type="button"
               data-share="copy"
               data-testid="recent-view-share-copy"

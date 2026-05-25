@@ -414,6 +414,7 @@ function buildFreshDraftPrompt(user, invoices, otherPrompts) {
     shareIntents = {
       whatsapp: surface.shareIntents.whatsapp,
       sms: surface.shareIntents.sms,
+      mailto: surface.shareIntents.mailto,
       url: surface.url
     };
   }

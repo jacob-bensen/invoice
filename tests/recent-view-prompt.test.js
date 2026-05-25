@@ -459,6 +459,35 @@ test('buildRecentViewPrompt: derives follow-up share intents when public_token i
   assert.match(out.followUpIntents.body, /checking in/i, 'follow-up framing (not first-send)');
 });
 
+test('buildRecentViewPrompt: followUpIntents.mailto surfaces a mailto: deep-link with the client_email', () => {
+  // Email is the natural follow-up channel for B2B / desktop freelancers; the
+  // underlying buildFollowUpShareIntents already returns mailto, this locks
+  // in the builder forwarding the field so the dashboard's Email button has
+  // a real href to point at.
+  const routes = installDbStub();
+  const fiveMin = new Date(Date.now() - 5 * 60000);
+  const out = routes.buildRecentViewPrompt(
+    { id: 1 },
+    {
+      id: 88,
+      invoice_number: 'INV-7',
+      client_name: 'Acme',
+      client_email: 'ap@acme.example',
+      total: '500.00',
+      last_viewed_at: fiveMin,
+      public_token: 'a1b2c3d4e5f6a7b8'
+    }
+  );
+  assert.ok(out.followUpIntents, 'followUpIntents derived');
+  assert.ok(typeof out.followUpIntents.mailto === 'string'
+    && out.followUpIntents.mailto.startsWith('mailto:'),
+    'mailto: deep-link present');
+  assert.ok(out.followUpIntents.mailto.indexOf(encodeURIComponent('ap@acme.example')) !== -1,
+    'recipient is the percent-encoded client_email');
+  assert.ok(out.followUpIntents.mailto.indexOf('subject=') !== -1, 'subject param present');
+  assert.ok(out.followUpIntents.mailto.indexOf('body=') !== -1, 'body param present');
+});
+
 test('buildRecentViewPrompt: malformed public_token yields null followUpIntents (no clickable garbage)', () => {
   const routes = installDbStub();
   const fiveMin = new Date(Date.now() - 5 * 60000);
@@ -688,6 +717,55 @@ test('view: hostile client_name is HTML-escaped (XSS guard)', () => {
     'raw script must NOT appear — EJS <%= must escape');
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/,
     'escaped form must appear instead');
+});
+
+test('view: Email button RENDERS when followUpIntents.mailto is set, with mailto: href + intent=email POST', () => {
+  // Email is the dominant follow-up channel for desktop / B2B freelancers
+  // chasing payment — natively opens Gmail / Apple Mail / Outlook with the
+  // recipient + subject + body pre-filled. The intent=email POST flips the
+  // share-intent stamp via the same /share-intent endpoint as WhatsApp / SMS.
+  const html = renderDashboard({
+    recentViewPrompt: {
+      id: 88, invoiceNumber: 'X', clientName: 'A', total: 100,
+      minutesAgo: 5, viewCount: 1, status: 'sent',
+      followUpIntents: {
+        url: 'https://example.com/i/abc123',
+        whatsapp: 'https://wa.me/?text=x',
+        sms: 'sms:?&body=x',
+        mailto: 'mailto:ap%40acme.example?subject=Check-in&body=hi'
+      }
+    }
+  });
+  assert.match(html, /data-testid="recent-view-share-email"/, 'Email button renders');
+  assert.match(html,
+    /href="mailto:ap%40acme\.example\?subject=Check-in&amp;body=hi"/,
+    'mailto href surfaces with EJS HTML attribute escaping');
+  const emailBlock = html.match(/data-testid="recent-view-share-email"[\s\S]*?<\/a>/);
+  assert.ok(emailBlock, 'Email anchor block renders');
+  assert.match(emailBlock[0], /\/invoices\/88\/share-intent/,
+    'Email click posts to /invoices/88/share-intent');
+  assert.match(emailBlock[0], /intent:\s*'email'/, 'intent kind is email');
+  assert.match(emailBlock[0], /TEST_CSRF/, 'CSRF wired');
+  assert.doesNotMatch(emailBlock[0], /target="_blank"/,
+    'mailto: anchors must not declare target=_blank (no tab opens)');
+});
+
+test('view: Email button is OMITTED when followUpIntents.mailto is missing (partial-deploy / legacy)', () => {
+  const html = renderDashboard({
+    recentViewPrompt: {
+      id: 88, invoiceNumber: 'X', clientName: 'A', total: 100,
+      minutesAgo: 5, viewCount: 1, status: 'sent',
+      followUpIntents: {
+        url: 'https://example.com/i/abc123',
+        whatsapp: 'https://wa.me/?text=x',
+        sms: 'sms:?&body=x'
+      }
+    }
+  });
+  assert.doesNotMatch(html, /data-testid="recent-view-share-email"/);
+  assert.match(html, /data-testid="recent-view-share-whatsapp"/);
+  assert.match(html, /data-testid="recent-view-share-sms"/);
+  assert.match(html, /data-testid="recent-view-share-copy"/);
 });
 
 test('view: hostile share-url is HTML-attribute-escaped', () => {

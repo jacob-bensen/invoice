@@ -293,6 +293,33 @@ test('shareIntents carries whatsapp + sms + url when public_token is present', (
   assert.ok(decoded.indexOf('$1500.00') !== -1, 'body mentions $-formatted amount');
 });
 
+test('shareIntents carries a mailto: deep-link when public_token is present', () => {
+  // Email is the natural channel for desktop / B2B freelancers (consultants,
+  // agencies, writers serving corporate clients). The underlying
+  // buildPublicShareIntents helper already returns `mailto:` and the dashboard
+  // banner needs the URL surfaced so the Email button can render — this test
+  // locks in the builder forwarding the field without dropping it.
+  const user = { id: 1, first_sent_at: null };
+  const invoices = [
+    { id: 17, status: 'draft', is_seed: false, created_at: minutesAgo(10),
+      invoice_number: 'INV-2026-0042', client_name: 'Acme Co.',
+      client_email: 'ap@acme.example', total: 1500,
+      public_token: 'abc1234567890def' }
+  ];
+  const out = routes.buildFreshDraftPrompt(user, invoices);
+  assert.ok(out.shareIntents, 'shareIntents must be set when token is present');
+  assert.ok(typeof out.shareIntents.mailto === 'string'
+    && out.shareIntents.mailto.startsWith('mailto:'),
+    'mailto URL is a mailto: deep-link');
+  // The recipient should be the percent-encoded client_email so a malformed
+  // address can't inject extra mailto: query params.
+  assert.ok(out.shareIntents.mailto.indexOf(encodeURIComponent('ap@acme.example')) !== -1,
+    'mailto recipient is the client_email');
+  // Subject + body should ride the same query-string and reference the invoice.
+  assert.ok(out.shareIntents.mailto.indexOf('subject=') !== -1, 'subject param present');
+  assert.ok(out.shareIntents.mailto.indexOf('body=') !== -1, 'body param present');
+});
+
 test('shareIntents is null when public_token is a malformed string', () => {
   // The token regex on lib/share-link gates the surface; a malformed token
   // (wrong length, non-hex chars) must NOT produce a usable share-intent URL.
@@ -539,6 +566,80 @@ test('view: share-intent buttons fire POST /share-intent with the matching inten
   assert.match(copyBlock[0], /intent:\s*'copy'/);
   assert.match(copyBlock[0], /data-share-url="https:\/\/app\.example\/i\/abc1234567890def"/,
     'Copy button carries the public URL for navigator.clipboard.writeText');
+});
+
+test('view: Email button RENDERS when shareIntents.mailto is set, with mailto: href and intent=email POST', () => {
+  // Email is the dominant share channel for desktop / B2B freelancers; the
+  // underlying mailto: URL has been in lib/share-link.js since #43 but the
+  // dashboard banner exposed only WhatsApp / SMS / Copy until now.
+  const html = renderDashboard({
+    freshDraftPrompt: {
+      id: 17, invoiceNumber: 'X', clientName: 'A', total: 1, ageMinutes: 5,
+      shareIntents: {
+        whatsapp: 'https://wa.me/?text=hello',
+        sms: 'sms:?&body=hello',
+        mailto: 'mailto:ap%40acme.example?subject=Invoice%20X&body=hello',
+        url: 'https://app.example/i/abc1234567890def'
+      }
+    }
+  });
+  assert.match(html, /data-testid="fresh-draft-share-email"/, 'Email button renders');
+  // mailto href surfaces verbatim (% stays escaped, & in the query becomes &amp;).
+  assert.match(html,
+    /href="mailto:ap%40acme\.example\?subject=Invoice%20X&amp;body=hello"/,
+    'mailto href surfaces with EJS HTML attribute escaping');
+  const emailBlock = html.match(/data-testid="fresh-draft-share-email"[\s\S]*?<\/a>/);
+  assert.ok(emailBlock, 'Email anchor block renders');
+  assert.match(emailBlock[0], /\/invoices\/17\/share-intent/,
+    'Email click posts to /invoices/17/share-intent');
+  assert.match(emailBlock[0], /intent:\s*'email'/, 'intent kind is email');
+  assert.match(emailBlock[0], /X-CSRF-Token['"]\s*:\s*['"]TEST_CSRF/, 'CSRF wired');
+  // No target="_blank" — mailto: hands off to the OS handler, not a tab.
+  assert.doesNotMatch(emailBlock[0], /target="_blank"/,
+    'mailto: anchors must not declare target=_blank (no tab opens)');
+});
+
+test('view: Email button is OMITTED when shareIntents.mailto is missing (legacy / partial mint)', () => {
+  // Defensive: a partial-deploy snapshot of shareIntents that lacks mailto
+  // must not render an empty href that would no-op on click. The button
+  // should silently degrade — WhatsApp / SMS / Copy still cover the cohort.
+  const html = renderDashboard({
+    freshDraftPrompt: {
+      id: 17, invoiceNumber: 'X', clientName: 'A', total: 1, ageMinutes: 5,
+      shareIntents: {
+        whatsapp: 'https://wa.me/?text=hello',
+        sms: 'sms:?&body=hello',
+        url: 'https://app.example/i/abc1234567890def'
+      }
+    }
+  });
+  assert.doesNotMatch(html, /data-testid="fresh-draft-share-email"/);
+  // The other three buttons should still render so this isn't a silent
+  // regression that hides the whole row.
+  assert.match(html, /data-testid="fresh-draft-share-whatsapp"/);
+  assert.match(html, /data-testid="fresh-draft-share-sms"/);
+  assert.match(html, /data-testid="fresh-draft-share-copy"/);
+});
+
+test('view: hostile mailto in shareIntents is HTML-attribute-escaped (XSS guard)', () => {
+  // Defence-in-depth: lib/share-link encodes the recipient + body, but if a
+  // malformed mailto string ever slipped past the builder, the rendered href
+  // must not break out of the attribute and create script execution.
+  const html = renderDashboard({
+    freshDraftPrompt: {
+      id: 17, invoiceNumber: 'X', clientName: 'A', total: 1, ageMinutes: 5,
+      shareIntents: {
+        whatsapp: 'https://wa.me/?text=hello',
+        sms: 'sms:?&body=hello',
+        mailto: 'mailto:" onmouseover="alert(1)',
+        url: 'https://app.example/i/abc1234567890def'
+      }
+    }
+  });
+  assert.doesNotMatch(html, /href="mailto:" onmouseover="alert\(1\)/,
+    'attribute breakout must not happen');
+  assert.match(html, /href="mailto:(?:&#34;|&quot;) onmouseover=(?:&#34;|&quot;)alert\(1\)"/,
+    'quotes inside the URL are HTML-attribute-escaped');
 });
 
 test('view: hostile URL in shareIntents.url is HTML-attribute-escaped (XSS guard)', () => {
