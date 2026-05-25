@@ -178,7 +178,10 @@ async function testRegisterSuccess() {
     ['GET', '/dashboard', null]
   ]);
   assert.strictEqual(regRes.status, 302, 'successful registration should redirect');
-  assert.ok(regRes.headers.location.includes('/dashboard'), 'redirect target should be /dashboard');
+  assert.ok(regRes.headers.location.includes('/invoices/quick'),
+    'redirect target should be /invoices/quick (new-signup activation drop-in)');
+  assert.ok(regRes.headers.location.includes('welcome=1'),
+    'redirect target should carry welcome=1 so the quick form renders the new-signup banner');
   assert.strictEqual(dashRes.status, 200, 'session cookie must authenticate subsequent requests');
   const stored = usersByEmail.get('alice@x.com');
   assert.ok(stored, 'user must be persisted');

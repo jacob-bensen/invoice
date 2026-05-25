@@ -1218,6 +1218,95 @@ async function testViewRepopulatesBusinessName() {
 }
 
 // ============================================================================
+// Layer 3.5 — post-signup welcome banner
+// ============================================================================
+
+async function testGetQuickWithWelcomeRendersWelcomeBanner() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'free', invoice_count: 0, name: 'Alice Walker', email: 'a@x.com' });
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'free', invoice_count: 0 }, routes);
+  const res = await request(app, 'GET', '/invoices/quick?welcome=1');
+  assert.strictEqual(res.status, 200, 'GET /invoices/quick?welcome=1 must render');
+  assert.ok(res.body.includes('data-testid="invoice-quick-welcome-banner"'),
+    'welcome banner must render when ?welcome=1');
+  assert.ok(res.body.includes('data-testid="invoice-quick-welcome-firstname"'),
+    'welcome banner must include the firstname hook');
+  assert.ok(/data-testid="invoice-quick-welcome-firstname"[^>]*>Alice<\/strong>/.test(res.body),
+    'welcome banner must render only the first name (Alice from "Alice Walker")');
+  assert.ok(res.body.includes('data-testid="invoice-quick-welcome-skip"'),
+    'welcome banner must include the skip-to-dashboard link');
+  // Anchor-attribute order isn't fixed — accept href before OR after data-testid.
+  assert.ok(/<a\s+[^>]*href="\/dashboard"[^>]*data-testid="invoice-quick-welcome-skip"/.test(res.body)
+    || /<a\s+[^>]*data-testid="invoice-quick-welcome-skip"[^>]*href="\/dashboard"/.test(res.body),
+    'welcome banner skip link must target /dashboard');
+}
+
+async function testGetQuickWithoutWelcomeOmitsBanner() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com' });
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'free', invoice_count: 0 }, routes);
+  const res = await request(app, 'GET', '/invoices/quick');
+  assert.strictEqual(res.status, 200, 'GET /invoices/quick (no query) must render');
+  assert.ok(!res.body.includes('data-testid="invoice-quick-welcome-banner"'),
+    'welcome banner must NOT render without ?welcome=1');
+}
+
+async function testGetQuickWelcomeStrictMatch() {
+  // Anything other than the literal string '1' must NOT toggle the banner —
+  // guards against ?welcome=true / ?welcome=0 / ?welcome= variants accidentally
+  // toggling the new-signup hero for a returning user pasting URLs.
+  resetStore();
+  users.set(1, { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com' });
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'free', invoice_count: 0 }, routes);
+  for (const q of ['true', '0', 'yes', '']) {
+    const res = await request(app, 'GET', `/invoices/quick?welcome=${encodeURIComponent(q)}`);
+    assert.strictEqual(res.status, 200, `GET /quick?welcome=${q} must render`);
+    assert.ok(!res.body.includes('data-testid="invoice-quick-welcome-banner"'),
+      `welcome banner must NOT render for ?welcome=${q} (only ?welcome=1 triggers)`);
+  }
+}
+
+async function testViewWelcomeBannerWithoutNameFalsBack() {
+  // user.name is missing — banner still renders with the generic copy.
+  const html = await renderQuickView({
+    user: { id: 1, plan: 'pro', invoice_count: 0, email: 'a@x.com', name: '' },
+    welcome: true
+  });
+  assert.ok(html.includes('data-testid="invoice-quick-welcome-banner"'),
+    'welcome banner must still render even when user.name is empty');
+  assert.ok(!html.includes('data-testid="invoice-quick-welcome-firstname"'),
+    'firstname strong tag must NOT render when name is empty');
+  assert.ok(html.includes('Welcome aboard'),
+    'generic welcome copy must render as the fallback');
+}
+
+async function testViewWelcomeBannerEscapesHostileName() {
+  const html = await renderQuickView({
+    user: { id: 1, plan: 'pro', invoice_count: 0, name: '<script>alert(1)</script> Mallory', email: 'm@x.com' },
+    welcome: true
+  });
+  assert.ok(html.includes('data-testid="invoice-quick-welcome-banner"'),
+    'welcome banner must render for hostile names');
+  assert.ok(!/<script>alert\(1\)<\/script>/.test(html),
+    'hostile name must be HTML-escaped inside the banner');
+  // First "word" of the name is the script tag — when EJS escapes, the entity-
+  // encoded form should be present (defence-in-depth check).
+  assert.ok(html.includes('&lt;script&gt;'),
+    'hostile name must surface as escaped HTML entities');
+}
+
+async function testViewWelcomeBannerOmittedByDefault() {
+  const html = await renderQuickView({
+    user: { id: 1, plan: 'pro', invoice_count: 0, name: 'Alice', email: 'a@x.com' }
+  });
+  assert.ok(!html.includes('data-testid="invoice-quick-welcome-banner"'),
+    'welcome banner must NOT render when welcome flag is not passed');
+}
+
+// ============================================================================
 // Layer 4 — dashboard wiring
 // ============================================================================
 
@@ -1299,6 +1388,12 @@ async function run() {
     ['view: user with existing business_name does not see the business-name block', testViewHidesBusinessNameBlockWhenAlreadySet],
     ['view: whitespace-only business_name still surfaces the prompt', testViewHidesBusinessNameBlockWhenWhitespaceOnly],
     ['view: validation re-render keeps business_name value sticky', testViewRepopulatesBusinessName],
+    ['GET /invoices/quick?welcome=1: post-signup welcome banner renders with first name', testGetQuickWithWelcomeRendersWelcomeBanner],
+    ['GET /invoices/quick (no query): welcome banner omitted', testGetQuickWithoutWelcomeOmitsBanner],
+    ['GET /invoices/quick?welcome=<other>: only welcome=1 toggles the banner', testGetQuickWelcomeStrictMatch],
+    ['view: welcome banner renders generic copy when user.name is empty', testViewWelcomeBannerWithoutNameFalsBack],
+    ['view: welcome banner HTML-escapes a hostile user.name', testViewWelcomeBannerEscapesHostileName],
+    ['view: welcome banner omitted by default (no welcome flag)', testViewWelcomeBannerOmittedByDefault],
     ['dashboard: primary CTA at /invoices/quick + advanced link at /invoices/new', testDashboardPrimaryCtaPointsAtQuick]
   ];
   let passed = 0;

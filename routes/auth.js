@@ -101,7 +101,15 @@ router.post('/register', redirectIfAuth, authLimiter, [
       })
       .catch(e => console.error('Welcome email error:', e && e.message));
 
-    res.redirect('/dashboard');
+    // Drop new signups directly on the value-moment instead of the busy
+    // dashboard (Milestone 2 — first dashboard re-entry → first real invoice
+    // created). The dashboard's onboarding stack (onboarding checklist,
+    // firstRealInvoicePrompt, seed-invoice-hint, seed-invoice-view-banner,
+    // nav controls) competes for attention against the single action a
+    // brand-new user came here to take. The ?welcome=1 query toggles a
+    // dismissable hero banner on /invoices/quick that names the user and
+    // links back to the dashboard for the cohort that wants to explore first.
+    res.redirect('/invoices/quick?welcome=1');
   } catch (err) {
     console.error('Register error:', err);
     res.render('auth/register', {

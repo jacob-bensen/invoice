@@ -902,12 +902,19 @@ router.get('/quick', requireAuth, async (req, res) => {
     return res.redirect('/invoices?limit_hit=1');
   }
   const pending = readPendingQuickInvoice(user);
+  // ?welcome=1 fires right after POST /auth/register, where we now drop
+  // new signups directly on /invoices/quick instead of /dashboard. The
+  // template renders a one-time hero banner when this flag is true so
+  // the new user sees a personal welcome above the form. Any other entry
+  // path (nav, /invoices > "New", magic-login from welcome email) hits
+  // this route without the query and skips the banner.
   res.render('invoice-quick', {
     title: 'Quick invoice',
     user,
     flash: null,
     submitted: pending || null,
     pendingRestored: !!pending,
+    welcome: req.query && req.query.welcome === '1',
     noindex: true
   });
 });

@@ -385,7 +385,7 @@ async function testRegisterFiresWelcomeEmail() {
   const res = await request(app, 'POST', '/auth/register',
     { name: 'Alice', email: 'alice@x.com', password: 'password123' });
 
-  assert.strictEqual(res.status, 302, 'successful register must redirect to /dashboard');
+  assert.strictEqual(res.status, 302, 'successful register must redirect to the post-signup landing');
   // The trigger is fire-and-forget; the redirect lands before the promise
   // resolves. Wait one microtask tick for the scheduled call to land.
   await new Promise(r => setImmediate(r));
@@ -406,8 +406,8 @@ async function testRegisterSurvivesWelcomeRejection() {
     { name: 'Bob', email: 'bob@x.com', password: 'password123' });
 
   assert.strictEqual(res.status, 302, 'register must still redirect even when welcome throws');
-  assert.ok(res.headers.location.includes('/dashboard'),
-    'a welcome-email rejection must NOT block the user reaching the dashboard');
+  assert.ok(res.headers.location.includes('/invoices/quick'),
+    'a welcome-email rejection must NOT block the user reaching the post-signup landing');
   assert.ok(usersByEmail.get('bob@x.com'),
     'account must be persisted even if welcome email throws');
 }

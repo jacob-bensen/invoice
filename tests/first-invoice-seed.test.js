@@ -217,7 +217,8 @@ async function testRegisterSurvivesSeedFailure() {
   const { app } = buildAuthAppWithStub(seedFn);
   const res = await postRegister(app, { name: 'Bob', email: 'seed2@x.com', password: 'password123' });
   assert.strictEqual(res.status, 302, 'register MUST still redirect even when seed throws');
-  assert.ok(res.headers.location.includes('/dashboard'), 'redirect target is /dashboard');
+  assert.ok(res.headers.location.includes('/invoices/quick'),
+    'redirect target is the post-signup landing /invoices/quick');
   assert.strictEqual(seedCalls, 1, 'seed was attempted exactly once');
 }
 

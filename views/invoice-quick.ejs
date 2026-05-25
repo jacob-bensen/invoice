@@ -41,6 +41,34 @@
     <h1 class="text-2xl font-bold text-gray-900">Quick invoice</h1>
   </div>
 
+  <% if (locals.welcome && welcome) {
+       const firstName = (locals.user && typeof user.name === 'string')
+         ? user.name.split(/\s+/)[0].trim() : '';
+  %>
+    <div
+      data-testid="invoice-quick-welcome-banner"
+      class="mb-6 rounded-2xl border border-brand-200 bg-brand-50 px-5 py-5"
+      role="region"
+      aria-label="Welcome to DecentInvoice"
+    >
+      <p class="text-lg font-semibold text-brand-900">
+        <% if (firstName) { %>
+          👋 Welcome aboard, <strong data-testid="invoice-quick-welcome-firstname"><%= firstName %></strong> &mdash; let&rsquo;s send your first invoice.
+        <% } else { %>
+          👋 Welcome aboard &mdash; let&rsquo;s send your first invoice.
+        <% } %>
+      </p>
+      <p class="text-sm text-brand-800 mt-1">
+        Three fields below is all it takes. We&rsquo;ll fill in the date, a 30-day due date, and the invoice number for you.
+      </p>
+      <p class="text-xs text-brand-700 mt-3">
+        We also added a sample invoice to your dashboard so you can see what a finished one looks like.
+        <a href="/dashboard" data-testid="invoice-quick-welcome-skip"
+          class="underline hover:text-brand-900">Skip to your dashboard &rarr;</a>
+      </p>
+    </div>
+  <% } %>
+
   <p class="text-sm text-gray-500 mb-6">
     Just three fields. We&rsquo;ll fill in today&rsquo;s date, a 30-day due date, and the next invoice number for you. Need line items, tax, or notes?
     <a href="/invoices/new" class="text-brand-600 underline hover:text-brand-700" data-testid="invoice-quick-advanced-link">Use the advanced form &rarr;</a>
