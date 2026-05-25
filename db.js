@@ -376,6 +376,46 @@ const db = {
   },
 
   /*
+   * Live-view cohort: the user's single most recently viewed unpaid invoice,
+   * provided the last view landed within the last `withinMinutes` (default 60).
+   * Powers the in-app "live view" dashboard banner — the client is actively
+   * looking at the invoice RIGHT NOW (or within the last hour), which is the
+   * single highest payment-intent signal we can surface. Unlike
+   * getOldestClientViewedUnpaid (which anchors on first_viewed_at + 48h for
+   * the stale follow-up cohort), this query anchors on last_viewed_at + 60min
+   * for the LIVE cohort. The two queries cover non-overlapping moments in the
+   * client's payment-consideration arc:
+   *   - recent: "they're looking at it now — nudge them while they're here"
+   *   - 48h follow-up: "they opened it days ago and forgot — re-surface"
+   *
+   * is_seed=false (sample never triggers), status IN ('sent','overdue')
+   * (drafts have no token + paid invoices are done). ORDER BY last_viewed_at
+   * DESC LIMIT 1 surfaces the MOST recent view first — the freshest live
+   * signal across the user's portfolio.
+   */
+  async getMostRecentlyViewedUnpaid(userId, withinMinutes = 60) {
+    if (!userId) return null;
+    const minutes = Number.isFinite(withinMinutes) && withinMinutes > 0
+      ? Math.floor(withinMinutes)
+      : 60;
+    const { rows } = await pool.query(
+      `SELECT id, invoice_number, client_name, total, first_viewed_at,
+              last_viewed_at, view_count, status, public_token, client_email,
+              due_date
+         FROM invoices
+        WHERE user_id = $1
+          AND status IN ('sent', 'overdue')
+          AND is_seed = false
+          AND last_viewed_at IS NOT NULL
+          AND last_viewed_at >= NOW() - ($2 * INTERVAL '1 minute')
+        ORDER BY last_viewed_at DESC
+        LIMIT 1`,
+      [userId, minutes]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Returns the user's oldest sent/overdue invoice that has demonstrably
    * NOT been opened by the client (first_viewed_at IS NULL) yet was
    * shared via a share-intent gesture at least `minAgeHours` ago. Powers

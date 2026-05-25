@@ -416,6 +416,99 @@
     </div>
   <% } %>
 
+  <% if (locals.recentViewPrompt && recentViewPrompt) { %>
+    <%
+      // Live-view "your client is looking at this RIGHT NOW" banner. Fires when
+      // an unpaid invoice was viewed in the last 60 minutes — the single
+      // highest payment-intent signal we can surface. Inline follow-up
+      // share intents (WhatsApp / SMS / Copy) let the freelancer send a
+      // polite check-in in one tap while the page is still in the client's
+      // head. Sits ABOVE clientViewedFollowupPrompt because "now" beats
+      // "X days ago" for urgency + conversion.
+      const liveAgo = recentViewPrompt.minutesAgo <= 1 ? 'just now' : (recentViewPrompt.minutesAgo + 'm ago');
+    %>
+    <div
+      data-testid="recent-view-prompt"
+      data-invoice-id="<%= recentViewPrompt.id %>"
+      data-minutes-ago="<%= recentViewPrompt.minutesAgo %>"
+      data-view-count="<%= recentViewPrompt.viewCount %>"
+      class="mb-6 rounded-xl border border-fuchsia-200 bg-fuchsia-50 px-5 py-4 flex items-start gap-3 print:hidden"
+      role="region"
+      aria-label="Client is looking at your invoice right now"
+    >
+      <div class="text-fuchsia-600 text-xl leading-none mt-0.5" aria-hidden="true">&#128293;</div>
+      <div class="flex-1 text-sm">
+        <p class="font-semibold text-fuchsia-900">
+          <% if (recentViewPrompt.clientName) { %>
+            <span data-testid="recent-view-live-dot" class="inline-block w-2 h-2 rounded-full bg-fuchsia-500 mr-1 align-middle" aria-hidden="true"></span>
+            <strong data-testid="recent-view-client-name"><%= recentViewPrompt.clientName %></strong> is looking at your invoice right now.
+          <% } else { %>
+            <span class="inline-block w-2 h-2 rounded-full bg-fuchsia-500 mr-1 align-middle" aria-hidden="true"></span>
+            Your client is looking at your invoice right now.
+          <% } %>
+        </p>
+        <p class="text-fuchsia-800 mt-0.5">
+          <span data-testid="recent-view-invoice-number"><%= recentViewPrompt.invoiceNumber %></span>
+          ($<span data-testid="recent-view-total"><%= recentViewPrompt.total.toFixed(2) %></span>)
+          was opened <span data-testid="recent-view-minutes-ago"><%= liveAgo %></span><% if (recentViewPrompt.viewCount > 1) { %>
+            &middot; opened <span data-testid="recent-view-view-count"><%= recentViewPrompt.viewCount %></span> times total
+          <% } %>.
+        </p>
+        <p class="text-fuchsia-700 text-xs mt-1">
+          A polite check-in while they're still on the page is the strongest payment-intent moment.
+        </p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <a
+            href="/invoices/<%= recentViewPrompt.id %>"
+            data-testid="recent-view-open-link"
+            class="bg-fuchsia-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-fuchsia-700 transition text-sm"
+          >
+            &#128228; Open &amp; send a check-in &rarr;
+          </a>
+          <form action="/invoices/<%= recentViewPrompt.id %>/status" method="POST" class="inline">
+            <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+            <input type="hidden" name="status" value="paid">
+            <button
+              type="submit"
+              data-testid="recent-view-mark-paid"
+              class="border border-fuchsia-300 text-fuchsia-800 font-semibold px-4 py-2 rounded-lg hover:bg-fuchsia-100 transition text-sm"
+            >
+              &#10003; They paid? Mark as paid
+            </button>
+          </form>
+        </div>
+        <% if (recentViewPrompt.followUpIntents && recentViewPrompt.followUpIntents.url) { %>
+          <div class="mt-3 flex flex-wrap items-center gap-2" data-testid="recent-view-share-intents">
+            <span class="text-xs text-fuchsia-700 font-medium mr-1">or send a check-in now:</span>
+            <a href="<%= recentViewPrompt.followUpIntents.whatsapp %>"
+              target="_blank" rel="noopener"
+              data-share="whatsapp"
+              data-testid="recent-view-share-whatsapp"
+              onclick="try { fetch('/invoices/<%= recentViewPrompt.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'whatsapp' }) }).catch(function(){}); } catch (e) {}"
+              class="inline-flex items-center gap-1.5 bg-white border border-fuchsia-300 text-fuchsia-800 font-semibold px-3 py-1.5 rounded-lg hover:bg-green-50 hover:border-green-400 transition text-xs">
+              <span aria-hidden="true">&#128172;</span><span>WhatsApp</span>
+            </a>
+            <a href="<%= recentViewPrompt.followUpIntents.sms %>"
+              data-share="sms"
+              data-testid="recent-view-share-sms"
+              onclick="try { fetch('/invoices/<%= recentViewPrompt.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'sms' }) }).catch(function(){}); } catch (e) {}"
+              class="inline-flex items-center gap-1.5 bg-white border border-fuchsia-300 text-fuchsia-800 font-semibold px-3 py-1.5 rounded-lg hover:bg-blue-50 hover:border-blue-400 transition text-xs">
+              <span aria-hidden="true">&#128241;</span><span>SMS</span>
+            </a>
+            <button type="button"
+              data-share="copy"
+              data-testid="recent-view-share-copy"
+              data-share-url="<%= recentViewPrompt.followUpIntents.url %>"
+              onclick="(function(btn){ try { var u = btn.getAttribute('data-share-url') || ''; fetch('/invoices/<%= recentViewPrompt.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'copy' }) }).catch(function(){}); if (u && typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') { navigator.clipboard.writeText(u).then(function(){ var prev = btn.innerHTML; btn.innerHTML = '<span>Copied!</span>'; setTimeout(function(){ btn.innerHTML = prev; }, 2000); }).catch(function(){}); } } catch (e) {} })(this)"
+              class="inline-flex items-center gap-1.5 bg-white border border-fuchsia-300 text-fuchsia-800 font-semibold px-3 py-1.5 rounded-lg hover:bg-fuchsia-100 transition text-xs">
+              <span aria-hidden="true">&#128279;</span><span>Copy link</span>
+            </button>
+          </div>
+        <% } %>
+      </div>
+    </div>
+  <% } %>
+
   <% if (locals.clientViewedFollowupPrompt && clientViewedFollowupPrompt) { %>
     <div
       data-testid="client-viewed-followup-prompt"

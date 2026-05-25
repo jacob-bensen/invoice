@@ -32,7 +32,7 @@ const RECENT_REVENUE_WINDOWS = [7, 30, 90];
 
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const [invoices, user, recentRevenue, oldestStaleDraft, oldestClientViewedUnpaid, oldestSentNotViewed, oldestOverdue, oldestPendingPaymentClaim] = await Promise.all([
+    const [invoices, user, recentRevenue, oldestStaleDraft, oldestClientViewedUnpaid, oldestSentNotViewed, oldestOverdue, oldestPendingPaymentClaim, mostRecentlyViewed] = await Promise.all([
       db.getInvoicesByUser(req.session.user.id),
       db.getUserById(req.session.user.id),
       loadRecentRevenueStats(req.session.user.id),
@@ -40,7 +40,8 @@ router.get('/', requireAuth, async (req, res) => {
       loadOldestClientViewedUnpaid(req.session.user.id),
       loadOldestSentNotViewed(req.session.user.id),
       loadOldestOverdueInvoice(req.session.user.id),
-      loadOldestPendingPaymentClaim(req.session.user.id)
+      loadOldestPendingPaymentClaim(req.session.user.id),
+      loadMostRecentlyViewedUnpaid(req.session.user.id)
     ]);
     const flash = req.session.flash;
     delete req.session.flash;
@@ -78,13 +79,14 @@ router.get('/', requireAuth, async (req, res) => {
     const celebration = await loadCelebration(user).catch(() => null);
     const staleDraftPrompt = buildStaleDraftPrompt(user, oldestStaleDraft);
     const paymentClaimPrompt = buildPaymentClaimPrompt(user, oldestPendingPaymentClaim);
-    const clientViewedFollowupPrompt = buildClientViewedFollowupPrompt(user, oldestClientViewedUnpaid, { paymentClaimPrompt });
+    const recentViewPrompt = buildRecentViewPrompt(user, mostRecentlyViewed, { paymentClaimPrompt });
+    const clientViewedFollowupPrompt = buildClientViewedFollowupPrompt(user, oldestClientViewedUnpaid, { paymentClaimPrompt, recentViewPrompt });
     const sentNotViewedPrompt = buildSentNotViewedPrompt(user, oldestSentNotViewed);
     const overduePrompt = buildOverduePrompt(user, oldestOverdue, { clientViewedFollowupPrompt, sentNotViewedPrompt, paymentClaimPrompt });
     const firstRealInvoicePrompt = buildFirstRealInvoicePrompt(user, invoices);
     const freshDraftPrompt = buildFreshDraftPrompt(user, invoices, { staleDraftPrompt });
     const repeatClientPrompt = buildRepeatClientPrompt(invoices);
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, paymentClaimPrompt, clientViewedFollowupPrompt, sentNotViewedPrompt, overduePrompt, firstRealInvoicePrompt, freshDraftPrompt, repeatClientPrompt, pendingQuickInvoice, noindex: true });
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, paymentClaimPrompt, recentViewPrompt, clientViewedFollowupPrompt, sentNotViewedPrompt, overduePrompt, firstRealInvoicePrompt, freshDraftPrompt, repeatClientPrompt, pendingQuickInvoice, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
@@ -93,6 +95,7 @@ router.get('/', requireAuth, async (req, res) => {
       invoiceLimitProgress: null, recentRevenue: null,
       annualUpgradePrompt: null, socialProof: null, celebration: null,
       staleDraftPrompt: null, paymentClaimPrompt: null,
+      recentViewPrompt: null,
       clientViewedFollowupPrompt: null,
       sentNotViewedPrompt: null,
       overduePrompt: null,
@@ -200,6 +203,16 @@ async function loadOldestClientViewedUnpaid(userId) {
     return await db.getOldestClientViewedUnpaid(userId);
   } catch (err) {
     console.error('Client-viewed unpaid lookup failed:', err && err.message);
+    return null;
+  }
+}
+
+async function loadMostRecentlyViewedUnpaid(userId) {
+  if (!userId || typeof db.getMostRecentlyViewedUnpaid !== 'function') return null;
+  try {
+    return await db.getMostRecentlyViewedUnpaid(userId);
+  } catch (err) {
+    console.error('Recent client view lookup failed:', err && err.message);
     return null;
   }
 }
@@ -415,6 +428,75 @@ function buildFreshDraftPrompt(user, invoices, otherPrompts) {
 }
 
 /*
+ * Live-view prompt (Milestone 4 — first invoice sent → first payment
+ * received). When an unpaid invoice was viewed by the client within the
+ * last `RECENT_VIEW_WINDOW_MINUTES`, surface a "your client is looking at
+ * this RIGHT NOW" banner with one-tap follow-up share intents (WhatsApp /
+ * SMS / Copy). This is the single highest payment-intent signal we can
+ * surface — the client is actively considering the invoice at this very
+ * moment, and a polite check-in nudge while the page is still in their
+ * head converts disproportionately well versus the 48h-stale follow-up.
+ *
+ * Differentiation from `clientViewedFollowupPrompt`:
+ *   - recent: last_viewed_at within 60min → "live now" framing, minutes-ago
+ *   - 48h follow-up: first_viewed_at 48h+ ago → "days ago" framing
+ * These cover non-overlapping moments. When a single invoice falls into
+ * both windows (client viewed 5 days ago AND just now), the recent prompt
+ * wins via the suppression contract in buildClientViewedFollowupPrompt.
+ *
+ * Suppression contract:
+ *   - paymentClaimPrompt on the same invoice wins (client says they paid
+ *     is a stronger, more action-specific signal than just-looking).
+ *
+ * Inline follow-up share intents (WhatsApp/SMS/Copy) are derived from the
+ * invoice's public_token via lib/share-link.buildShareSurfaceForInvoice,
+ * exactly mirroring the freshDraftPrompt share-intent surface. The body
+ * shape reads as a polite check-in ("just checking in on invoice X"), not
+ * as a first-send introduction — the client has already seen it.
+ *
+ * Empty client_name falls back to "Your client" in the view layer.
+ */
+const RECENT_VIEW_WINDOW_MINUTES = 60;
+
+function buildRecentViewPrompt(user, invoice, otherPrompts) {
+  if (!user || !invoice || invoice.id == null) return null;
+  if (!invoice.last_viewed_at) return null;
+  const viewedMs = new Date(invoice.last_viewed_at).getTime();
+  if (!Number.isFinite(viewedMs)) return null;
+  // Defence-in-depth: SQL already filters within-window, but a stale row
+  // (clock skew, replication lag) must not paint the banner as "live".
+  const elapsedMs = Math.max(0, Date.now() - viewedMs);
+  if (elapsedMs > RECENT_VIEW_WINDOW_MINUTES * 60000) return null;
+  const others = otherPrompts || {};
+  if (others.paymentClaimPrompt && others.paymentClaimPrompt.id != null
+      && String(others.paymentClaimPrompt.id) === String(invoice.id)) {
+    return null;
+  }
+  const minutesAgo = Math.max(0, Math.floor(elapsedMs / 60000));
+  const viewCount = Math.max(1, parseInt(invoice.view_count, 10) || 1);
+  // Derive the follow-up share-intent surface from the public_token. When
+  // the token is missing or syntactically bad (legacy row, pre-mint), the
+  // surface returns null and the view falls back cleanly to a deep-link.
+  let followUpIntents = null;
+  const surface = invoice.public_token
+    ? buildShareSurfaceForInvoice(invoice)
+    : null;
+  if (surface && surface.followUpIntents && surface.url) {
+    followUpIntents = Object.assign({}, surface.followUpIntents, { url: surface.url });
+  }
+  return {
+    id: invoice.id,
+    invoiceNumber: invoice.invoice_number || '',
+    clientName: invoice.client_name || '',
+    total: Number(invoice.total) || 0,
+    minutesAgo,
+    viewCount,
+    status: invoice.status || 'sent',
+    followUpIntents
+  };
+}
+
+/*
  * In-app dashboard analog of the 48h client-viewed-followup email cron.
  * When the freelancer returns to the dashboard and has at least one
  * sent/overdue invoice the client opened 48h+ ago, surface a single
@@ -439,6 +521,13 @@ function buildClientViewedFollowupPrompt(user, invoice, otherPrompts) {
   const others = otherPrompts || {};
   if (others.paymentClaimPrompt && others.paymentClaimPrompt.id != null
       && String(others.paymentClaimPrompt.id) === String(invoice.id)) {
+    return null;
+  }
+  // Suppress when recentViewPrompt is firing on the same invoice — the live
+  // "client viewed in the last hour" signal owns the surface (much stronger
+  // payment-intent signal than the 48h+ historical follow-up).
+  if (others.recentViewPrompt && others.recentViewPrompt.id != null
+      && String(others.recentViewPrompt.id) === String(invoice.id)) {
     return null;
   }
   const elapsedMs = Math.max(0, Date.now() - viewedMs);
@@ -1641,6 +1730,8 @@ module.exports.buildRecentRevenueCard = buildRecentRevenueCard;
 module.exports.buildAnnualUpgradePrompt = buildAnnualUpgradePrompt;
 module.exports.buildStaleDraftPrompt = buildStaleDraftPrompt;
 module.exports.buildClientViewedFollowupPrompt = buildClientViewedFollowupPrompt;
+module.exports.buildRecentViewPrompt = buildRecentViewPrompt;
+module.exports.RECENT_VIEW_WINDOW_MINUTES = RECENT_VIEW_WINDOW_MINUTES;
 module.exports.buildSentNotViewedPrompt = buildSentNotViewedPrompt;
 module.exports.buildOverduePrompt = buildOverduePrompt;
 module.exports.buildPaymentClaimPrompt = buildPaymentClaimPrompt;
@@ -1653,6 +1744,7 @@ module.exports.readPendingQuickInvoice = readPendingQuickInvoice;
 module.exports.normalizePendingQuickInvoiceInput = normalizePendingQuickInvoiceInput;
 module.exports.loadOldestStaleDraft = loadOldestStaleDraft;
 module.exports.loadOldestClientViewedUnpaid = loadOldestClientViewedUnpaid;
+module.exports.loadMostRecentlyViewedUnpaid = loadMostRecentlyViewedUnpaid;
 module.exports.loadOldestSentNotViewed = loadOldestSentNotViewed;
 module.exports.loadOldestOverdueInvoice = loadOldestOverdueInvoice;
 module.exports.loadOldestPendingPaymentClaim = loadOldestPendingPaymentClaim;
