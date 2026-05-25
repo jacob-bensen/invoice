@@ -247,6 +247,66 @@ test('undefined first_sent_at counts as "never sent" (legacy row pre-migration)'
   assert.ok(out, 'absent first_sent_at must not block the prompt');
 });
 
+test('shareIntents is null when the draft has no public_token (legacy row)', () => {
+  // Eager mint at POST /quick + POST /new lands a token at create time, but
+  // legacy rows created before that change carry public_token=null. The
+  // builder must degrade cleanly — the view falls back to the deep-link CTA
+  // when shareIntents is null. Locks in the no-token branch behaviour.
+  const user = { id: 1, first_sent_at: null };
+  const invoices = [
+    { id: 1, status: 'draft', is_seed: false, created_at: minutesAgo(10),
+      invoice_number: 'INV-X', client_name: 'A', total: 100,
+      public_token: null }
+  ];
+  const out = routes.buildFreshDraftPrompt(user, invoices);
+  assert.ok(out);
+  assert.strictEqual(out.shareIntents, null,
+    'no token → no inline share-intent surface');
+});
+
+test('shareIntents carries whatsapp + sms + url when public_token is present', () => {
+  // Happy path for the one-tap dashboard share surface. The intents include
+  // a wa.me / sms: URL with the body pre-filled and the public /i/<token>
+  // page URL appended so a tap opens the user's native compose window.
+  const user = { id: 1, first_sent_at: null };
+  const invoices = [
+    { id: 17, status: 'draft', is_seed: false, created_at: minutesAgo(10),
+      invoice_number: 'INV-2026-0042', client_name: 'Acme Co.',
+      client_email: 'ap@acme.example', total: 1500,
+      public_token: 'abc1234567890def' }
+  ];
+  const out = routes.buildFreshDraftPrompt(user, invoices);
+  assert.ok(out.shareIntents, 'shareIntents must be set when token is present');
+  assert.ok(typeof out.shareIntents.whatsapp === 'string'
+    && out.shareIntents.whatsapp.startsWith('https://wa.me/?text='),
+    'whatsapp URL is a wa.me deep-link');
+  assert.ok(typeof out.shareIntents.sms === 'string'
+    && out.shareIntents.sms.startsWith('sms:'),
+    'sms URL is an sms: deep-link');
+  assert.ok(typeof out.shareIntents.url === 'string'
+    && out.shareIntents.url.indexOf('abc1234567890def') !== -1,
+    'url surfaces the public /i/<token> link');
+  // The pre-filled body should mention the invoice number + amount so the
+  // recipient sees context inside the compose window.
+  const decoded = decodeURIComponent(out.shareIntents.whatsapp);
+  assert.ok(decoded.indexOf('INV-2026-0042') !== -1, 'body mentions invoice number');
+  assert.ok(decoded.indexOf('$1500.00') !== -1, 'body mentions $-formatted amount');
+});
+
+test('shareIntents is null when public_token is a malformed string', () => {
+  // The token regex on lib/share-link gates the surface; a malformed token
+  // (wrong length, non-hex chars) must NOT produce a usable share-intent URL.
+  const user = { id: 1, first_sent_at: null };
+  const invoices = [
+    { id: 1, status: 'draft', is_seed: false, created_at: minutesAgo(10),
+      invoice_number: 'INV-X', client_name: 'A', total: 100,
+      public_token: 'BAD!!!' }
+  ];
+  const out = routes.buildFreshDraftPrompt(user, invoices);
+  assert.strictEqual(out.shareIntents, null,
+    'malformed token must not produce share-intent URLs');
+});
+
 // ---- Layer 2: dashboard.ejs view ---------------------------------------
 
 const dashboardTplPath = path.join(__dirname, '..', 'views', 'dashboard.ejs');
@@ -396,6 +456,109 @@ test('view: banner carries data attributes for invoice-id and age-minutes', () =
   });
   assert.match(html, /data-invoice-id="17"/);
   assert.match(html, /data-age-minutes="42"/);
+});
+
+// ---- Layer 3: dashboard.ejs share-intent buttons ----------------------
+
+test('view: share-intent row is OMITTED when shareIntents is null', () => {
+  // Legacy drafts without a public_token degrade silently — the existing
+  // "Open & send invoice →" deep-link is the fallback path.
+  const html = renderDashboard({
+    freshDraftPrompt: {
+      id: 17, invoiceNumber: 'X', clientName: 'A', total: 1, ageMinutes: 5,
+      shareIntents: null
+    }
+  });
+  assert.doesNotMatch(html, /data-testid="fresh-draft-share-intents"/);
+});
+
+test('view: share-intent row RENDERS the WhatsApp / SMS / Copy buttons when shareIntents is set', () => {
+  const html = renderDashboard({
+    freshDraftPrompt: {
+      id: 17, invoiceNumber: 'X', clientName: 'A', total: 1, ageMinutes: 5,
+      shareIntents: {
+        whatsapp: 'https://wa.me/?text=Hi%20here%27s%20your%20invoice',
+        sms: 'sms:?&body=Hi%20here%27s%20your%20invoice',
+        url: 'https://app.example/i/abc1234567890def'
+      }
+    }
+  });
+  assert.match(html, /data-testid="fresh-draft-share-intents"/);
+  assert.match(html, /data-testid="fresh-draft-share-whatsapp"/);
+  assert.match(html, /data-testid="fresh-draft-share-sms"/);
+  assert.match(html, /data-testid="fresh-draft-share-copy"/);
+});
+
+test('view: WhatsApp + SMS anchors use the URLs from shareIntents (no double-encoding)', () => {
+  const html = renderDashboard({
+    freshDraftPrompt: {
+      id: 17, invoiceNumber: 'X', clientName: 'A', total: 1, ageMinutes: 5,
+      shareIntents: {
+        whatsapp: 'https://wa.me/?text=hello',
+        sms: 'sms:?&body=hello',
+        url: 'https://app.example/i/abc1234567890def'
+      }
+    }
+  });
+  // EJS <%= escapes &, <, > but the dashboard interpolates these URLs in
+  // href attributes directly — so `&` becomes `&amp;` in the HTML output.
+  // The browser parses these back to `&` when navigating the anchor.
+  assert.match(html, /href="https:\/\/wa\.me\/\?text=hello"/,
+    'WhatsApp anchor href surfaces the wa.me URL verbatim');
+  assert.match(html, /href="sms:\?&amp;body=hello"/,
+    'SMS anchor href encodes & as &amp; in the HTML attribute');
+});
+
+test('view: share-intent buttons fire POST /share-intent with the matching intent kind + CSRF token', () => {
+  const html = renderDashboard({
+    freshDraftPrompt: {
+      id: 17, invoiceNumber: 'X', clientName: 'A', total: 1, ageMinutes: 5,
+      shareIntents: {
+        whatsapp: 'https://wa.me/?text=hello',
+        sms: 'sms:?&body=hello',
+        url: 'https://app.example/i/abc1234567890def'
+      }
+    }
+  });
+  // Each onclick handler must hit /invoices/17/share-intent so the atomic
+  // draft→sent flip fires from this surface, just like on /invoices/:id.
+  const waBlock = html.match(/data-testid="fresh-draft-share-whatsapp"[\s\S]*?<\/a>/);
+  assert.ok(waBlock, 'WhatsApp anchor renders');
+  assert.match(waBlock[0], /\/invoices\/17\/share-intent/);
+  assert.match(waBlock[0], /intent:\s*'whatsapp'/);
+  assert.match(waBlock[0], /X-CSRF-Token['"]\s*:\s*['"]TEST_CSRF/);
+
+  const smsBlock = html.match(/data-testid="fresh-draft-share-sms"[\s\S]*?<\/a>/);
+  assert.ok(smsBlock, 'SMS anchor renders');
+  assert.match(smsBlock[0], /\/invoices\/17\/share-intent/);
+  assert.match(smsBlock[0], /intent:\s*'sms'/);
+
+  const copyBlock = html.match(/data-testid="fresh-draft-share-copy"[\s\S]*?<\/button>/);
+  assert.ok(copyBlock, 'Copy button renders');
+  assert.match(copyBlock[0], /\/invoices\/17\/share-intent/);
+  assert.match(copyBlock[0], /intent:\s*'copy'/);
+  assert.match(copyBlock[0], /data-share-url="https:\/\/app\.example\/i\/abc1234567890def"/,
+    'Copy button carries the public URL for navigator.clipboard.writeText');
+});
+
+test('view: hostile URL in shareIntents.url is HTML-attribute-escaped (XSS guard)', () => {
+  // Defence-in-depth — the URL is built by buildShareSurfaceForInvoice's
+  // strict token regex, but if a malformed token ever slipped past the
+  // gate, the rendered href + data attribute must not break out of the
+  // attribute.
+  const html = renderDashboard({
+    freshDraftPrompt: {
+      id: 17, invoiceNumber: 'X', clientName: 'A', total: 1, ageMinutes: 5,
+      shareIntents: {
+        whatsapp: 'https://wa.me/?text=hello',
+        sms: 'sms:?&body=hello',
+        url: '" onmouseover="alert(1)"'
+      }
+    }
+  });
+  assert.doesNotMatch(html, /data-share-url="" onmouseover="alert\(1\)/);
+  // EJS <%= encodes " as &#34; (or &quot;); accept either form.
+  assert.match(html, /data-share-url="(?:&#34;|&quot;) onmouseover=(?:&#34;|&quot;)alert\(1\)(?:&#34;|&quot;)"/);
 });
 
 // ---- Run ---------------------------------------------------------------

@@ -91,7 +91,9 @@ const dbStub = {
       if (!u) return null;
       Object.assign(u, fields);
       return u;
-    }
+    },
+    async getOrCreatePublicToken() { return null; },
+    async getRecentClientsForUser() { return []; }
   }
 };
 

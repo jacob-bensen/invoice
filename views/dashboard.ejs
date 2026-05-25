@@ -272,6 +272,43 @@
             </button>
           </form>
         </div>
+        <%
+          // One-tap share-intent buttons (WhatsApp / SMS / Copy link). When the
+          // draft already has a public_token (eagerly minted at create time),
+          // surfaces them inline so a mobile user can send without leaving
+          // the dashboard. Each tap fires POST /share-intent which atomically
+          // flips the draft to 'sent'. Falls through silently when shareIntents
+          // is null (token mint pending) — the user still has the "Open &
+          // send" deep-link above as the fallback path.
+        %>
+        <% if (freshDraftPrompt.shareIntents && freshDraftPrompt.shareIntents.url) { %>
+          <div class="mt-3 flex flex-wrap items-center gap-2" data-testid="fresh-draft-share-intents">
+            <span class="text-xs text-emerald-700 font-medium mr-1">or tap a channel:</span>
+            <a href="<%= freshDraftPrompt.shareIntents.whatsapp %>"
+              target="_blank" rel="noopener"
+              data-share="whatsapp"
+              data-testid="fresh-draft-share-whatsapp"
+              onclick="try { fetch('/invoices/<%= freshDraftPrompt.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'whatsapp' }) }).catch(function(){}); } catch (e) {}"
+              class="inline-flex items-center gap-1.5 bg-white border border-emerald-300 text-emerald-800 font-semibold px-3 py-1.5 rounded-lg hover:bg-green-50 hover:border-green-400 transition text-xs">
+              <span aria-hidden="true">&#128172;</span><span>WhatsApp</span>
+            </a>
+            <a href="<%= freshDraftPrompt.shareIntents.sms %>"
+              data-share="sms"
+              data-testid="fresh-draft-share-sms"
+              onclick="try { fetch('/invoices/<%= freshDraftPrompt.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'sms' }) }).catch(function(){}); } catch (e) {}"
+              class="inline-flex items-center gap-1.5 bg-white border border-emerald-300 text-emerald-800 font-semibold px-3 py-1.5 rounded-lg hover:bg-blue-50 hover:border-blue-400 transition text-xs">
+              <span aria-hidden="true">&#128241;</span><span>SMS</span>
+            </a>
+            <button type="button"
+              data-share="copy"
+              data-testid="fresh-draft-share-copy"
+              data-share-url="<%= freshDraftPrompt.shareIntents.url %>"
+              onclick="(function(btn){ try { var u = btn.getAttribute('data-share-url') || ''; fetch('/invoices/<%= freshDraftPrompt.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'copy' }) }).catch(function(){}); if (u && typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') { navigator.clipboard.writeText(u).then(function(){ var prev = btn.innerHTML; btn.innerHTML = '<span>Copied!</span>'; setTimeout(function(){ btn.innerHTML = prev; }, 2000); }).catch(function(){}); } } catch (e) {} })(this)"
+              class="inline-flex items-center gap-1.5 bg-white border border-emerald-300 text-emerald-800 font-semibold px-3 py-1.5 rounded-lg hover:bg-emerald-100 transition text-xs">
+              <span aria-hidden="true">&#128279;</span><span>Copy link</span>
+            </button>
+          </div>
+        <% } %>
       </div>
     </div>
   <% } %>

@@ -70,9 +70,11 @@ const markSentCalls = [];
 const emailSendCalls = [];
 const updateUserCalls = [];
 const clearPendingCalls = [];
+const mintTokenCalls = [];
 let nextInvoiceId = 100;
 let emailSendImpl = async () => ({ ok: true, id: 'em_quick' });
 let updateUserImpl = null;
+let mintTokenImpl = null;
 
 function resetStore() {
   users.clear();
@@ -81,9 +83,11 @@ function resetStore() {
   emailSendCalls.length = 0;
   updateUserCalls.length = 0;
   clearPendingCalls.length = 0;
+  mintTokenCalls.length = 0;
   nextInvoiceId = 100;
   emailSendImpl = async () => ({ ok: true, id: 'em_quick' });
   updateUserImpl = null;
+  mintTokenImpl = null;
 }
 
 function buildDbStub() {
@@ -126,7 +130,11 @@ function buildDbStub() {
       async clearPendingQuickInvoice(userId) {
         clearPendingCalls.push(userId);
       },
-      async getOrCreatePublicToken() { return null; },
+      async getOrCreatePublicToken(invoiceId, userId) {
+        mintTokenCalls.push({ invoiceId, userId });
+        if (mintTokenImpl) return mintTokenImpl(invoiceId, userId);
+        return 'abc1234567890def';
+      },
       async getOldestStaleDraft() { return null; },
       async getRecentRevenueStats() { return null; }
     }
@@ -587,6 +595,61 @@ async function testPostPaymentInstructionsUpdateFailureDoesNotBlockRedirect() {
     'redirect target is the just-created invoice (best-effort semantics on the side-effect)');
   assert.strictEqual(createCalls.length, 1, 'invoice still created');
   assert.strictEqual(updateUserCalls.length, 1, 'updateUser was attempted exactly once');
+}
+
+// ============================================================================
+// Layer 2e — POST /invoices/quick eager public_token mint
+// ============================================================================
+//
+// Public share tokens are minted eagerly at create time so downstream
+// surfaces — the dashboard fresh-draft prompt's one-tap WhatsApp/SMS/Copy
+// buttons and the /invoices/:id share-link prefetch — have the token from
+// the moment of creation rather than the next page render. Cuts the
+// signup → first-sent path by one round-trip on mobile cohorts that bounce
+// between create and send. Best-effort: a mint failure logs and continues;
+// the legacy lazy-mint on GET /invoices/:id remains the fallback.
+
+async function testPostEagerlyMintsPublicToken() {
+  resetStore();
+  users.set(1, { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com' });
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'free', invoice_count: 0 }, routes);
+
+  const res = await request(app, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    description: 'Work',
+    amount: '500'
+  });
+  assert.strictEqual(res.status, 302, 'happy path still redirects');
+  assert.strictEqual(createCalls.length, 1, 'invoice created');
+  assert.strictEqual(mintTokenCalls.length, 1,
+    'getOrCreatePublicToken called exactly once on create');
+  assert.strictEqual(mintTokenCalls[0].userId, 1,
+    'mint call carries the session user id (ownership-gated SQL)');
+  assert.ok(Number.isInteger(mintTokenCalls[0].invoiceId) && mintTokenCalls[0].invoiceId >= 100,
+    'mint call carries the newly-created invoice id');
+}
+
+async function testPostMintFailureDoesNotBlockRedirect() {
+  // Best-effort semantics — a transient pg failure must NOT prevent the
+  // user from landing on /invoices/:id where the lazy-mint will retry.
+  resetStore();
+  users.set(1, { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com' });
+  mintTokenImpl = async () => { throw new Error('pg connection refused'); };
+  const routes = installDbStub();
+  const app = buildApp({ id: 1, plan: 'free', invoice_count: 0 }, routes);
+
+  const res = await request(app, 'POST', '/invoices/quick', {
+    client_name: 'Acme',
+    description: 'Work',
+    amount: '500'
+  });
+  assert.strictEqual(res.status, 302,
+    'redirect still fires when getOrCreatePublicToken throws');
+  assert.ok(/^\/invoices\/\d+$/.test(res.headers.location),
+    'redirect target is the just-created invoice');
+  assert.strictEqual(createCalls.length, 1, 'invoice still created');
+  assert.strictEqual(mintTokenCalls.length, 1, 'mint was attempted exactly once');
 }
 
 // ============================================================================
@@ -1204,6 +1267,8 @@ async function run() {
     ['POST /invoices/quick: whitespace-only payment_instructions → no updateUser', testPostPaymentInstructionsEmptyDoesNotCallUpdateUser],
     ['POST /invoices/quick: oversize (>2000 char) payment_instructions silently ignored', testPostPaymentInstructionsOverLimitSilentlyIgnored],
     ['POST /invoices/quick: updateUser failure does not block invoice redirect', testPostPaymentInstructionsUpdateFailureDoesNotBlockRedirect],
+    ['POST /invoices/quick: eagerly mints public_token via getOrCreatePublicToken', testPostEagerlyMintsPublicToken],
+    ['POST /invoices/quick: getOrCreatePublicToken failure does not block redirect', testPostMintFailureDoesNotBlockRedirect],
     ['POST /invoices/quick: user without business_name → updateUser called with trimmed business_name', testPostBusinessNameSavesForUserWithoutBusinessName],
     ['POST /invoices/quick: Pro user without business_name → updateUser still called (plan-agnostic)', testPostBusinessNameSavesForProUser],
     ['POST /invoices/quick: user with existing business_name → no overwrite', testPostBusinessNameSkippedWhenUserAlreadyHasOne],

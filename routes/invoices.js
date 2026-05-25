@@ -386,12 +386,31 @@ function buildFreshDraftPrompt(user, invoices, otherPrompts) {
   }
   if (!best) return null;
   const ageMinutes = Math.max(0, Math.floor((Date.now() - bestMs) / 60000));
+  // Inline share-intent surface — when the draft already carries a
+  // public_token (eagerly minted at create time on POST /quick + POST /new),
+  // surface one-tap WhatsApp/SMS/Copy buttons directly in the dashboard
+  // prompt. Collapses the activation step from
+  //   dashboard prompt → /invoices/:id → share button
+  // into a single tap. The buttons fire POST /invoices/:id/share-intent which
+  // atomically flips status to 'sent'. When the draft has no token yet
+  // (transient mint failure, legacy row pre-dating eager mint), shareIntents
+  // stays null and the view falls back to the "Open & send" deep-link.
+  let shareIntents = null;
+  const surface = best.public_token ? buildShareSurfaceForInvoice(best) : null;
+  if (surface && surface.shareIntents && surface.url) {
+    shareIntents = {
+      whatsapp: surface.shareIntents.whatsapp,
+      sms: surface.shareIntents.sms,
+      url: surface.url
+    };
+  }
   return {
     id: best.id,
     invoiceNumber: best.invoice_number || '',
     clientName: best.client_name || '',
     total: Number(best.total) || 0,
-    ageMinutes
+    ageMinutes,
+    shareIntents
   };
 }
 
@@ -892,6 +911,21 @@ router.post('/quick', requireAuth, [
 
     req.session.user.invoice_count = (req.session.user.invoice_count || 0) + 1;
 
+    // Eagerly mint the public share token so downstream activation surfaces
+    // (dashboard fresh-draft prompt's one-tap WhatsApp/SMS/Copy buttons, the
+    // /invoices/:id share-link prefetch) have the token available from the
+    // moment of creation rather than the next page render. Cuts the
+    // signup → first-sent path by one round-trip on mobile, where the
+    // freelancer often returns to the dashboard between create and send.
+    // Best-effort — a mint failure logs and continues; the legacy lazy-mint
+    // on GET /invoices/:id will catch it on the next page load.
+    try {
+      const token = await db.getOrCreatePublicToken(invoice.id, req.session.user.id);
+      if (token) invoice.public_token = token;
+    } catch (e) {
+      console.error('Quick invoice public-token mint failed:', e && e.message);
+    }
+
     // Clear the autosaved "Continue your draft invoice" payload — the
     // freelancer has now created the real invoice, so the dashboard banner
     // + the GET /invoices/quick pre-fill must stop firing. Best-effort:
@@ -1085,6 +1119,13 @@ router.post('/new', requireAuth, [
     });
 
     req.session.user.invoice_count = (req.session.user.invoice_count || 0) + 1;
+    // Eager public-token mint (mirrors the /quick path): downstream surfaces
+    // get share intents on the next dashboard render without a lazy round-trip.
+    try {
+      await db.getOrCreatePublicToken(invoice.id, req.session.user.id);
+    } catch (e) {
+      console.error('New invoice public-token mint failed:', e && e.message);
+    }
     res.redirect(`/invoices/${invoice.id}`);
   } catch (err) {
     console.error('Create invoice error:', err);
