@@ -216,12 +216,28 @@ async function loadOldestStaleDraft(userId) {
 
 async function loadOldestClientViewedUnpaid(userId) {
   if (!userId || typeof db.getOldestClientViewedUnpaid !== 'function') return null;
+  let row;
   try {
-    return await db.getOldestClientViewedUnpaid(userId);
+    row = await db.getOldestClientViewedUnpaid(userId);
   } catch (err) {
     console.error('Client-viewed unpaid lookup failed:', err && err.message);
     return null;
   }
+  if (!row) return null;
+  // Defence-in-depth lazy-mint: status='sent'/'overdue' rows almost always
+  // already have a public_token (it's eager-minted on send), but a legacy row
+  // predating eager-mint or a token-mint failure at send time would otherwise
+  // strand the inline share-intent surface. Best-effort: never blocks the
+  // dashboard — the banner still surfaces with Open-invoice + Mark-as-paid.
+  if (!row.public_token && typeof db.getOrCreatePublicToken === 'function') {
+    try {
+      const token = await db.getOrCreatePublicToken(row.id, userId);
+      if (token) row.public_token = token;
+    } catch (err) {
+      console.error('Client-viewed follow-up token mint failed:', err && err.message);
+    }
+  }
+  return row;
 }
 
 async function loadMostRecentlyViewedUnpaid(userId) {
@@ -572,6 +588,20 @@ function buildClientViewedFollowupPrompt(user, invoice, otherPrompts) {
   const daysAgo = Math.max(1, Math.floor(elapsedMs / 86400000));
   const hoursAgo = Math.max(1, Math.floor(elapsedMs / 3600000));
   const viewCount = Math.max(1, parseInt(invoice.view_count, 10) || 1);
+  // Derive inline follow-up share-intents from the public_token. Mirrors the
+  // recentViewPrompt / overduePrompt pattern: collapses "open invoice → tap
+  // share" into a single dashboard tap. followUpIntents (not shareIntents):
+  // the invoice has been sent AND viewed, so the body reads as a polite
+  // check-in ("just checking in on invoice X") rather than a first-send
+  // ("here's invoice X"). Silently null when no public_token (legacy row,
+  // lazy-mint failed) so the surface degrades cleanly to the existing CTA.
+  let followUpIntents = null;
+  const surface = invoice.public_token
+    ? buildShareSurfaceForInvoice(invoice)
+    : null;
+  if (surface && surface.followUpIntents && surface.url) {
+    followUpIntents = Object.assign({}, surface.followUpIntents, { url: surface.url });
+  }
   return {
     id: invoice.id,
     invoiceNumber: invoice.invoice_number || '',
@@ -580,7 +610,8 @@ function buildClientViewedFollowupPrompt(user, invoice, otherPrompts) {
     daysAgo,
     hoursAgo,
     viewCount,
-    status: invoice.status || 'sent'
+    status: invoice.status || 'sent',
+    followUpIntents
   };
 }
 
