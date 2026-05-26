@@ -167,6 +167,28 @@ test('db.getOldestStaleDraft: returns first row when matches exist', async () =>
   }
 });
 
+test('db.getOldestStaleDraft: SELECT projects public_token + client_email + due_date for share-intent surface', async () => {
+  let captured = null;
+  const real = loadRealDb();
+  const originalQuery = real.pool.query.bind(real.pool);
+  real.pool.query = async (sql, params) => {
+    captured = { sql, params };
+    return { rows: [] };
+  };
+  try {
+    await real.db.getOldestStaleDraft(42);
+    // The builder derives shareIntents via buildShareSurfaceForInvoice which
+    // needs public_token (URL), client_email (mailto recipient), due_date
+    // (daysOverdue arithmetic — drafts are pre-due so it's 0, but the helper
+    // reads the field).
+    assert.match(captured.sql, /public_token/i, 'public_token must be projected');
+    assert.match(captured.sql, /client_email/i, 'client_email must be projected');
+    assert.match(captured.sql, /due_date/i, 'due_date must be projected');
+  } finally {
+    real.pool.query = originalQuery;
+  }
+});
+
 // ---- Layer 2: loadOldestStaleDraft soft-fail paths ---------------------
 
 process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || 'sk_test_dummy';
@@ -174,16 +196,25 @@ process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || 'sk_test_dummy'
 let dbStubDraft = null;
 let dbStubThrows = false;
 let dbStubMethodPresent = true;
+let dbStubMintCalls = [];
+let dbStubMintReturn = null;
+let dbStubMintThrows = false;
 
 const dbStub = {
   pool: { query: async () => ({ rows: [] }) },
   db: {
     getUserById: async () => null,
-    getRecentRevenueStats: async () => ({ days: 30, totalPaid: 0, invoiceCount: 0, clientCount: 0, unpaidCount: 0 })
+    getRecentRevenueStats: async () => ({ days: 30, totalPaid: 0, invoiceCount: 0, clientCount: 0, unpaidCount: 0 }),
+    getOrCreatePublicToken: async (invoiceId, userId) => {
+      dbStubMintCalls.push({ invoiceId, userId });
+      if (dbStubMintThrows) throw new Error('mint boom');
+      return dbStubMintReturn;
+    }
   }
 };
 
 function installDbStub() {
+  dbStubMintCalls = [];
   if (dbStubMethodPresent) {
     dbStub.db.getOldestStaleDraft = async () => {
       if (dbStubThrows) throw new Error('boom');
@@ -241,6 +272,56 @@ test('loadOldestStaleDraft: returns null when db.getOldestStaleDraft is missing 
   const result = await routes.loadOldestStaleDraft(1);
   assert.strictEqual(result, null);
   dbStubMethodPresent = true;
+});
+
+test('loadOldestStaleDraft: lazy-mints public_token when the row lands without one', async () => {
+  // Legacy drafts created before the eager-mint on POST /quick + /new will
+  // surface here with public_token === null. The loader must mint once so
+  // the inline share-intent row renders for the full cohort, not just the
+  // eager-mint-era subset.
+  dbStubDraft = { id: 17, invoice_number: 'INV-2026-0042', client_name: 'A', total: 50, created_at: new Date(Date.now() - 30 * 3600000).toISOString(), public_token: null };
+  dbStubThrows = false;
+  dbStubMethodPresent = true;
+  dbStubMintReturn = 'a1b2c3d4e5f60718';
+  dbStubMintThrows = false;
+  const routes = installDbStub();
+  const result = await routes.loadOldestStaleDraft(99);
+  assert.ok(result, 'row returned');
+  assert.strictEqual(result.public_token, 'a1b2c3d4e5f60718', 'minted token landed on row');
+  assert.strictEqual(dbStubMintCalls.length, 1, 'mint called exactly once');
+  assert.deepStrictEqual(dbStubMintCalls[0], { invoiceId: 17, userId: 99 },
+    'mint called with the row id + caller userId');
+});
+
+test('loadOldestStaleDraft: skips lazy-mint when row already has a public_token', async () => {
+  // The fast path — eager-mint drafts arrive with a token populated and the
+  // loader should never pay the extra round-trip.
+  dbStubDraft = { id: 1, invoice_number: 'X', client_name: 'A', total: 1, created_at: new Date(Date.now() - 25 * 3600000).toISOString(), public_token: 'deadbeef12345678' };
+  dbStubMintReturn = 'should-not-be-used';
+  const routes = installDbStub();
+  const result = await routes.loadOldestStaleDraft(1);
+  assert.strictEqual(result.public_token, 'deadbeef12345678', 'pre-existing token preserved');
+  assert.strictEqual(dbStubMintCalls.length, 0, 'mint NOT called when token already present');
+});
+
+test('loadOldestStaleDraft: soft-fails to keep the row when mint throws (banner still renders)', async () => {
+  // A mint hiccup MUST NOT block the banner. The user still gets Mark-as-
+  // Sent / Open-invoice as the fallback path.
+  dbStubDraft = { id: 7, invoice_number: 'X', client_name: 'A', total: 1, created_at: new Date(Date.now() - 30 * 3600000).toISOString(), public_token: null };
+  dbStubMintReturn = null;
+  dbStubMintThrows = true;
+  const routes = installDbStub();
+  const origErr = console.error;
+  console.error = () => {};
+  try {
+    const result = await routes.loadOldestStaleDraft(1);
+    assert.ok(result, 'row still returned despite mint throw');
+    assert.strictEqual(result.id, 7);
+    assert.ok(!result.public_token, 'token remains absent after a mint throw');
+  } finally {
+    console.error = origErr;
+    dbStubMintThrows = false;
+  }
 });
 
 // ---- Layer 3: buildStaleDraftPrompt shape contract ---------------------
@@ -306,6 +387,52 @@ test('buildStaleDraftPrompt: stringy total parses to Number', () => {
     { id: 1, invoice_number: 'X', client_name: 'A', total: '299.50', created_at: new Date() }
   );
   assert.strictEqual(out.total, 299.5);
+});
+
+test('buildStaleDraftPrompt: shareIntents derived from public_token (whatsapp + sms + mailto + url)', () => {
+  const routes = installDbStub();
+  const out = routes.buildStaleDraftPrompt(
+    { id: 1 },
+    {
+      id: 17,
+      invoice_number: 'INV-2026-0042',
+      client_name: 'Acme Co.',
+      client_email: 'pay@acme.com',
+      total: 1500,
+      created_at: new Date(Date.now() - 30 * 3600000),
+      public_token: 'a1b2c3d4e5f60718'
+    }
+  );
+  assert.ok(out.shareIntents, 'shareIntents present when public_token + URL resolves');
+  assert.ok(out.shareIntents.url.indexOf('/i/a1b2c3d4e5f60718') !== -1,
+    'url targets the public /i/<token> page');
+  assert.ok(out.shareIntents.whatsapp.indexOf('wa.me') !== -1, 'whatsapp deep-link');
+  assert.ok(out.shareIntents.sms.indexOf('sms:') === 0, 'sms: scheme');
+  assert.ok(out.shareIntents.mailto.indexOf('mailto:pay%40acme.com') === 0,
+    'mailto percent-encodes the client_email recipient');
+  // First-send body (NOT follow-up) — the draft has never been sent.
+  assert.ok(out.shareIntents.whatsapp.indexOf(encodeURIComponent('checking in')) === -1,
+    'first-send body, not the follow-up "checking in" copy');
+});
+
+test('buildStaleDraftPrompt: shareIntents=null when public_token is missing (legacy / mint-failed row)', () => {
+  const routes = installDbStub();
+  const out = routes.buildStaleDraftPrompt(
+    { id: 1 },
+    { id: 17, invoice_number: 'X', client_name: 'A', total: 1, created_at: new Date() }
+  );
+  assert.strictEqual(out.shareIntents, null,
+    'no token → no share-intent row; the view degrades to Mark-as-Sent + Open');
+});
+
+test('buildStaleDraftPrompt: malformed public_token → shareIntents stays null (silently)', () => {
+  const routes = installDbStub();
+  const out = routes.buildStaleDraftPrompt(
+    { id: 1 },
+    { id: 1, invoice_number: 'X', client_name: 'A', total: 1, created_at: new Date(), public_token: 'not-hex-too-long-and-mixed-symbols-!!' }
+  );
+  assert.strictEqual(out.shareIntents, null,
+    'isValidPublicToken rejects malformed tokens; helper returns null instead of throwing');
 });
 
 // ---- Layer 4: dashboard.ejs renders the banner -------------------------
@@ -413,6 +540,131 @@ test('view: banner sits BELOW the celebration banner include (positional contrac
     assert.ok(celebrationIdx < stalePromptIdx,
       'celebration banner must render BEFORE the stale-draft prompt');
   }
+});
+
+test('view: share-intent row is OMITTED when shareIntents is null (legacy / mint-failed)', () => {
+  const html = renderDashboard({
+    staleDraftPrompt: {
+      id: 17, invoiceNumber: 'X', clientName: 'A', total: 1, hoursOld: 30, shareIntents: null
+    }
+  });
+  assert.doesNotMatch(html, /data-testid="stale-draft-share-intents"/,
+    'no share-intent row when shareIntents is null — degrades to Mark-as-Sent + Open');
+});
+
+test('view: share-intent row RENDERS the 4 channel buttons when shareIntents is set', () => {
+  const html = renderDashboard({
+    staleDraftPrompt: {
+      id: 17, invoiceNumber: 'INV-2026-0042', clientName: 'Acme Co.', total: 1500, hoursOld: 30,
+      shareIntents: {
+        whatsapp: 'https://wa.me/?text=hello',
+        sms: 'sms:?&body=hello',
+        mailto: 'mailto:pay%40acme.com?subject=Invoice&body=hello',
+        url: 'https://example.test/i/a1b2c3d4e5f60718'
+      }
+    }
+  });
+  assert.match(html, /data-testid="stale-draft-share-intents"/, 'share-intent row visible');
+  assert.match(html, /data-testid="stale-draft-share-whatsapp"/, 'WhatsApp button');
+  assert.match(html, /data-testid="stale-draft-share-sms"/, 'SMS button');
+  assert.match(html, /data-testid="stale-draft-share-email"/, 'Email button');
+  assert.match(html, /data-testid="stale-draft-share-copy"/, 'Copy-link button');
+});
+
+test('view: each share button POSTs /invoices/:id/share-intent with the matching intent kind + CSRF', () => {
+  const html = renderDashboard({
+    staleDraftPrompt: {
+      id: 17, invoiceNumber: 'X', clientName: 'A', total: 1, hoursOld: 30,
+      shareIntents: {
+        whatsapp: 'https://wa.me/?text=hello',
+        sms: 'sms:?&body=hello',
+        mailto: 'mailto:pay%40acme.com?subject=Invoice&body=hello',
+        url: 'https://example.test/i/a1b2c3d4e5f60718'
+      }
+    }
+  });
+  // Each button wires fetch POST /invoices/17/share-intent with the intent
+  // kind in the JSON body — the atomic draft→sent flip + first-sent
+  // celebration fire identically across all four channels.
+  for (const intent of ['whatsapp', 'sms', 'email', 'copy']) {
+    const re = new RegExp(`data-testid="stale-draft-share-${intent}"[\\s\\S]*?intent: '${intent}'`);
+    assert.match(html, re, `${intent} button wires intent='${intent}' on click`);
+    const csrfRe = new RegExp(`data-testid="stale-draft-share-${intent}"[\\s\\S]*?'X-CSRF-Token':\\s*'TEST_CSRF'`);
+    assert.match(html, csrfRe, `${intent} button carries the CSRF token`);
+  }
+});
+
+test('view: WhatsApp button opens in a new tab; mailto / sms / copy do NOT', () => {
+  const html = renderDashboard({
+    staleDraftPrompt: {
+      id: 17, invoiceNumber: 'X', clientName: 'A', total: 1, hoursOld: 30,
+      shareIntents: {
+        whatsapp: 'https://wa.me/?text=hello',
+        sms: 'sms:?&body=hello',
+        mailto: 'mailto:pay%40acme.com',
+        url: 'https://example.test/i/a1b2c3d4e5f60718'
+      }
+    }
+  });
+  // WhatsApp is the only https:// channel — opens in a new tab. The OS-
+  // handler channels (sms:, mailto:) hand off natively and must not carry
+  // target="_blank", which would orphan a blank tab on the user's browser.
+  // Match each anchor from the opening `<a` through its closing `</a>` to
+  // capture every attribute regardless of source-order.
+  const waMatch = html.match(/<a\s[^>]*data-testid="stale-draft-share-whatsapp"[\s\S]*?<\/a>/);
+  assert.ok(waMatch, 'whatsapp anchor present');
+  assert.match(waMatch[0], /target="_blank"/, 'whatsapp opens in new tab');
+  const smsMatch = html.match(/<a\s[^>]*data-testid="stale-draft-share-sms"[\s\S]*?<\/a>/);
+  assert.ok(smsMatch, 'sms anchor present');
+  assert.doesNotMatch(smsMatch[0], /target="_blank"/, 'sms must NOT carry target=_blank');
+  const emailMatch = html.match(/<a\s[^>]*data-testid="stale-draft-share-email"[\s\S]*?<\/a>/);
+  assert.ok(emailMatch, 'email anchor present');
+  assert.doesNotMatch(emailMatch[0], /target="_blank"/, 'mailto must NOT carry target=_blank');
+});
+
+test('view: Email button is OMITTED when mailto is absent (no client_email captured)', () => {
+  // Stale drafts without a captured client_email still get the 3 non-email
+  // channels (WhatsApp / SMS / Copy) — the mailto button graceful-degrades
+  // away rather than rendering a useless mailto:?subject=… with no recipient.
+  const html = renderDashboard({
+    staleDraftPrompt: {
+      id: 17, invoiceNumber: 'X', clientName: 'A', total: 1, hoursOld: 30,
+      shareIntents: {
+        whatsapp: 'https://wa.me/?text=hello',
+        sms: 'sms:?&body=hello',
+        mailto: null,
+        url: 'https://example.test/i/a1b2c3d4e5f60718'
+      }
+    }
+  });
+  assert.match(html, /data-testid="stale-draft-share-intents"/, 'row still visible');
+  assert.match(html, /data-testid="stale-draft-share-whatsapp"/);
+  assert.match(html, /data-testid="stale-draft-share-sms"/);
+  assert.match(html, /data-testid="stale-draft-share-copy"/);
+  assert.doesNotMatch(html, /data-testid="stale-draft-share-email"/,
+    'Email button omitted when mailto is absent');
+});
+
+test('view: hostile share URL is HTML-attribute-escaped (XSS guard)', () => {
+  // A malformed public_token would normally be rejected by isValidPublicToken
+  // (so the URL would be empty), but defence-in-depth on the EJS attribute
+  // escape: any string that DOES land in shareIntents.url must not break
+  // out of the href quotes.
+  const html = renderDashboard({
+    staleDraftPrompt: {
+      id: 17, invoiceNumber: 'X', clientName: 'A', total: 1, hoursOld: 30,
+      shareIntents: {
+        whatsapp: 'https://wa.me/?text=hello',
+        sms: 'sms:?&body=hello',
+        mailto: 'mailto:pay%40acme.com',
+        url: 'https://example.test/i/"><script>alert(1)</script>'
+      }
+    }
+  });
+  assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/,
+    'raw script tag must NOT appear — EJS <%= must escape the attribute value');
+  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;|&#34;&gt;&lt;script&gt;|&quot;&gt;&lt;script&gt;/,
+    'escaped form appears instead');
 });
 
 test('view: banner sits ABOVE the invoice-limit-progress block (positional contract)', () => {

@@ -189,12 +189,29 @@ function buildOnboardingState(user, invoices) {
  */
 async function loadOldestStaleDraft(userId) {
   if (!userId || typeof db.getOldestStaleDraft !== 'function') return null;
+  let row;
   try {
-    return await db.getOldestStaleDraft(userId);
+    row = await db.getOldestStaleDraft(userId);
   } catch (err) {
     console.error('Stale draft lookup failed:', err && err.message);
     return null;
   }
+  if (!row) return null;
+  // Lazy-mint the public_token for legacy drafts that pre-date the eager
+  // mint on POST /invoices/quick + /new. Without a token the inline share-
+  // intent row can't render; this single round-trip on a cache miss keeps
+  // share-intent coverage cohort-wide. Best-effort: never blocks the
+  // dashboard render — the banner still surfaces with Mark-as-Sent +
+  // Open-invoice when minting hiccups.
+  if (!row.public_token && typeof db.getOrCreatePublicToken === 'function') {
+    try {
+      const token = await db.getOrCreatePublicToken(row.id, userId);
+      if (token) row.public_token = token;
+    } catch (err) {
+      console.error('Stale draft token mint failed:', err && err.message);
+    }
+  }
+  return row;
 }
 
 async function loadOldestClientViewedUnpaid(userId) {
@@ -346,12 +363,32 @@ function buildStaleDraftPrompt(user, draft) {
   const hoursOld = Number.isFinite(createdMs)
     ? Math.max(0, Math.floor((Date.now() - createdMs) / 3600000))
     : 0;
+  // Inline share-intent surface — mirrors freshDraftPrompt. The stale-draft
+  // cohort (24h+ old) is named in PLAN.md as the activation funnel's biggest
+  // single drop-off; collapsing the chase to a one-tap WhatsApp/SMS/Email/Copy
+  // from the dashboard banner removes the dashboard prompt → /:id → share
+  // navigation step. Each tap fires POST /share-intent which atomically
+  // flips draft → sent. shareIntents (not followUpIntents): the draft has
+  // never been sent, so the body reads "here's invoice X" not "just checking
+  // in". Silently null when no public_token (loader couldn't mint) so the
+  // existing Mark-as-Sent / Open-invoice CTAs remain the fallback.
+  let shareIntents = null;
+  const surface = draft.public_token ? buildShareSurfaceForInvoice(draft) : null;
+  if (surface && surface.shareIntents && surface.url) {
+    shareIntents = {
+      whatsapp: surface.shareIntents.whatsapp,
+      sms: surface.shareIntents.sms,
+      mailto: surface.shareIntents.mailto,
+      url: surface.url
+    };
+  }
   return {
     id: draft.id,
     invoiceNumber: draft.invoice_number || '',
     clientName: draft.client_name || '',
     total: Number(draft.total) || 0,
-    hoursOld
+    hoursOld,
+    shareIntents
   };
 }
 

@@ -392,7 +392,8 @@ const db = {
       ? Math.floor(minAgeHours)
       : 24;
     const { rows } = await pool.query(
-      `SELECT id, invoice_number, client_name, total, created_at
+      `SELECT id, invoice_number, client_name, client_email, total, due_date,
+              created_at, public_token
          FROM invoices
         WHERE user_id = $1
           AND status = 'draft'
