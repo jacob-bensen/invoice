@@ -19,6 +19,7 @@ const { isLikelyBotUserAgent } = require('../lib/client-view');
 const emailLib = require('../lib/email');
 const { triggerFirstSentCelebration } = require('../lib/first-sent-celebration');
 const { buildInvoiceIcs, buildIcsFilename } = require('../lib/calendar');
+const { buildPublicInvoiceOg, PUBLIC_INVOICE_OG_DEFAULT_DESCRIPTION } = require('../lib/public-invoice-og');
 
 const router = express.Router();
 
@@ -122,6 +123,18 @@ router.get('/i/:token', async (req, res) => {
   }
 
   const claimed = req.query && req.query.claimed === '1';
+  // Per-invoice OpenGraph metadata (Milestone 4 — first invoice sent → first
+  // payment received). When a freelancer shares the /i/<token> URL via
+  // WhatsApp / iMessage / Slack / Telegram / Facebook Messenger, the link
+  // preview pivots from the default SaaS marketing tile ("DecentInvoice —
+  // Professional invoices for freelancers") to a concrete invoice tile that
+  // names the sender, the amount, and the due-date / overdue / paid state.
+  // Client click-through on the preview rises materially when the tile
+  // looks like a real invoice rather than what reads as an ad. Privacy:
+  // client_name is deliberately NOT included — the link previews on the
+  // freelancer's send-chain (their device, their forwarded chats) and the
+  // client is the recipient, not the subject of the title.
+  const ogFields = buildPublicInvoiceOg(invoice) || {};
   res.render('invoice-public', {
     title: `Invoice ${invoice.invoice_number} — DecentInvoice`,
     invoice,
@@ -129,6 +142,9 @@ router.get('/i/:token', async (req, res) => {
     paymentClaimReferenceMax: PAYMENT_CLAIM_REFERENCE_MAX,
     paymentClaimNoteMax: PAYMENT_CLAIM_NOTE_MAX,
     justClaimed: claimed,
+    ogTitle: ogFields.title || `Invoice ${invoice.invoice_number} — DecentInvoice`,
+    ogDescription: ogFields.description || PUBLIC_INVOICE_OG_DEFAULT_DESCRIPTION,
+    ogPath: `/i/${token.trim()}`,
     noindex: true
   });
 });
