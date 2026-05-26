@@ -51,6 +51,13 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMP;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_dismissed BOOLEAN DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_nudge_sent_at TIMESTAMP;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_reminder_sent_at TIMESTAMP;
+-- "Heads up — due in 2 days" pre-due-date client reminder (Milestone 4 —
+-- first invoice sent → first payment received). Existing reminders.js only
+-- fires AFTER due_date; this column gates a single pre-due nudge so a client
+-- gets a heads-up *before* slipping into overdue. One stamp per invoice
+-- (idempotent at the SQL layer); a second invoice to the same client gets
+-- its own window.
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS due_soon_reminder_sent_at TIMESTAMP;
 -- billing_cycle is set from Stripe checkout-session metadata so the dashboard
 -- can offer monthly subscribers a one-click switch to annual ($99/yr saves
 -- $45/year vs. monthly $12/mo). Nullable: legacy Pro rows without a recorded

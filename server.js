@@ -184,6 +184,15 @@ app.listen(PORT, () => {
     }
 
     try {
+      const { startDueSoonReminderJob } = require('./jobs/due-soon-reminder');
+      const ds = startDueSoonReminderJob();
+      if (ds && ds.ok) console.log(`[due-soon-reminder] scheduled (${ds.schedule})`);
+      else console.warn('[due-soon-reminder] not scheduled:', ds && ds.reason);
+    } catch (err) {
+      console.error('[due-soon-reminder] startup failed:', err && err.message);
+    }
+
+    try {
       const { startTrialNudgeJob } = require('./jobs/trial-nudge');
       const t = startTrialNudgeJob();
       if (t && t.ok) console.log(`[trial-nudge] scheduled (${t.schedule})`);

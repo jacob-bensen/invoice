@@ -319,6 +319,66 @@ const db = {
   },
 
   /*
+   * Pre-due-date "heads up" client reminder cohort. Returns invoices that are
+   * status='sent', NOT yet overdue (due_date >= CURRENT_DATE), within
+   * `daysAhead` days of due, never received a due-soon nudge, owner is on a
+   * paid plan. The window-with-IS-NULL gate makes the job tolerant of a cron
+   * tick that gets skipped: an invoice we missed at day-2-out still gets
+   * caught at day-1-out, but never sent twice. Same SELECT projection as
+   * getOverdueInvoicesForReminders so the orchestrator can share email
+   * builders.
+   */
+  async getSentInvoicesDueSoon(daysAhead = 2) {
+    const window = Number.isFinite(Number(daysAhead)) && Number(daysAhead) > 0
+      ? Math.floor(Number(daysAhead))
+      : 2;
+    const { rows } = await pool.query(
+      `SELECT
+         i.id              AS invoice_id,
+         i.user_id          AS user_id,
+         i.invoice_number   AS invoice_number,
+         i.client_name      AS client_name,
+         i.client_email     AS client_email,
+         i.total            AS total,
+         i.due_date         AS due_date,
+         i.payment_link_url AS payment_link_url,
+         i.public_token     AS public_token,
+         i.due_soon_reminder_sent_at AS due_soon_reminder_sent_at,
+         i.items            AS items,
+         u.email            AS owner_email,
+         u.name             AS owner_name,
+         u.business_name    AS owner_business_name,
+         u.business_email   AS owner_business_email,
+         u.reply_to_email   AS owner_reply_to_email,
+         u.plan             AS owner_plan
+       FROM invoices i
+       JOIN users u ON u.id = i.user_id
+       WHERE i.status = 'sent'
+         AND i.is_seed = false
+         AND i.due_date IS NOT NULL
+         AND i.due_date >= CURRENT_DATE
+         AND i.due_date <= CURRENT_DATE + ($1 * INTERVAL '1 day')
+         AND i.due_soon_reminder_sent_at IS NULL
+         AND u.plan IN ('pro', 'business', 'agency')
+       ORDER BY i.due_date ASC
+       LIMIT 500`,
+      [window]
+    );
+    return rows;
+  },
+
+  async markInvoiceDueSoonReminderSent(invoiceId) {
+    if (!invoiceId) return null;
+    const { rows } = await pool.query(
+      `UPDATE invoices SET due_soon_reminder_sent_at = NOW(), updated_at = NOW()
+        WHERE id = $1 AND due_soon_reminder_sent_at IS NULL
+        RETURNING id, due_soon_reminder_sent_at`,
+      [invoiceId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Returns the user's oldest real draft invoice that has been sitting
    * unsent for at least `minAgeHours`. Powers the dashboard stale-draft
    * "send your invoice" prompt — the bridge between activation milestones
