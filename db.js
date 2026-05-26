@@ -472,8 +472,8 @@ const db = {
   async getOldestOverdueInvoice(userId) {
     if (!userId) return null;
     const { rows } = await pool.query(
-      `SELECT id, invoice_number, client_name, total, due_date, status,
-              first_viewed_at, sent_via_share_intent_at
+      `SELECT id, invoice_number, client_name, client_email, total, due_date, status,
+              first_viewed_at, sent_via_share_intent_at, public_token
          FROM invoices
         WHERE user_id = $1
           AND status IN ('sent', 'overdue')

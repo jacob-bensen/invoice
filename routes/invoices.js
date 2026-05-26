@@ -747,13 +747,27 @@ function buildOverduePrompt(user, invoice, otherPrompts) {
   if (suppressIds.has(String(invoice.id))) return null;
   const elapsedMs = Math.max(0, Date.now() - dueMs);
   const daysPastDue = Math.max(1, Math.floor(elapsedMs / 86400000));
+  // Inline follow-up share-intent surface — mirrors freshDraftPrompt +
+  // recentViewPrompt. Collapses the chase loop from
+  //   overdue prompt → /invoices/:id → share button → message
+  // into a single tap. The body copy from buildFollowUpShareIntents already
+  // appends "(now overdue)" via the daysOverdue computation in
+  // buildShareSurfaceForInvoice, so the WhatsApp/SMS/email text correctly
+  // softens "just checking in… (now overdue)" rather than the neutral
+  // "just checking in…" used by the recent-view 60-min cohort.
+  let followUpIntents = null;
+  const surface = invoice.public_token ? buildShareSurfaceForInvoice(invoice) : null;
+  if (surface && surface.followUpIntents && surface.url) {
+    followUpIntents = Object.assign({}, surface.followUpIntents, { url: surface.url });
+  }
   return {
     id: invoice.id,
     invoiceNumber: invoice.invoice_number || '',
     clientName: invoice.client_name || '',
     total: Number(invoice.total) || 0,
     daysPastDue,
-    status: invoice.status || 'sent'
+    status: invoice.status || 'sent',
+    followUpIntents
   };
 }
 

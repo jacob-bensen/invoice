@@ -182,7 +182,7 @@ test('db.getOldestOverdueInvoice: returns first row with id/number/client/total/
   }
 });
 
-test('db.getOldestOverdueInvoice: SELECT projection includes due_date + suppression keys', async () => {
+test('db.getOldestOverdueInvoice: SELECT projection includes due_date + suppression keys + share-intent inputs', async () => {
   let captured = null;
   const real = loadRealDb();
   const originalQuery = real.pool.query.bind(real.pool);
@@ -197,6 +197,12 @@ test('db.getOldestOverdueInvoice: SELECT projection includes due_date + suppress
     // log / future-extend the suppression logic if needed.
     assert.match(captured.sql, /first_viewed_at/, 'projects first_viewed_at');
     assert.match(captured.sql, /sent_via_share_intent_at/, 'projects sent_via_share_intent_at');
+    // public_token + client_email feed buildShareSurfaceForInvoice — without
+    // these the inline WhatsApp/SMS/Email/Copy buttons silently degrade.
+    assert.match(captured.sql, /public_token/,
+      'projects public_token so the builder can derive follow-up share intents');
+    assert.match(captured.sql, /client_email/,
+      'projects client_email so the mailto: deep-link has a recipient');
   } finally {
     real.pool.query = originalQuery;
   }
@@ -320,7 +326,7 @@ test('buildOverduePrompt: returns null when due_date is unparseable', () => {
   );
 });
 
-test('buildOverduePrompt: happy-path shape (id, invoiceNumber, clientName, total, daysPastDue, status)', () => {
+test('buildOverduePrompt: happy-path shape (id, invoiceNumber, clientName, total, daysPastDue, status, followUpIntents)', () => {
   const routes = installDbStub();
   const fiveDaysAgo = new Date(Date.now() - 5 * 86400000);
   const out = routes.buildOverduePrompt(
@@ -334,6 +340,8 @@ test('buildOverduePrompt: happy-path shape (id, invoiceNumber, clientName, total
   assert.strictEqual(out.total, 2500);
   assert.strictEqual(out.daysPastDue, 5);
   assert.strictEqual(out.status, 'sent');
+  assert.strictEqual(out.followUpIntents, null,
+    'no public_token → followUpIntents is null (view falls back to deep-link only)');
 });
 
 test('buildOverduePrompt: daysPastDue floor is 1 (never "0 days past due")', () => {
@@ -434,6 +442,67 @@ test('buildOverduePrompt: missing otherPrompts argument does not throw', () => {
   );
   assert.ok(out, 'no other-prompts param: still fires');
   assert.strictEqual(out.id, 88);
+});
+
+test('buildOverduePrompt: derives follow-up share intents when public_token is present', () => {
+  const routes = installDbStub();
+  const threeDaysAgo = new Date(Date.now() - 3 * 86400000);
+  const out = routes.buildOverduePrompt(
+    { id: 1 },
+    {
+      id: 88, invoice_number: 'INV-2026-0099', client_name: 'Acme Co.',
+      client_email: 'ap@acme.example', total: 2500,
+      due_date: threeDaysAgo.toISOString(), status: 'sent',
+      public_token: 'a1b2c3d4e5f6a7b8'
+    }
+  );
+  assert.ok(out.followUpIntents, 'share intents derived from public_token');
+  assert.ok(out.followUpIntents.url, 'url present');
+  assert.match(out.followUpIntents.whatsapp, /^https:\/\/wa\.me\//, 'whatsapp deep-link');
+  assert.match(out.followUpIntents.sms, /^sms:/, 'sms deep-link');
+  assert.match(out.followUpIntents.body, /Acme/, 'body greets the client by name');
+  assert.match(out.followUpIntents.body, /checking in/i, 'follow-up framing (not first-send)');
+  // The "now overdue" softener comes from buildShareSurfaceForInvoice's
+  // daysOverdue computation off invoice.due_date — locks in that overdue
+  // copy survives end-to-end from the SQL row to the share body.
+  assert.match(out.followUpIntents.body, /overdue/i,
+    'body softens with "(now overdue)" — the past-due cohort needs this signal');
+  assert.strictEqual(out.followUpIntents.overdue, true,
+    'overdue flag set so the subject line uses "Reminder:" framing');
+});
+
+test('buildOverduePrompt: followUpIntents.mailto carries the client_email', () => {
+  const routes = installDbStub();
+  const threeDaysAgo = new Date(Date.now() - 3 * 86400000);
+  const out = routes.buildOverduePrompt(
+    { id: 1 },
+    {
+      id: 88, invoice_number: 'INV-X', client_name: 'Acme',
+      client_email: 'ap@acme.example', total: 100,
+      due_date: threeDaysAgo.toISOString(), status: 'sent',
+      public_token: 'a1b2c3d4e5f6a7b8'
+    }
+  );
+  assert.ok(out.followUpIntents, 'followUpIntents derived');
+  assert.ok(typeof out.followUpIntents.mailto === 'string'
+    && out.followUpIntents.mailto.startsWith('mailto:'),
+    'mailto: scheme');
+  assert.ok(out.followUpIntents.mailto.indexOf(encodeURIComponent('ap@acme.example')) !== -1,
+    'recipient percent-encoded');
+});
+
+test('buildOverduePrompt: malformed public_token yields null followUpIntents (no clickable garbage)', () => {
+  const routes = installDbStub();
+  const threeDaysAgo = new Date(Date.now() - 3 * 86400000);
+  const out = routes.buildOverduePrompt(
+    { id: 1 },
+    {
+      id: 88, due_date: threeDaysAgo.toISOString(), client_name: 'A', total: 100,
+      public_token: 'not-hex-junk'
+    }
+  );
+  assert.strictEqual(out.followUpIntents, null,
+    'isValidPublicToken rejection short-circuits — no broken /i/<garbage> links');
 });
 
 // ---- Layer 4: dashboard.ejs renders the banner -------------------------
@@ -611,6 +680,124 @@ test('view: banner print:hidden (printed invoice artifact stays clean)', () => {
   );
   assert.ok(blockMatch, 'banner block located');
   assert.match(blockMatch[0], /print:hidden/);
+});
+
+test('view: share-intent buttons OMITTED when followUpIntents is null', () => {
+  const html = renderDashboard({
+    overduePrompt: {
+      id: 88, invoiceNumber: 'X', clientName: 'A', total: 100,
+      daysPastDue: 5, status: 'sent', followUpIntents: null
+    }
+  });
+  assert.doesNotMatch(html, /data-testid="overdue-share-intents"/);
+});
+
+test('view: share-intent buttons RENDER when followUpIntents present', () => {
+  const html = renderDashboard({
+    overduePrompt: {
+      id: 88, invoiceNumber: 'X', clientName: 'A', total: 100,
+      daysPastDue: 5, status: 'sent',
+      followUpIntents: {
+        url: 'https://example.com/i/abc123',
+        whatsapp: 'https://wa.me/?text=Hi+Acme',
+        sms: 'sms:?&body=Hi+Acme',
+        body: 'Hi Acme, just checking in... (now overdue)',
+        subject: 'Reminder: Invoice X is overdue',
+        overdue: true
+      }
+    }
+  });
+  assert.match(html, /data-testid="overdue-share-intents"/);
+  assert.match(html, /data-testid="overdue-share-whatsapp"/);
+  assert.match(html, /data-testid="overdue-share-sms"/);
+  assert.match(html, /data-testid="overdue-share-copy"/);
+  assert.match(html, /href="https:\/\/wa\.me\/\?text=Hi\+Acme"/, 'whatsapp href verbatim');
+  assert.match(html, /href="sms:\?&amp;body=Hi\+Acme"/, 'sms href HTML-attribute-escaped');
+});
+
+test('view: each share button fires POST /share-intent with correct intent kind + CSRF', () => {
+  const html = renderDashboard({
+    overduePrompt: {
+      id: 88, invoiceNumber: 'X', clientName: 'A', total: 100,
+      daysPastDue: 5, status: 'sent',
+      followUpIntents: {
+        url: 'https://example.com/i/abc123',
+        whatsapp: 'https://wa.me/?text=x',
+        sms: 'sms:?&body=x'
+      }
+    }
+  });
+  const waMatch = html.match(/data-testid="overdue-share-whatsapp"[^>]*onclick="([^"]+)"/);
+  assert.ok(waMatch, 'whatsapp onclick wired');
+  assert.match(waMatch[1], /\/invoices\/88\/share-intent/, 'whatsapp POSTs to /share-intent');
+  assert.match(waMatch[1], /intent:\s*'whatsapp'/, 'whatsapp intent kind');
+  assert.match(waMatch[1], /TEST_CSRF/, 'CSRF token threaded');
+  const smsMatch = html.match(/data-testid="overdue-share-sms"[^>]*onclick="([^"]+)"/);
+  assert.match(smsMatch[1], /intent:\s*'sms'/, 'sms intent kind');
+  const copyMatch = html.match(/data-testid="overdue-share-copy"[^>]*onclick="([^"]+)"/);
+  assert.match(copyMatch[1], /intent:\s*'copy'/, 'copy intent kind');
+  assert.match(copyMatch[1], /navigator\.clipboard/, 'copy writes to clipboard');
+});
+
+test('view: Email button RENDERS when followUpIntents.mailto is set, with mailto: href + intent=email POST', () => {
+  const html = renderDashboard({
+    overduePrompt: {
+      id: 88, invoiceNumber: 'X', clientName: 'A', total: 100,
+      daysPastDue: 5, status: 'sent',
+      followUpIntents: {
+        url: 'https://example.com/i/abc123',
+        whatsapp: 'https://wa.me/?text=x',
+        sms: 'sms:?&body=x',
+        mailto: 'mailto:ap%40acme.example?subject=Reminder&body=hi'
+      }
+    }
+  });
+  assert.match(html, /data-testid="overdue-share-email"/, 'Email button renders');
+  assert.match(html,
+    /href="mailto:ap%40acme\.example\?subject=Reminder&amp;body=hi"/,
+    'mailto href surfaces with EJS HTML-attribute escaping');
+  const emailBlock = html.match(/data-testid="overdue-share-email"[\s\S]*?<\/a>/);
+  assert.ok(emailBlock, 'Email anchor block renders');
+  assert.match(emailBlock[0], /\/invoices\/88\/share-intent/,
+    'Email click posts to /invoices/88/share-intent');
+  assert.match(emailBlock[0], /intent:\s*'email'/, 'intent kind is email');
+  assert.match(emailBlock[0], /TEST_CSRF/, 'CSRF wired');
+  assert.doesNotMatch(emailBlock[0], /target="_blank"/,
+    'mailto: anchors must not declare target=_blank (no tab opens)');
+});
+
+test('view: Email button is OMITTED when followUpIntents.mailto is missing (partial-deploy / legacy)', () => {
+  const html = renderDashboard({
+    overduePrompt: {
+      id: 88, invoiceNumber: 'X', clientName: 'A', total: 100,
+      daysPastDue: 5, status: 'sent',
+      followUpIntents: {
+        url: 'https://example.com/i/abc123',
+        whatsapp: 'https://wa.me/?text=x',
+        sms: 'sms:?&body=x'
+      }
+    }
+  });
+  assert.doesNotMatch(html, /data-testid="overdue-share-email"/);
+  assert.match(html, /data-testid="overdue-share-whatsapp"/);
+  assert.match(html, /data-testid="overdue-share-sms"/);
+  assert.match(html, /data-testid="overdue-share-copy"/);
+});
+
+test('view: hostile share-url is HTML-attribute-escaped', () => {
+  const html = renderDashboard({
+    overduePrompt: {
+      id: 1, invoiceNumber: 'X', clientName: 'A', total: 100,
+      daysPastDue: 5, status: 'sent',
+      followUpIntents: {
+        url: 'https://x/" onerror=alert(1) x="',
+        whatsapp: 'https://wa.me/?text=x',
+        sms: 'sms:?&body=x'
+      }
+    }
+  });
+  assert.doesNotMatch(html, /data-share-url="https:\/\/x\/" onerror=alert\(1\)/,
+    'hostile attribute breakout must be neutralised');
 });
 
 test('view: daysPastDue=1 uses singular "day" (not "days")', () => {
