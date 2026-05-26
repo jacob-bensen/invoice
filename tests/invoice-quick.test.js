@@ -71,10 +71,12 @@ const emailSendCalls = [];
 const updateUserCalls = [];
 const clearPendingCalls = [];
 const mintTokenCalls = [];
+const recentClientsCalls = [];
 let nextInvoiceId = 100;
 let emailSendImpl = async () => ({ ok: true, id: 'em_quick' });
 let updateUserImpl = null;
 let mintTokenImpl = null;
+let recentClientsImpl = null;
 
 function resetStore() {
   users.clear();
@@ -84,10 +86,12 @@ function resetStore() {
   updateUserCalls.length = 0;
   clearPendingCalls.length = 0;
   mintTokenCalls.length = 0;
+  recentClientsCalls.length = 0;
   nextInvoiceId = 100;
   emailSendImpl = async () => ({ ok: true, id: 'em_quick' });
   updateUserImpl = null;
   mintTokenImpl = null;
+  recentClientsImpl = null;
 }
 
 function buildDbStub() {
@@ -102,7 +106,11 @@ function buildDbStub() {
         const n = (u && (u.invoice_count || 0)) + 1;
         return `INV-2026-${String(n).padStart(4, '0')}`;
       },
-      async getRecentClientsForUser() { return []; },
+      async getRecentClientsForUser(userId, limit) {
+        recentClientsCalls.push({ userId, limit });
+        if (recentClientsImpl) return recentClientsImpl(userId, limit);
+        return [];
+      },
       async createInvoice(data) {
         createCalls.push(data);
         const id = nextInvoiceId++;
@@ -1332,6 +1340,264 @@ async function testDashboardPrimaryCtaPointsAtQuick() {
 }
 
 // ============================================================================
+// Layer 5 — recent-clients quick-pick dropdown
+// ============================================================================
+
+async function testGetQuickRendersRecentClientsDropdown() {
+  resetStore();
+  users.set(3, { id: 3, plan: 'pro', invoice_count: 4, name: 'Carla', email: 'c@x.com' });
+  recentClientsImpl = async () => ([
+    { client_name: 'Acme Corp', client_email: 'pay@acme.com', client_address: null },
+    { client_name: 'Beta LLC', client_email: 'ap@beta.io', client_address: '1 St' }
+  ]);
+  const routes = installDbStub();
+  const app = buildApp({ id: 3, plan: 'pro', invoice_count: 4 }, routes);
+  const res = await request(app, 'GET', '/invoices/quick');
+  assert.strictEqual(res.status, 200, 'GET /invoices/quick must 200 with recent clients');
+  assert.strictEqual(recentClientsCalls.length, 1,
+    'db.getRecentClientsForUser must be called exactly once on the GET path');
+  assert.strictEqual(recentClientsCalls[0].userId, 3,
+    'recent-clients lookup uses the session user id');
+  assert.ok(res.body.includes('data-testid="invoice-quick-recent-clients"'),
+    'dropdown wrapper must render when list is non-empty');
+  assert.ok(res.body.includes('data-testid="invoice-quick-recent-clients-select"'),
+    'select element must carry the testid hook');
+  assert.ok(res.body.includes('Recent clients'),
+    'Recent clients label must render');
+  assert.ok(res.body.includes('Acme Corp'),
+    'first recent client name must appear as an option');
+  assert.ok(res.body.includes('pay@acme.com'),
+    'first recent client email must appear in the option label');
+  assert.ok(res.body.includes('Beta LLC'),
+    'second recent client name must appear as an option');
+  // Recent list must be serialised into the Alpine factory args (second arg).
+  assert.ok(/quickInvoiceAutosave\([^)]+,\s*\[[^\]]*Acme Corp[^\]]*\]\)/.test(res.body),
+    'recentClients list must be serialised into the Alpine factory args');
+}
+
+async function testGetQuickOmitsDropdownForBrandNewUser() {
+  resetStore();
+  // The cohort that matters most: a brand-new signup landing on /quick?welcome=1
+  // has zero invoices, zero recent clients. The dropdown must NOT render
+  // (an empty <select> is worse than nothing — it teaches users an empty
+  // control exists and tells them they have nothing to pick).
+  users.set(7, { id: 7, plan: 'free', invoice_count: 0, name: 'Newbie', email: 'n@x.com' });
+  recentClientsImpl = async () => ([]);
+  const routes = installDbStub();
+  const app = buildApp({ id: 7, plan: 'free', invoice_count: 0 }, routes);
+  const res = await request(app, 'GET', '/invoices/quick?welcome=1');
+  assert.strictEqual(res.status, 200, 'GET must 200 for brand-new user');
+  assert.ok(!res.body.includes('data-testid="invoice-quick-recent-clients"'),
+    'dropdown wrapper must be omitted when recentClients=[]');
+  assert.ok(!res.body.includes('Recent clients'),
+    '"Recent clients" label must not appear when list is empty');
+  // The welcome banner remains the dominant surface for first-time users.
+  assert.ok(res.body.includes('data-testid="invoice-quick-welcome-banner"'),
+    'welcome banner must still render alongside an empty recent-clients list');
+}
+
+async function testGetQuickSurvivesRecentClientsDbFailure() {
+  resetStore();
+  users.set(4, { id: 4, plan: 'pro', invoice_count: 6, name: 'Dana', email: 'd@x.com' });
+  recentClientsImpl = async () => { throw new Error('pg connection refused'); };
+  const routes = installDbStub();
+  const app = buildApp({ id: 4, plan: 'pro', invoice_count: 6 }, routes);
+  const origErr = console.error;
+  console.error = () => {};
+  try {
+    const res = await request(app, 'GET', '/invoices/quick');
+    assert.strictEqual(res.status, 200,
+      'recent-clients DB throw must NOT 500 the quick form — activation path stays alive');
+    assert.ok(!res.body.includes('data-testid="invoice-quick-recent-clients"'),
+      'failed lookup falls back to [] which hides the dropdown wrapper');
+    assert.ok(res.body.includes('data-testid="invoice-quick-form"'),
+      'core form must still render even when recent-clients query throws');
+  } finally {
+    console.error = origErr;
+  }
+}
+
+async function testViewOmitsDropdownWhenRecentClientsNotPassed() {
+  // Defensive regression — even if a future caller forgets to pass
+  // `recentClients` into the template locals, the EJS guard must coerce
+  // missing/non-array values to [] and hide the dropdown rather than throw.
+  const html = await renderQuickView();
+  assert.ok(!html.includes('data-testid="invoice-quick-recent-clients"'),
+    'view must omit the dropdown when recentClients local is absent');
+  assert.ok(html.includes('data-testid="invoice-quick-form"'),
+    'view must still render the core form');
+}
+
+async function testViewOmitsDropdownWhenRecentClientsNonArray() {
+  for (const bad of [null, 'oops', 42, { rows: [] }, true]) {
+    const html = await renderQuickView({ recentClients: bad });
+    assert.ok(!html.includes('data-testid="invoice-quick-recent-clients"'),
+      `non-array recentClients (${typeof bad}: ${JSON.stringify(bad)}) must hide the dropdown`);
+  }
+}
+
+async function testViewRendersDropdownWhenRecentClientsPresent() {
+  const html = await renderQuickView({
+    recentClients: [
+      { client_name: 'Acme Corp', client_email: 'pay@acme.com', client_address: null },
+      { client_name: 'Beta LLC', client_email: null, client_address: null },
+      { client_name: 'Gamma Inc', client_email: 'pay@gamma.co', client_address: '7 Main' }
+    ]
+  });
+  assert.ok(html.includes('data-testid="invoice-quick-recent-clients"'),
+    'dropdown wrapper must render with 3 entries');
+  assert.ok(html.includes('data-testid="invoice-quick-recent-clients-select"'),
+    'select must carry the testid');
+  // x-model + change handler wire up the Alpine pick → fill behaviour.
+  assert.ok(/x-model="picked"/.test(html), 'select must bind picked via x-model');
+  assert.ok(/@change="fillFromRecent\(\)"/.test(html),
+    'select must call fillFromRecent() on @change');
+  // Option labels: name alone (no email) and name + email separator.
+  assert.ok(/Acme Corp.*pay@acme\.com/.test(html),
+    'first option label must combine name and email when email is present');
+  assert.ok(html.includes('Beta LLC'),
+    'second option must render with name only (email omitted from label)');
+  // The middle dot separator must not appear next to the name-only option.
+  const betaOptionMatch = html.match(/<option value="1">([^<]*)<\/option>/);
+  assert.ok(betaOptionMatch, 'Beta LLC must render as option value=1');
+  assert.ok(!/·/.test(betaOptionMatch[1]),
+    'name-only option must not include the · email separator');
+  // Recent list must serialise into Alpine factory call (second arg).
+  assert.ok(/quickInvoiceAutosave\([^)]+,\s*\[/.test(html),
+    'recentClients list must be serialised into the Alpine factory second arg');
+}
+
+async function testViewEscapesHostileClientNameInDropdown() {
+  // XSS guard — a hostile client_name from a past invoice must NEVER reach
+  // the rendered output as raw HTML. EJS <%= %> escapes; this test locks
+  // that in against a future maintainer accidentally switching to <%- %>.
+  // The hostile values land in TWO places: (1) the <option> label text,
+  // (2) the JSON-serialised arg to the Alpine factory inside the x-data
+  // attribute. Both must be HTML-escaped — angle brackets and double-quotes
+  // must never appear as raw characters in either surface.
+  const hostile = '<script>alert(1)</script>';
+  const hostileEmail = '"><img src=x onerror=alert(2)>';
+  const html = await renderQuickView({
+    recentClients: [{
+      client_name: hostile,
+      client_email: hostileEmail,
+      client_address: null
+    }]
+  });
+  // Raw <script> must not appear anywhere in the output (would break out
+  // of either the <option> text node OR the x-data attribute value).
+  assert.ok(!html.includes('<script>alert(1)'),
+    'raw <script>alert(1) from client_name must not appear in rendered output');
+  assert.ok(html.includes('&lt;script&gt;'),
+    'client_name angle brackets must be HTML-entity-escaped');
+  // The double-quote in the hostile email would break out of the x-data
+  // attribute if not escaped. EJS <%= %> escapes " → &quot; in both the
+  // option label AND the JSON-serialised attribute arg.
+  assert.ok(!html.includes(hostileEmail),
+    'raw hostile email must not appear unescaped (would break out of x-data attr)');
+  // EJS uses &#34; (decimal) for double-quote, not &quot; — accept either form.
+  assert.ok(html.includes('&#34;') || html.includes('&quot;'),
+    'double-quote in email must be HTML-entity-escaped (&#34; or &quot;)');
+  // Defence-in-depth: an `<img onerror=...>` tag form must NEVER appear as
+  // an unescaped HTML element in the output (only as escaped text).
+  assert.ok(!/<img\s+src=x\s+onerror=/.test(html),
+    'raw <img onerror=...> tag must not appear in rendered output');
+}
+
+async function testAlpineFactoryFillFromRecentBehaviour() {
+  // Exercise the inline JS factory in isolation via a vm sandbox. Locks in
+  // the contract: picking an index fills client_name + client_email; the
+  // user can still edit afterwards; out-of-range / non-numeric picks no-op.
+  const vm = require('vm');
+  const tplPath = path.join(__dirname, '..', 'views', 'invoice-quick.ejs');
+  const tpl = fs.readFileSync(tplPath, 'utf8');
+  // Extract the factory function source between its function declaration
+  // and the closing `}` that matches at column 2.
+  const startMarker = 'function quickInvoiceAutosave(';
+  const startIdx = tpl.indexOf(startMarker);
+  assert.ok(startIdx !== -1, 'quickInvoiceAutosave declaration must be findable');
+  // Count braces from the first { after the signature.
+  const sigEnd = tpl.indexOf('{', startIdx);
+  let depth = 0;
+  let endIdx = -1;
+  for (let i = sigEnd; i < tpl.length; i++) {
+    const ch = tpl[i];
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) { endIdx = i + 1; break; }
+    }
+  }
+  assert.ok(endIdx !== -1, 'factory closing brace must be findable');
+  // Strip any inline EJS template tags from the factory body — the factory
+  // contains a `<%= locals.csrfToken || '' %>` reference inside the autosave
+  // header set, which is not valid JS until EJS substitutes it. We replace
+  // with a literal test token so the resulting source parses cleanly.
+  const factorySrc = tpl.slice(startIdx, endIdx)
+    .replace(/<%[=\-]?[\s\S]*?%>/g, 'TEST_CSRF');
+  const ctx = { module: { exports: {} }, console };
+  vm.createContext(ctx);
+  vm.runInContext(factorySrc + '\nmodule.exports = quickInvoiceAutosave;', ctx);
+  const factory = ctx.module.exports;
+  const recent = [
+    { client_name: 'Acme Corp', client_email: 'pay@acme.com', client_address: null },
+    { client_name: 'Beta LLC', client_email: '', client_address: null }
+  ];
+  const inst = factory({ client_name: '', client_email: '', description: '', amount: '' }, recent);
+  // vm context lives in a different Realm than the test process, so
+  // deepStrictEqual fails on prototype mismatch even though the objects
+  // are structurally identical. Compare field-by-field with strictEqual
+  // (string primitives compare cleanly across Realms).
+  assert.strictEqual(inst.fields.client_name, '', 'initial client_name blank');
+  assert.strictEqual(inst.fields.client_email, '', 'initial client_email blank');
+  assert.strictEqual(inst.fields.description, '', 'initial description blank');
+  assert.strictEqual(inst.fields.amount, '', 'initial amount blank');
+  assert.strictEqual(inst.picked, '', 'picked starts blank');
+  assert.strictEqual(inst.recentClients.length, recent.length,
+    'recentClients length matches');
+  assert.strictEqual(inst.recentClients[0].client_name, 'Acme Corp',
+    'recentClients[0] preserved');
+
+  // Pick index 0 → fields populate from Acme. Stub fetch to keep autosave silent.
+  ctx.fetch = () => ({ catch: () => {} });
+  inst.picked = '0';
+  inst.fillFromRecent();
+  assert.strictEqual(inst.fields.client_name, 'Acme Corp', 'pick fills client_name');
+  assert.strictEqual(inst.fields.client_email, 'pay@acme.com', 'pick fills client_email');
+
+  // Subsequent edit of client_name must persist (no auto-overwrite).
+  inst.fields.client_name = 'Acme Corp (Renewal)';
+  assert.strictEqual(inst.fields.client_name, 'Acme Corp (Renewal)',
+    'user edits after pick remain editable');
+
+  // Pick index 1 (no email) → email field clears to empty string.
+  inst.picked = '1';
+  inst.fillFromRecent();
+  assert.strictEqual(inst.fields.client_name, 'Beta LLC', 'pick replaces name');
+  assert.strictEqual(inst.fields.client_email, '', 'missing email coerces to empty string');
+
+  // Out-of-range / non-numeric picks no-op (no throw, no field change).
+  inst.fields.client_name = 'Manual entry';
+  inst.fields.client_email = 'manual@x.com';
+  for (const bad of ['', 'abc', '-1', '99', null, undefined]) {
+    inst.picked = bad;
+    inst.fillFromRecent();
+    assert.strictEqual(inst.fields.client_name, 'Manual entry',
+      `bad picked value (${JSON.stringify(bad)}) must not change client_name`);
+    assert.strictEqual(inst.fields.client_email, 'manual@x.com',
+      `bad picked value (${JSON.stringify(bad)}) must not change client_email`);
+  }
+
+  // Non-array recentClients arg coerces to [] (no throw at construction time).
+  // Cross-Realm: check shape rather than strict-equal an empty array.
+  const empty = factory({ client_name: '', client_email: '', description: '', amount: '' }, null);
+  assert.ok(Array.isArray(empty.recentClients) || empty.recentClients.length === 0,
+    'non-array recentClients arg must coerce to an empty array-like');
+  assert.strictEqual(empty.recentClients.length, 0,
+    'coerced recentClients must have length 0');
+}
+
+// ============================================================================
 // Runner
 // ============================================================================
 
@@ -1394,7 +1660,15 @@ async function run() {
     ['view: welcome banner renders generic copy when user.name is empty', testViewWelcomeBannerWithoutNameFalsBack],
     ['view: welcome banner HTML-escapes a hostile user.name', testViewWelcomeBannerEscapesHostileName],
     ['view: welcome banner omitted by default (no welcome flag)', testViewWelcomeBannerOmittedByDefault],
-    ['dashboard: primary CTA at /invoices/quick + advanced link at /invoices/new', testDashboardPrimaryCtaPointsAtQuick]
+    ['dashboard: primary CTA at /invoices/quick + advanced link at /invoices/new', testDashboardPrimaryCtaPointsAtQuick],
+    ['GET /invoices/quick: renders recent-clients dropdown with options from db helper', testGetQuickRendersRecentClientsDropdown],
+    ['GET /invoices/quick: brand-new user with zero recent clients gets no dropdown', testGetQuickOmitsDropdownForBrandNewUser],
+    ['GET /invoices/quick: recent-clients DB throw does not 500 the form', testGetQuickSurvivesRecentClientsDbFailure],
+    ['view: dropdown omitted when recentClients local is absent', testViewOmitsDropdownWhenRecentClientsNotPassed],
+    ['view: dropdown omitted when recentClients is non-array (defensive coercion)', testViewOmitsDropdownWhenRecentClientsNonArray],
+    ['view: dropdown renders with name+email option labels when list is non-empty', testViewRendersDropdownWhenRecentClientsPresent],
+    ['view: hostile client_name / client_email in recent list is HTML-escaped', testViewEscapesHostileClientNameInDropdown],
+    ['Alpine factory: fillFromRecent populates fields, edits persist, bad picks no-op', testAlpineFactoryFillFromRecentBehaviour]
   ];
   let passed = 0;
   let failed = 0;

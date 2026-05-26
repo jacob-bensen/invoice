@@ -953,6 +953,13 @@ router.get('/quick', requireAuth, async (req, res) => {
     return res.redirect('/invoices?limit_hit=1');
   }
   const pending = readPendingQuickInvoice(user);
+  // Recent-clients quick-pick: a returning user making their second / Nth
+  // invoice against a client they've billed before should one-tap-fill the
+  // name + email instead of retyping. The /invoices/new form has had this
+  // dropdown for some time; the quick form (the post-signup activation
+  // surface AND the natural fast-path for repeat invoicing) was missing it.
+  // Soft-fails to [] on any DB hiccup so the form still renders.
+  const recentClients = await loadRecentClients(req.session.user.id);
   // ?welcome=1 fires right after POST /auth/register, where we now drop
   // new signups directly on /invoices/quick instead of /dashboard. The
   // template renders a one-time hero banner when this flag is true so
@@ -965,6 +972,7 @@ router.get('/quick', requireAuth, async (req, res) => {
     flash: null,
     submitted: pending || null,
     pendingRestored: !!pending,
+    recentClients,
     welcome: req.query && req.query.welcome === '1',
     noindex: true
   });

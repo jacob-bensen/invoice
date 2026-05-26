@@ -32,6 +32,12 @@
   const ownerBusinessName = (locals.user && typeof user.business_name === 'string')
     ? user.business_name.trim() : '';
   const showBusinessNameCapture = ownerBusinessName.length === 0;
+  // Recent clients quick-pick. Helper-coerced to [] on a route-level DB
+  // failure; defensively re-coerced here so a future caller passing through
+  // a malformed locals shape can't 500 the form. Empty list → dropdown
+  // omitted entirely (no empty <select> shipping to first-time users).
+  const recentClientsList = (locals.recentClients && Array.isArray(recentClients))
+    ? recentClients : [];
 %>
 
 <div class="max-w-xl mx-auto px-4 py-10" data-testid="invoice-quick">
@@ -87,12 +93,12 @@
   <% } %>
 
   <form action="/invoices/quick" method="POST" class="bg-white rounded-2xl border border-gray-200 p-6 space-y-4" data-testid="invoice-quick-form"
-    x-data="quickInvoiceAutosave(<%- JSON.stringify({
+    x-data="quickInvoiceAutosave(<%= JSON.stringify({
       client_name: initialClientName,
       client_email: initialClientEmail,
       description: initialDescription,
       amount: typeof initialAmount === 'number' ? String(initialAmount) : initialAmount
-    }) %>)"
+    }) %>, <%= JSON.stringify(recentClientsList) %>)"
     x-init="init()"
     @submit="onSubmit()">
     <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
@@ -115,6 +121,24 @@
         <p class="text-xs text-sky-700 mt-2">
           Saved to your account &mdash; every invoice you share from now on will show this.
         </p>
+      </div>
+    <% } %>
+
+    <% if (recentClientsList.length > 0) { %>
+      <div data-recent-clients data-testid="invoice-quick-recent-clients">
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="quick-recent-client-picker">
+          Recent clients
+        </label>
+        <select id="quick-recent-client-picker"
+          data-testid="invoice-quick-recent-clients-select"
+          x-model="picked" @change="fillFromRecent()"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500">
+          <option value="">Quick-pick from recent&hellip;</option>
+          <% recentClientsList.forEach(function(c, idx) { %>
+            <option value="<%= idx %>"><%= c.client_name %><%= c.client_email ? ' · ' + c.client_email : '' %></option>
+          <% }) %>
+        </select>
+        <p class="text-xs text-gray-400 mt-1">Selecting fills the fields below &mdash; you can still edit them.</p>
       </div>
     <% } %>
 
@@ -237,7 +261,7 @@
   // (form pre-fill on next /invoices/quick GET + dashboard banner).
   // submitted=false on successful create — the server-side clear is the
   // single source of truth; the client only writes, never reads.
-  function quickInvoiceAutosave(initial) {
+  function quickInvoiceAutosave(initial, initialRecentClients) {
     return {
       fields: {
         client_name: (initial && typeof initial.client_name === 'string') ? initial.client_name : '',
@@ -245,9 +269,24 @@
         description: (initial && typeof initial.description === 'string') ? initial.description : '',
         amount: (initial && typeof initial.amount === 'string') ? initial.amount : ''
       },
+      recentClients: Array.isArray(initialRecentClients) ? initialRecentClients : [],
+      picked: '',
       submitted: false,
       init() {},
       onSubmit() { this.submitted = true; },
+      // Quick-pick a previously-invoiced client. Fills name + email from the
+      // selected row; the user can still edit either field after. Triggers
+      // autosave() so the in-progress draft picks up the pre-filled values
+      // and a bounce-then-return user sees them restored.
+      fillFromRecent() {
+        const idx = parseInt(this.picked, 10);
+        if (Number.isNaN(idx) || idx < 0 || idx >= this.recentClients.length) return;
+        const c = this.recentClients[idx];
+        if (!c) return;
+        this.fields.client_name = c.client_name || '';
+        this.fields.client_email = c.client_email || '';
+        this.autosave();
+      },
       autosave() {
         if (this.submitted) return;
         try {
