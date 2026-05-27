@@ -1440,6 +1440,61 @@ const db = {
   },
 
   /*
+   * "Recent items" quick-pick — analogous to getRecentClientsForUser but
+   * extracted from the per-invoice JSONB items array. Aggregates each
+   * line item the user has billed before, dedupes by case-insensitive
+   * trimmed description (so "Logo Design" and "logo design  " collapse),
+   * keeps the most recent unit_price/quantity, and surfaces the line
+   * TOTAL (quantity * unit_price) — which is what /invoices/quick stores
+   * as a single-line invoice's `amount`. Picking "Hourly rate" from a
+   * past quantity=4, unit_price=75 line therefore pre-fills the form
+   * with the $300 the freelancer actually charged, not the $75 unit.
+   *
+   * Filters:
+   *   - is_seed=false: the welcome sample's "Design consultation" line
+   *     would otherwise surface as a phantom recent item on day-zero
+   *     accounts.
+   *   - unit_price matches a basic numeric regex: defence-in-depth
+   *     against a future malformed write path that would otherwise
+   *     throw the cast.
+   *   - amount > 0: zero / negative lines never surface as pickable.
+   *
+   * The unit_price regex covers integer + decimal (with optional minus
+   * for completeness — outer amount>0 filters negatives out anyway).
+   */
+  async getRecentItemsForUser(userId, limit = 8) {
+    const parsed = parseInt(limit, 10);
+    const safe = (Number.isFinite(parsed) && parsed > 0) ? parsed : 8;
+    const cap = Math.min(50, safe);
+    const { rows } = await pool.query(
+      `SELECT description, amount
+         FROM (
+           SELECT DISTINCT ON (LOWER(TRIM(item->>'description')))
+                  TRIM(item->>'description') AS description,
+                  (COALESCE(NULLIF(item->>'quantity', ''), '1')::numeric
+                   * (item->>'unit_price')::numeric) AS amount,
+                  i.created_at AS used_at
+             FROM invoices i,
+                  LATERAL jsonb_array_elements(i.items) AS item
+            WHERE i.user_id = $1
+              AND i.is_seed = false
+              AND item->>'description' IS NOT NULL
+              AND TRIM(item->>'description') <> ''
+              AND (item->>'unit_price') ~ '^-?[0-9]+(\\.[0-9]+)?$'
+            ORDER BY LOWER(TRIM(item->>'description')), i.created_at DESC
+         ) AS uniq
+         WHERE amount > 0
+         ORDER BY used_at DESC
+         LIMIT $2`,
+      [userId, cap]
+    );
+    return rows.map(r => ({
+      description: r.description,
+      amount: typeof r.amount === 'string' ? parseFloat(r.amount) : Number(r.amount)
+    }));
+  },
+
+  /*
    * Records a single "what's missing?" feedback row (#145). Called from
    * POST /billing/feedback when a user submits the upgrade-modal close
    * widget. The route trims/whitelists every field before calling here; we

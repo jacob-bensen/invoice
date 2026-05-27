@@ -883,6 +883,17 @@ async function loadRecentClients(userId) {
   }
 }
 
+async function loadRecentItems(userId) {
+  try {
+    if (typeof db.getRecentItemsForUser !== 'function') return [];
+    const rows = await db.getRecentItemsForUser(userId, 8);
+    return Array.isArray(rows) ? rows : [];
+  } catch (err) {
+    console.error('Recent items lookup failed:', err && err.message);
+    return [];
+  }
+}
+
 async function loadRecentRevenueStats(userId, days = 30) {
   try {
     return await db.getRecentRevenueStats(userId, days);
@@ -1024,7 +1035,15 @@ router.get('/quick', requireAuth, async (req, res) => {
   // dropdown for some time; the quick form (the post-signup activation
   // surface AND the natural fast-path for repeat invoicing) was missing it.
   // Soft-fails to [] on any DB hiccup so the form still renders.
-  const recentClients = await loadRecentClients(req.session.user.id);
+  // Recent-clients + recent-items quick-pick dropdowns. Both run
+  // concurrently — the recent-items extract from invoices.items JSONB
+  // costs an extra round-trip; pulling alongside the clients query
+  // keeps the GET latency flat. Each soft-fails to [] independently
+  // so a single helper hiccup doesn't strand the other dropdown.
+  const [recentClients, recentItems] = await Promise.all([
+    loadRecentClients(req.session.user.id),
+    loadRecentItems(req.session.user.id)
+  ]);
   // ?welcome=1 fires right after POST /auth/register, where we now drop
   // new signups directly on /invoices/quick instead of /dashboard. The
   // template renders a one-time hero banner when this flag is true so
@@ -1038,6 +1057,7 @@ router.get('/quick', requireAuth, async (req, res) => {
     submitted: pending || null,
     pendingRestored: !!pending,
     recentClients,
+    recentItems,
     welcome: req.query && req.query.welcome === '1',
     noindex: true
   });

@@ -72,11 +72,13 @@ const updateUserCalls = [];
 const clearPendingCalls = [];
 const mintTokenCalls = [];
 const recentClientsCalls = [];
+const recentItemsCalls = [];
 let nextInvoiceId = 100;
 let emailSendImpl = async () => ({ ok: true, id: 'em_quick' });
 let updateUserImpl = null;
 let mintTokenImpl = null;
 let recentClientsImpl = null;
+let recentItemsImpl = null;
 
 function resetStore() {
   users.clear();
@@ -87,11 +89,13 @@ function resetStore() {
   clearPendingCalls.length = 0;
   mintTokenCalls.length = 0;
   recentClientsCalls.length = 0;
+  recentItemsCalls.length = 0;
   nextInvoiceId = 100;
   emailSendImpl = async () => ({ ok: true, id: 'em_quick' });
   updateUserImpl = null;
   mintTokenImpl = null;
   recentClientsImpl = null;
+  recentItemsImpl = null;
 }
 
 function buildDbStub() {
@@ -109,6 +113,11 @@ function buildDbStub() {
       async getRecentClientsForUser(userId, limit) {
         recentClientsCalls.push({ userId, limit });
         if (recentClientsImpl) return recentClientsImpl(userId, limit);
+        return [];
+      },
+      async getRecentItemsForUser(userId, limit) {
+        recentItemsCalls.push({ userId, limit });
+        if (recentItemsImpl) return recentItemsImpl(userId, limit);
         return [];
       },
       async createInvoice(data) {
@@ -1371,7 +1380,9 @@ async function testGetQuickRendersRecentClientsDropdown() {
   assert.ok(res.body.includes('Beta LLC'),
     'second recent client name must appear as an option');
   // Recent list must be serialised into the Alpine factory args (second arg).
-  assert.ok(/quickInvoiceAutosave\([^)]+,\s*\[[^\]]*Acme Corp[^\]]*\]\)/.test(res.body),
+  // Permissive on what follows the closing bracket — the factory now also
+  // takes a third arg (recentItems), tested separately below.
+  assert.ok(/quickInvoiceAutosave\([^)]+,\s*\[[^\]]*Acme Corp[^\]]*\]/.test(res.body),
     'recentClients list must be serialised into the Alpine factory args');
 }
 
@@ -1598,6 +1609,318 @@ async function testAlpineFactoryFillFromRecentBehaviour() {
 }
 
 // ============================================================================
+// Layer 6 — recent-items quick-pick dropdown
+// ============================================================================
+
+async function testGetQuickRendersRecentItemsDropdown() {
+  resetStore();
+  users.set(11, { id: 11, plan: 'pro', invoice_count: 8, name: 'Eli', email: 'e@x.com' });
+  recentItemsImpl = async () => ([
+    { description: 'Logo design', amount: 500 },
+    { description: 'Monthly retainer', amount: 1200 }
+  ]);
+  const routes = installDbStub();
+  const app = buildApp({ id: 11, plan: 'pro', invoice_count: 8 }, routes);
+  const res = await request(app, 'GET', '/invoices/quick');
+  assert.strictEqual(res.status, 200, 'GET /invoices/quick must 200 with recent items');
+  assert.strictEqual(recentItemsCalls.length, 1,
+    'db.getRecentItemsForUser must be called exactly once on the GET path');
+  assert.strictEqual(recentItemsCalls[0].userId, 11,
+    'recent-items lookup uses the session user id');
+  assert.ok(res.body.includes('data-testid="invoice-quick-recent-items"'),
+    'dropdown wrapper must render when items list is non-empty');
+  assert.ok(res.body.includes('data-testid="invoice-quick-recent-items-select"'),
+    'select element must carry the testid hook');
+  assert.ok(res.body.includes('Recent items'),
+    'Recent items label must render');
+  assert.ok(res.body.includes('Logo design'),
+    'first recent item description must appear as an option');
+  assert.ok(res.body.includes('$500.00'),
+    'first recent item amount must appear with two-decimal formatting');
+  assert.ok(res.body.includes('Monthly retainer'),
+    'second recent item description must appear as an option');
+  assert.ok(res.body.includes('$1200.00'),
+    'second recent item amount renders with two-decimal formatting');
+  // Recent items must be serialised into the Alpine factory args (third arg).
+  assert.ok(/quickInvoiceAutosave\([^)]+,[^)]+,\s*\[[^\]]*Logo design[^\]]*\]\)/.test(res.body),
+    'recentItems list must be serialised as third arg to the Alpine factory');
+}
+
+async function testGetQuickOmitsItemsDropdownForBrandNewUser() {
+  resetStore();
+  // Day-zero account: zero past invoices, zero recent items. The dropdown
+  // must NOT render — an empty <select> teaches the user a useless control
+  // exists. The SQL helper also filters out the welcome sample so even an
+  // account with only the seed sees an empty list here.
+  users.set(12, { id: 12, plan: 'free', invoice_count: 0, name: 'Newcomer', email: 'nc@x.com' });
+  recentItemsImpl = async () => ([]);
+  const routes = installDbStub();
+  const app = buildApp({ id: 12, plan: 'free', invoice_count: 0 }, routes);
+  const res = await request(app, 'GET', '/invoices/quick?welcome=1');
+  assert.strictEqual(res.status, 200, 'GET must 200 for day-zero user');
+  assert.ok(!res.body.includes('data-testid="invoice-quick-recent-items"'),
+    'items dropdown wrapper must be omitted when recentItems=[]');
+  assert.ok(!res.body.includes('Recent items'),
+    '"Recent items" label must not appear when list is empty');
+  // The welcome banner and the rest of the form must still render.
+  assert.ok(res.body.includes('data-testid="invoice-quick-welcome-banner"'),
+    'welcome banner must still render alongside an empty recent-items list');
+  assert.ok(res.body.includes('data-testid="invoice-quick-form"'),
+    'core form must still render');
+}
+
+async function testGetQuickSurvivesRecentItemsDbFailure() {
+  resetStore();
+  users.set(13, { id: 13, plan: 'pro', invoice_count: 5, name: 'Faye', email: 'f@x.com' });
+  recentItemsImpl = async () => { throw new Error('pg query timeout'); };
+  const routes = installDbStub();
+  const app = buildApp({ id: 13, plan: 'pro', invoice_count: 5 }, routes);
+  const origErr = console.error;
+  console.error = () => {};
+  try {
+    const res = await request(app, 'GET', '/invoices/quick');
+    assert.strictEqual(res.status, 200,
+      'recent-items DB throw must NOT 500 the quick form — activation path stays alive');
+    assert.ok(!res.body.includes('data-testid="invoice-quick-recent-items"'),
+      'failed lookup falls back to [] which hides the dropdown wrapper');
+    assert.ok(res.body.includes('data-testid="invoice-quick-form"'),
+      'core form must still render even when recent-items query throws');
+  } finally {
+    console.error = origErr;
+  }
+}
+
+async function testGetQuickRunsBothDropdownLookupsConcurrently() {
+  // Both lookups must fire — independent failures shouldn't strand the
+  // other dropdown. We assert each helper was called once on a single GET,
+  // which is the contract Promise.all locks in.
+  resetStore();
+  users.set(14, { id: 14, plan: 'pro', invoice_count: 3, name: 'Gabe', email: 'g@x.com' });
+  recentClientsImpl = async () => ([{ client_name: 'X', client_email: 'x@x', client_address: null }]);
+  recentItemsImpl = async () => ([{ description: 'Audit', amount: 250 }]);
+  const routes = installDbStub();
+  const app = buildApp({ id: 14, plan: 'pro', invoice_count: 3 }, routes);
+  const res = await request(app, 'GET', '/invoices/quick');
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(recentClientsCalls.length, 1, 'recent clients lookup must fire');
+  assert.strictEqual(recentItemsCalls.length, 1, 'recent items lookup must fire');
+  assert.ok(res.body.includes('data-testid="invoice-quick-recent-clients"'),
+    'both dropdowns must render when both helpers return data');
+  assert.ok(res.body.includes('data-testid="invoice-quick-recent-items"'),
+    'both dropdowns must render when both helpers return data');
+}
+
+async function testGetQuickRecentItemsClientThrowItemsOk() {
+  // Independence guard: clients helper throw must NOT swallow the items
+  // dropdown, and vice versa. Each soft-fail is isolated.
+  resetStore();
+  users.set(15, { id: 15, plan: 'pro', invoice_count: 6, name: 'Hank', email: 'h@x.com' });
+  recentClientsImpl = async () => { throw new Error('pg pool exhausted'); };
+  recentItemsImpl = async () => ([{ description: 'Strategy session', amount: 400 }]);
+  const routes = installDbStub();
+  const app = buildApp({ id: 15, plan: 'pro', invoice_count: 6 }, routes);
+  const origErr = console.error;
+  console.error = () => {};
+  try {
+    const res = await request(app, 'GET', '/invoices/quick');
+    assert.strictEqual(res.status, 200, 'one helper throw must not 500 the form');
+    assert.ok(!res.body.includes('data-testid="invoice-quick-recent-clients"'),
+      'failing clients lookup hides only the clients dropdown');
+    assert.ok(res.body.includes('data-testid="invoice-quick-recent-items"'),
+      'items dropdown still renders when ONLY the clients helper threw');
+    assert.ok(res.body.includes('Strategy session'),
+      'items option label must render');
+  } finally {
+    console.error = origErr;
+  }
+}
+
+async function testViewOmitsItemsDropdownWhenAbsent() {
+  // Missing locals.recentItems → coerce to [] → dropdown omitted.
+  const html = await renderQuickView();
+  assert.ok(!html.includes('data-testid="invoice-quick-recent-items"'),
+    'items dropdown omitted when recentItems local is missing');
+  assert.ok(html.includes('data-testid="invoice-quick-form"'),
+    'core form still renders');
+}
+
+async function testViewOmitsItemsDropdownWhenNonArray() {
+  for (const bad of [null, 'oops', 42, { rows: [] }, true]) {
+    const html = await renderQuickView({ recentItems: bad });
+    assert.ok(!html.includes('data-testid="invoice-quick-recent-items"'),
+      `non-array recentItems (${typeof bad}) must hide the items dropdown`);
+  }
+}
+
+async function testViewRendersItemsDropdownWithOptions() {
+  const html = await renderQuickView({
+    recentItems: [
+      { description: 'Logo design', amount: 500 },
+      { description: 'Hourly rate', amount: 75.5 },
+      { description: 'Photography', amount: 1200 }
+    ]
+  });
+  assert.ok(html.includes('data-testid="invoice-quick-recent-items"'),
+    'dropdown wrapper renders with 3 entries');
+  assert.ok(html.includes('data-testid="invoice-quick-recent-items-select"'),
+    'select carries the testid');
+  assert.ok(/x-model="pickedItem"/.test(html),
+    'select binds pickedItem via x-model (distinct from picked for clients)');
+  assert.ok(/@change="fillFromRecentItem\(\)"/.test(html),
+    'select calls fillFromRecentItem() on @change');
+  assert.ok(html.includes('Logo design'), 'first option description renders');
+  assert.ok(html.includes('$500.00'), 'first option amount formats to 2 decimals');
+  assert.ok(html.includes('$75.50'), 'decimal amount formats to 2 decimals');
+  assert.ok(html.includes('$1200.00'), 'third option amount formats to 2 decimals');
+}
+
+async function testViewFiltersMalformedRecentItems() {
+  // The view layer's defensive filter must drop malformed rows so a single
+  // bad row (e.g. amount=null after a JSONB cast hiccup) can't break the
+  // <select> render or mis-bill the user on pick.
+  const html = await renderQuickView({
+    recentItems: [
+      { description: 'Good item', amount: 200 },
+      { description: '', amount: 50 },          // empty description — drop
+      { description: '   ', amount: 50 },       // whitespace-only — drop
+      { description: 'Zero amount', amount: 0 },// zero — drop
+      { description: 'Negative', amount: -50 }, // negative — drop
+      { description: 'NaN amount', amount: 'not-a-number' }, // NaN — drop
+      { description: null, amount: 100 },       // null desc — drop
+      { description: 'Another good', amount: 300 }
+    ]
+  });
+  assert.ok(html.includes('Good item'), 'valid first item renders');
+  assert.ok(html.includes('Another good'), 'valid last item renders');
+  assert.ok(!html.includes('Zero amount'),
+    'amount=0 row filtered out (no zero-amount picks)');
+  assert.ok(!html.includes('Negative'),
+    'negative-amount row filtered out');
+  assert.ok(!html.includes('NaN amount'),
+    'non-numeric amount filtered out');
+}
+
+async function testViewTruncatesLongDescription() {
+  // Past invoices created via /new may have multi-line / long descriptions.
+  // The dropdown label clips to 80 chars so the <select> stays readable.
+  const longDesc = 'A very long line item description '.repeat(10);
+  const html = await renderQuickView({
+    recentItems: [{ description: longDesc, amount: 200 }]
+  });
+  // Truncation is applied — the full 340+ char string never reaches the option.
+  assert.ok(!html.includes(longDesc),
+    'oversize description must be truncated before render');
+  // The leading 80 chars (or close to it) still render.
+  assert.ok(html.includes('A very long line item description'),
+    'leading characters of long description still render');
+}
+
+async function testViewEscapesHostileRecentItem() {
+  // XSS guard — a hostile description in a past invoice (from /new edit
+  // or an imported payload) must never reach the rendered output as raw
+  // HTML. Locks in EJS <%= %> escaping; defends against a future
+  // maintainer accidentally switching to <%- %>.
+  const hostile = '<script>alert(1)</script>';
+  const html = await renderQuickView({
+    recentItems: [{ description: hostile, amount: 200 }]
+  });
+  assert.ok(!html.includes('<script>alert(1)'),
+    'raw <script> from description must not appear in rendered output');
+  assert.ok(html.includes('&lt;script&gt;'),
+    'description angle brackets must be HTML-entity-escaped');
+}
+
+async function testAlpineFactoryFillFromRecentItemBehaviour() {
+  // Exercise the new fillFromRecentItem() method in isolation via a vm
+  // sandbox — same harness pattern as the clients-picker test.
+  const vm = require('vm');
+  const tplPath = path.join(__dirname, '..', 'views', 'invoice-quick.ejs');
+  const tpl = fs.readFileSync(tplPath, 'utf8');
+  const startMarker = 'function quickInvoiceAutosave(';
+  const startIdx = tpl.indexOf(startMarker);
+  assert.ok(startIdx !== -1, 'factory declaration findable');
+  const sigEnd = tpl.indexOf('{', startIdx);
+  let depth = 0;
+  let endIdx = -1;
+  for (let i = sigEnd; i < tpl.length; i++) {
+    const ch = tpl[i];
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) { endIdx = i + 1; break; }
+    }
+  }
+  const factorySrc = tpl.slice(startIdx, endIdx)
+    .replace(/<%[=\-]?[\s\S]*?%>/g, 'TEST_CSRF');
+  const ctx = { module: { exports: {} }, console };
+  vm.createContext(ctx);
+  vm.runInContext(factorySrc + '\nmodule.exports = quickInvoiceAutosave;', ctx);
+  const factory = ctx.module.exports;
+
+  const items = [
+    { description: 'Logo design', amount: 500 },
+    { description: 'Hourly rate', amount: 75.5 }
+  ];
+  const inst = factory(
+    { client_name: '', client_email: '', description: '', amount: '' },
+    [],
+    items
+  );
+  ctx.fetch = () => ({ catch: () => {} });
+
+  assert.strictEqual(inst.recentItems.length, 2, 'recentItems length matches');
+  assert.strictEqual(inst.recentItems[0].description, 'Logo design',
+    'recentItems[0] preserved');
+  assert.strictEqual(inst.pickedItem, '', 'pickedItem starts blank');
+
+  // Pick index 0 → description + amount populate.
+  inst.pickedItem = '0';
+  inst.fillFromRecentItem();
+  assert.strictEqual(inst.fields.description, 'Logo design',
+    'pick fills description');
+  assert.strictEqual(inst.fields.amount, '500.00',
+    'pick fills amount with two-decimal string (matches <input type=number>)');
+
+  // Subsequent edit must persist.
+  inst.fields.description = 'Logo design — Acme renewal';
+  assert.strictEqual(inst.fields.description, 'Logo design — Acme renewal',
+    'user edits after pick remain editable');
+
+  // Pick index 1 → decimal amount formats correctly.
+  inst.pickedItem = '1';
+  inst.fillFromRecentItem();
+  assert.strictEqual(inst.fields.description, 'Hourly rate', 'pick replaces description');
+  assert.strictEqual(inst.fields.amount, '75.50', 'decimal amount formats to 2 places');
+
+  // Out-of-range / non-numeric picks no-op.
+  inst.fields.description = 'Manual entry';
+  inst.fields.amount = '999.99';
+  for (const bad of ['', 'abc', '-1', '99', null, undefined]) {
+    inst.pickedItem = bad;
+    inst.fillFromRecentItem();
+    assert.strictEqual(inst.fields.description, 'Manual entry',
+      `bad pickedItem (${JSON.stringify(bad)}) must not change description`);
+    assert.strictEqual(inst.fields.amount, '999.99',
+      `bad pickedItem (${JSON.stringify(bad)}) must not change amount`);
+  }
+
+  // Non-array initialRecentItems arg coerces to [] (no throw).
+  const empty = factory(
+    { client_name: '', client_email: '', description: '', amount: '' },
+    [],
+    null
+  );
+  assert.strictEqual(empty.recentItems.length, 0,
+    'non-array recentItems arg coerces to length-0 array');
+
+  // Picking-into-empty no-ops cleanly.
+  empty.pickedItem = '0';
+  empty.fillFromRecentItem();
+  assert.strictEqual(empty.fields.description, '',
+    'pick into empty list is a no-op');
+}
+
+// ============================================================================
 // Runner
 // ============================================================================
 
@@ -1668,7 +1991,19 @@ async function run() {
     ['view: dropdown omitted when recentClients is non-array (defensive coercion)', testViewOmitsDropdownWhenRecentClientsNonArray],
     ['view: dropdown renders with name+email option labels when list is non-empty', testViewRendersDropdownWhenRecentClientsPresent],
     ['view: hostile client_name / client_email in recent list is HTML-escaped', testViewEscapesHostileClientNameInDropdown],
-    ['Alpine factory: fillFromRecent populates fields, edits persist, bad picks no-op', testAlpineFactoryFillFromRecentBehaviour]
+    ['Alpine factory: fillFromRecent populates fields, edits persist, bad picks no-op', testAlpineFactoryFillFromRecentBehaviour],
+    ['GET /invoices/quick: renders recent-items dropdown with options from db helper', testGetQuickRendersRecentItemsDropdown],
+    ['GET /invoices/quick: brand-new user with zero recent items gets no items dropdown', testGetQuickOmitsItemsDropdownForBrandNewUser],
+    ['GET /invoices/quick: recent-items DB throw does not 500 the form', testGetQuickSurvivesRecentItemsDbFailure],
+    ['GET /invoices/quick: clients + items helpers fire concurrently on a single GET', testGetQuickRunsBothDropdownLookupsConcurrently],
+    ['GET /invoices/quick: clients helper throw does not strand the items dropdown', testGetQuickRecentItemsClientThrowItemsOk],
+    ['view: items dropdown omitted when recentItems local is absent', testViewOmitsItemsDropdownWhenAbsent],
+    ['view: items dropdown omitted when recentItems is non-array', testViewOmitsItemsDropdownWhenNonArray],
+    ['view: items dropdown renders with description + $amount options', testViewRendersItemsDropdownWithOptions],
+    ['view: malformed recent items (empty desc, zero/negative amount, NaN) are filtered out', testViewFiltersMalformedRecentItems],
+    ['view: long description in recent items is truncated', testViewTruncatesLongDescription],
+    ['view: hostile description in recent items is HTML-escaped', testViewEscapesHostileRecentItem],
+    ['Alpine factory: fillFromRecentItem populates description+amount, edits persist, bad picks no-op', testAlpineFactoryFillFromRecentItemBehaviour]
   ];
   let passed = 0;
   let failed = 0;
