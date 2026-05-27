@@ -252,12 +252,28 @@ async function loadMostRecentlyViewedUnpaid(userId) {
 
 async function loadOldestSentNotViewed(userId) {
   if (!userId || typeof db.getOldestSentNotViewed !== 'function') return null;
+  let row;
   try {
-    return await db.getOldestSentNotViewed(userId);
+    row = await db.getOldestSentNotViewed(userId);
   } catch (err) {
     console.error('Sent-not-viewed lookup failed:', err && err.message);
     return null;
   }
+  if (!row) return null;
+  // Defence-in-depth lazy-mint: sent/overdue rows almost always already carry
+  // a public_token (eager-minted at create / first send), but a legacy row
+  // predating eager-mint would otherwise strand the inline share-intent
+  // surface. Best-effort: never blocks the dashboard — the banner still
+  // surfaces with Open-invoice + Mark-as-paid on mint failure.
+  if (!row.public_token && typeof db.getOrCreatePublicToken === 'function') {
+    try {
+      const token = await db.getOrCreatePublicToken(row.id, userId);
+      if (token) row.public_token = token;
+    } catch (err) {
+      console.error('Sent-not-viewed token mint failed:', err && err.message);
+    }
+  }
+  return row;
 }
 
 async function loadOldestOverdueInvoice(userId) {
@@ -635,6 +651,23 @@ function buildSentNotViewedPrompt(user, invoice) {
   const elapsedMs = Math.max(0, Date.now() - sentMs);
   const daysAgo = Math.max(1, Math.floor(elapsedMs / 86400000));
   const hoursAgo = Math.max(1, Math.floor(elapsedMs / 3600000));
+  // shareIntents (NOT followUpIntents): the client never opened the link
+  // (first_viewed_at IS NULL is the cohort filter), so a "checking in" body
+  // would feel off. The freelancer is re-sending on a fresh channel because
+  // the first attempt landed in spam / had a typo'd contact / wrong number;
+  // the first-send "here's invoice X — view it here" body is the right shape.
+  // Silently null when no public_token (loader couldn't mint) so the existing
+  // Open-invoice / Mark-as-paid CTAs remain the fallback.
+  let shareIntents = null;
+  const surface = invoice.public_token ? buildShareSurfaceForInvoice(invoice) : null;
+  if (surface && surface.shareIntents && surface.url) {
+    shareIntents = {
+      whatsapp: surface.shareIntents.whatsapp,
+      sms: surface.shareIntents.sms,
+      mailto: surface.shareIntents.mailto,
+      url: surface.url
+    };
+  }
   return {
     id: invoice.id,
     invoiceNumber: invoice.invoice_number || '',
@@ -642,7 +675,8 @@ function buildSentNotViewedPrompt(user, invoice) {
     total: Number(invoice.total) || 0,
     daysAgo,
     hoursAgo,
-    status: invoice.status || 'sent'
+    status: invoice.status || 'sent',
+    shareIntents
   };
 }
 

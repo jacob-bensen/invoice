@@ -495,7 +495,8 @@ const db = {
       ? Math.floor(minAgeHours)
       : 72;
     const { rows } = await pool.query(
-      `SELECT id, invoice_number, client_name, total, sent_via_share_intent_at, status
+      `SELECT id, invoice_number, client_name, client_email, total, due_date,
+              sent_via_share_intent_at, status, public_token
          FROM invoices
         WHERE user_id = $1
           AND status IN ('sent', 'overdue')

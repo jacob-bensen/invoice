@@ -214,6 +214,27 @@ test('db.getOldestSentNotViewed: SELECT projection includes sent_via_share_inten
   }
 });
 
+test('db.getOldestSentNotViewed: SELECT projects public_token, client_email, due_date (share-intent inputs)', async () => {
+  let captured = null;
+  const real = loadRealDb();
+  const originalQuery = real.pool.query.bind(real.pool);
+  real.pool.query = async (sql, params) => {
+    captured = { sql, params };
+    return { rows: [] };
+  };
+  try {
+    await real.db.getOldestSentNotViewed(42);
+    assert.match(captured.sql, /public_token/,
+      'must project public_token — input to buildShareSurfaceForInvoice for inline share intents');
+    assert.match(captured.sql, /client_email/,
+      'must project client_email — input to buildPublicShareIntents mailto recipient');
+    assert.match(captured.sql, /due_date/,
+      'must project due_date — input to buildShareSurfaceForInvoice daysOverdue calc');
+  } finally {
+    real.pool.query = originalQuery;
+  }
+});
+
 // ---- Layer 2: loadOldestSentNotViewed soft-fail paths --------------------
 
 process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || 'sk_test_dummy';
@@ -290,6 +311,65 @@ test('loadOldestSentNotViewed: returns null when db method missing (legacy stub)
   const result = await routes.loadOldestSentNotViewed(1);
   assert.strictEqual(result, null);
   dbStubMethodPresent = true;
+});
+
+test('loadOldestSentNotViewed: lazy-mints public_token when absent (legacy row)', async () => {
+  dbStubInvoice = { id: 88, invoice_number: 'X', client_name: 'A', total: 100,
+    sent_via_share_intent_at: new Date().toISOString(), status: 'sent', public_token: null };
+  dbStubThrows = false;
+  dbStubMethodPresent = true;
+  let mintCalls = 0;
+  dbStub.db.getOrCreatePublicToken = async (invoiceId, userId) => {
+    mintCalls++;
+    assert.strictEqual(invoiceId, 88, 'mint called with the loaded row id');
+    assert.strictEqual(userId, 7, 'mint called with the session user id');
+    return 'abcdef0123456789';
+  };
+  try {
+    const routes = installDbStub();
+    const result = await routes.loadOldestSentNotViewed(7);
+    assert.strictEqual(mintCalls, 1, 'mint called exactly once');
+    assert.strictEqual(result.public_token, 'abcdef0123456789', 'token grafted onto row');
+  } finally {
+    delete dbStub.db.getOrCreatePublicToken;
+  }
+});
+
+test('loadOldestSentNotViewed: skips lazy-mint when public_token already present', async () => {
+  dbStubInvoice = { id: 88, invoice_number: 'X', client_name: 'A', total: 100,
+    sent_via_share_intent_at: new Date().toISOString(), status: 'sent', public_token: 'deadbeefcafe1234' };
+  dbStubThrows = false;
+  dbStubMethodPresent = true;
+  let mintCalls = 0;
+  dbStub.db.getOrCreatePublicToken = async () => { mintCalls++; return 'mismatch'; };
+  try {
+    const routes = installDbStub();
+    const result = await routes.loadOldestSentNotViewed(7);
+    assert.strictEqual(mintCalls, 0, 'mint NOT called when token already present');
+    assert.strictEqual(result.public_token, 'deadbeefcafe1234', 'original token preserved');
+  } finally {
+    delete dbStub.db.getOrCreatePublicToken;
+  }
+});
+
+test('loadOldestSentNotViewed: soft-fails to keep the row when mint throws', async () => {
+  dbStubInvoice = { id: 88, invoice_number: 'X', client_name: 'A', total: 100,
+    sent_via_share_intent_at: new Date().toISOString(), status: 'sent', public_token: null };
+  dbStubThrows = false;
+  dbStubMethodPresent = true;
+  dbStub.db.getOrCreatePublicToken = async () => { throw new Error('mint exploded'); };
+  const origErr = console.error;
+  console.error = () => {};
+  try {
+    const routes = installDbStub();
+    const result = await routes.loadOldestSentNotViewed(7);
+    assert.ok(result, 'row STILL returned — banner falls back to CTA + Mark-as-paid only');
+    assert.strictEqual(result.id, 88);
+    assert.strictEqual(result.public_token, null, 'token stays null on mint throw');
+  } finally {
+    console.error = origErr;
+    delete dbStub.db.getOrCreatePublicToken;
+  }
 });
 
 // ---- Layer 3: buildSentNotViewedPrompt shape contract -------------------
@@ -385,6 +465,71 @@ test('buildSentNotViewedPrompt: status defaults to "sent" when missing', () => {
     { id: 1, sent_via_share_intent_at: threeDaysAgo }
   );
   assert.strictEqual(out.status, 'sent');
+});
+
+test('buildSentNotViewedPrompt: shareIntents=null when public_token missing (legacy row)', () => {
+  const routes = installDbStub();
+  const threeDaysAgo = new Date(Date.now() - 3 * 86400000);
+  const out = routes.buildSentNotViewedPrompt(
+    { id: 1 },
+    { id: 88, invoice_number: 'INV-X', client_name: 'A', total: 100,
+      sent_via_share_intent_at: threeDaysAgo, public_token: null }
+  );
+  assert.strictEqual(out.shareIntents, null, 'view degrades cleanly to Open-invoice + Mark-as-paid');
+});
+
+test('buildSentNotViewedPrompt: shareIntents=null when public_token is malformed', () => {
+  const routes = installDbStub();
+  const threeDaysAgo = new Date(Date.now() - 3 * 86400000);
+  const out = routes.buildSentNotViewedPrompt(
+    { id: 1 },
+    { id: 88, invoice_number: 'INV-X', client_name: 'A', total: 100,
+      sent_via_share_intent_at: threeDaysAgo, public_token: 'not-a-hex-token!' }
+  );
+  assert.strictEqual(out.shareIntents, null);
+});
+
+test('buildSentNotViewedPrompt: shareIntents derived from public_token uses first-send body (not "checking in")', () => {
+  const routes = installDbStub();
+  const threeDaysAgo = new Date(Date.now() - 3 * 86400000);
+  const out = routes.buildSentNotViewedPrompt(
+    { id: 1 },
+    { id: 88, invoice_number: 'INV-2026-0099', client_name: 'Acme Co.',
+      client_email: 'pay@acme.co', total: '500.00',
+      sent_via_share_intent_at: threeDaysAgo,
+      public_token: 'abcdef0123456789' }
+  );
+  assert.ok(out.shareIntents, 'shareIntents derived when token present');
+  assert.ok(out.shareIntents.whatsapp.startsWith('https://wa.me/?text='),
+    'whatsapp deep-link');
+  assert.ok(out.shareIntents.sms.startsWith('sms:?&body='), 'sms deep-link');
+  assert.ok(out.shareIntents.mailto.startsWith('mailto:pay%40acme.co'),
+    'mailto recipient percent-encoded');
+  assert.ok(out.shareIntents.url.endsWith('/i/abcdef0123456789'),
+    'shareable public URL');
+  // first-send body shape — "here's invoice X", NOT "just checking in"
+  const decodedBody = decodeURIComponent(out.shareIntents.whatsapp.replace('https://wa.me/?text=', ''));
+  assert.match(decodedBody, /here's invoice INV-2026-0099/i,
+    'first-send body — client never opened so no "checking in" assumption');
+  assert.doesNotMatch(decodedBody, /checking in/i,
+    'must NOT use follow-up "checking in" framing — that\'s for viewed cohort');
+});
+
+test('buildSentNotViewedPrompt: shareIntents.mailto omitted when client_email missing (other 3 channels intact)', () => {
+  const routes = installDbStub();
+  const threeDaysAgo = new Date(Date.now() - 3 * 86400000);
+  const out = routes.buildSentNotViewedPrompt(
+    { id: 1 },
+    { id: 88, invoice_number: 'X', client_name: 'A', total: 100,
+      sent_via_share_intent_at: threeDaysAgo,
+      public_token: 'abcdef0123456789', client_email: null }
+  );
+  assert.ok(out.shareIntents, 'whatsapp+sms+copy still surface without an email address');
+  // buildPublicShareIntents always returns mailto (without recipient), so we
+  // assert the structural shape rather than absence — the view template
+  // gates the Email button on the presence of a meaningful recipient.
+  assert.ok(out.shareIntents.url, 'url still present for copy + sms/whatsapp');
+  assert.match(out.shareIntents.mailto, /^mailto:\?/, 'mailto has no recipient when client_email missing');
 });
 
 // ---- Layer 4: dashboard.ejs renders the banner -------------------------
@@ -561,6 +706,118 @@ test('view: banner print:hidden (printed invoice artifact stays clean)', () => {
   );
   assert.ok(blockMatch, 'banner block located');
   assert.match(blockMatch[0], /print:hidden/);
+});
+
+test('view: share-intents row OMITTED when shareIntents=null (legacy degrade)', () => {
+  const html = renderDashboard({
+    sentNotViewedPrompt: {
+      id: 88, invoiceNumber: 'X', clientName: 'A', total: 100,
+      daysAgo: 4, hoursAgo: 96, status: 'sent', shareIntents: null
+    }
+  });
+  assert.doesNotMatch(html, /data-testid="sent-not-viewed-share-intents"/,
+    'no share-intent row when token missing — fallback CTAs still render');
+});
+
+test('view: share-intents row RENDERS 4 buttons when shareIntents set', () => {
+  const html = renderDashboard({
+    sentNotViewedPrompt: {
+      id: 88, invoiceNumber: 'X', clientName: 'A', total: 100,
+      daysAgo: 4, hoursAgo: 96, status: 'sent',
+      shareIntents: {
+        whatsapp: 'https://wa.me/?text=hi',
+        sms: 'sms:?&body=hi',
+        mailto: 'mailto:c@example.com?subject=Invoice&body=hi',
+        url: 'https://app.example.com/i/abcdef0123456789'
+      }
+    }
+  });
+  assert.match(html, /data-testid="sent-not-viewed-share-intents"/);
+  assert.match(html, /data-testid="sent-not-viewed-share-whatsapp"/);
+  assert.match(html, /data-testid="sent-not-viewed-share-sms"/);
+  assert.match(html, /data-testid="sent-not-viewed-share-email"/);
+  assert.match(html, /data-testid="sent-not-viewed-share-copy"/);
+});
+
+test('view: each share-intent button POSTs /share-intent with matching intent + CSRF token', () => {
+  const html = renderDashboard({
+    sentNotViewedPrompt: {
+      id: 88, invoiceNumber: 'X', clientName: 'A', total: 100,
+      daysAgo: 4, hoursAgo: 96, status: 'sent',
+      shareIntents: {
+        whatsapp: 'https://wa.me/?text=hi',
+        sms: 'sms:?&body=hi',
+        mailto: 'mailto:c@example.com?subject=I&body=h',
+        url: 'https://app.example.com/i/abcdef0123456789'
+      }
+    }
+  });
+  for (const intent of ['whatsapp', 'sms', 'email', 'copy']) {
+    const btnRe = new RegExp(
+      `data-testid="sent-not-viewed-share-${intent}"[\\s\\S]*?` +
+      `/invoices/88/share-intent[\\s\\S]*?` +
+      `'X-CSRF-Token': 'TEST_CSRF'[\\s\\S]*?` +
+      `JSON.stringify\\(\\{ intent: '${intent}' \\}\\)`
+    );
+    assert.match(html, btnRe, `${intent} button posts /share-intent with intent='${intent}' + CSRF`);
+  }
+});
+
+test('view: WhatsApp button opens in new tab (target=_blank rel=noopener)', () => {
+  const html = renderDashboard({
+    sentNotViewedPrompt: {
+      id: 88, invoiceNumber: 'X', clientName: 'A', total: 100,
+      daysAgo: 4, hoursAgo: 96, status: 'sent',
+      shareIntents: {
+        whatsapp: 'https://wa.me/?text=hi', sms: 'sms:?&body=hi',
+        mailto: 'mailto:c@example.com?subject=I&body=h',
+        url: 'https://app.example.com/i/abcdef0123456789'
+      }
+    }
+  });
+  const waMatch = html.match(
+    /<a[^>]*data-testid="sent-not-viewed-share-whatsapp"[^>]*>/
+  );
+  assert.ok(waMatch, 'whatsapp anchor present');
+  assert.match(waMatch[0], /target="_blank"/);
+  assert.match(waMatch[0], /rel="noopener"/);
+});
+
+test('view: Email button omitted when shareIntents.mailto absent (no client_email)', () => {
+  const html = renderDashboard({
+    sentNotViewedPrompt: {
+      id: 88, invoiceNumber: 'X', clientName: 'A', total: 100,
+      daysAgo: 4, hoursAgo: 96, status: 'sent',
+      shareIntents: {
+        whatsapp: 'https://wa.me/?text=hi',
+        sms: 'sms:?&body=hi',
+        mailto: '',
+        url: 'https://app.example.com/i/abcdef0123456789'
+      }
+    }
+  });
+  assert.doesNotMatch(html, /data-testid="sent-not-viewed-share-email"/,
+    'Email button gated on mailto presence — other 3 still render');
+  assert.match(html, /data-testid="sent-not-viewed-share-whatsapp"/);
+  assert.match(html, /data-testid="sent-not-viewed-share-sms"/);
+  assert.match(html, /data-testid="sent-not-viewed-share-copy"/);
+});
+
+test('view: hostile share URL is HTML-attribute-escaped on the Copy button data-share-url', () => {
+  const html = renderDashboard({
+    sentNotViewedPrompt: {
+      id: 88, invoiceNumber: 'X', clientName: 'A', total: 100,
+      daysAgo: 4, hoursAgo: 96, status: 'sent',
+      shareIntents: {
+        whatsapp: 'https://wa.me/?text=hi', sms: 'sms:?&body=hi',
+        mailto: 'mailto:c@example.com?subject=I&body=h',
+        url: 'https://x.com/i/abc"><script>alert(1)</script>'
+      }
+    }
+  });
+  assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/,
+    'raw script must NOT escape the data-share-url attribute');
+  assert.match(html, /&#34;|&quot;/, 'quote must be HTML-attribute-escaped');
 });
 
 // ---- Run ----------------------------------------------------------------
