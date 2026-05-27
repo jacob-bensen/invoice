@@ -265,6 +265,15 @@ app.listen(PORT, () => {
     }
 
     try {
+      const { startSecondClientViewedFollowupJob } = require('./jobs/second-client-viewed-followup');
+      const cv2 = startSecondClientViewedFollowupJob();
+      if (cv2 && cv2.ok) console.log(`[second-client-viewed-followup] scheduled (${cv2.schedule})`);
+      else console.warn('[second-client-viewed-followup] not scheduled:', cv2 && cv2.reason);
+    } catch (err) {
+      console.error('[second-client-viewed-followup] startup failed:', err && err.message);
+    }
+
+    try {
       const { startSentNotViewedNudgeJob } = require('./jobs/sent-not-viewed-nudge');
       const sn = startSentNotViewedNudgeJob();
       if (sn && sn.ok) console.log(`[sent-not-viewed-nudge] scheduled (${sn.schedule})`);

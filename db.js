@@ -1092,6 +1092,86 @@ const db = {
   },
 
   /*
+   * Terminal client-viewed-but-unpaid follow-up cron query (Milestone 4 — sent
+   * → paid). Picks up invoices that already received the FIRST nudge
+   * (client_viewed_followup_sent_at IS NOT NULL) at least `firstSentGapDays`
+   * ago, are still in 'sent' / 'overdue' status, and the terminal stamp has
+   * not yet fired. The window is bounded by `first_viewed_at > NOW() - maxDays`
+   * so we don't overlap the overdue-digest cohort (which takes ownership weeks
+   * later). Mirrors getUsersForSecondStaleDraftEmail in spirit — one terminal
+   * nudge then drop off the cohort.
+   *
+   * Predicates:
+   *   - status IN ('sent','overdue') — only invoices still out with the client.
+   *   - is_seed=false — never email about the sample invoice.
+   *   - first_viewed_at IS NOT NULL — the client demonstrably opened it
+   *     (defence-in-depth; the first nudge gate already enforces this).
+   *   - first_viewed_at > NOW() - maxDays — cap the cohort so we never
+   *     compete with the overdue-digest for older invoices.
+   *   - client_viewed_followup_sent_at IS NOT NULL AND <= NOW() - firstSentGap
+   *     — the FIRST nudge fired N days ago.
+   *   - second_client_viewed_followup_sent_at IS NULL — one-shot terminal.
+   *   - u.email IS NOT NULL + lifecycle_emails_opted_out_at IS NULL — defence.
+   *
+   * LIMIT 500 caps the cron tick. ORDER BY oldest first nudge first — peak
+   * conversion-likelihood ordering and bounded fairness.
+   */
+  async getInvoicesForSecondClientViewedFollowup(firstSentGapDays = 7, maxDays = 30) {
+    const gap = Number.isFinite(firstSentGapDays) && firstSentGapDays > 0
+      ? Math.floor(firstSentGapDays)
+      : 7;
+    const max = Number.isFinite(maxDays) && maxDays > 0
+      ? Math.floor(maxDays)
+      : 30;
+    const { rows } = await pool.query(
+      `SELECT
+         i.id                AS invoice_id,
+         i.user_id           AS user_id,
+         i.invoice_number    AS invoice_number,
+         i.client_name       AS client_name,
+         i.total             AS invoice_total,
+         i.first_viewed_at   AS first_viewed_at,
+         i.view_count        AS view_count,
+         i.status            AS status,
+         i.client_viewed_followup_sent_at AS first_followup_sent_at,
+         u.email             AS email,
+         u.name              AS name,
+         u.business_name     AS business_name,
+         u.reply_to_email    AS reply_to_email,
+         u.business_email    AS business_email,
+         u.unsubscribe_token AS unsubscribe_token
+       FROM invoices i
+       JOIN users u ON u.id = i.user_id
+       WHERE i.status IN ('sent', 'overdue')
+         AND i.is_seed = false
+         AND i.first_viewed_at IS NOT NULL
+         AND i.first_viewed_at > NOW() - ($2 * INTERVAL '1 day')
+         AND i.client_viewed_followup_sent_at IS NOT NULL
+         AND i.client_viewed_followup_sent_at <= NOW() - ($1 * INTERVAL '1 day')
+         AND i.second_client_viewed_followup_sent_at IS NULL
+         AND u.email IS NOT NULL
+         AND u.welcome_email_sent_at IS NOT NULL
+         AND u.lifecycle_emails_opted_out_at IS NULL
+       ORDER BY i.client_viewed_followup_sent_at ASC
+       LIMIT 500`,
+      [gap, max]
+    );
+    return rows;
+  },
+
+  async markSecondClientViewedFollowupSent(invoiceId) {
+    if (!invoiceId) return null;
+    const { rows } = await pool.query(
+      `UPDATE invoices SET second_client_viewed_followup_sent_at = NOW(), updated_at = NOW()
+         WHERE id = $1
+           AND second_client_viewed_followup_sent_at IS NULL
+         RETURNING id, second_client_viewed_followup_sent_at`,
+      [invoiceId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Sent-but-never-viewed nudge cron query (Milestone 4 — sent → paid).
    * Picks up invoices where the freelancer fired a share-intent button
    * `minHours` ago (the unambiguous "I sent this" stamp) but the client has

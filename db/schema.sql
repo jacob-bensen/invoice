@@ -277,6 +277,23 @@ CREATE INDEX IF NOT EXISTS idx_invoices_client_viewed_followup
     AND first_viewed_at IS NOT NULL
     AND client_viewed_followup_sent_at IS NULL;
 
+-- Terminal client-viewed-but-unpaid follow-up stamp (Milestone 4 — first invoice
+-- sent → first payment received). Fires 7+ days after the first
+-- client_viewed_followup_sent_at when the invoice is STILL unpaid. Without
+-- this terminal pass the freelancer gets exactly one nudge per viewed-unpaid
+-- invoice and then silence — and the invoice rides the 30-day window before
+-- the overdue-digest picks it up. This second pass closes that gap with an
+-- empathetic, terminal "anything we can help unblock?" framing (mirrors the
+-- second-stale-draft-email + second-no-invoice-nudge pattern). One stamp per
+-- invoice; the cohort is bounded by `first_viewed_at > NOW() - 30d` so we
+-- never overlap the overdue-digest's older-cohort window.
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS second_client_viewed_followup_sent_at TIMESTAMP;
+CREATE INDEX IF NOT EXISTS idx_invoices_second_client_viewed_followup
+  ON invoices(client_viewed_followup_sent_at)
+  WHERE status IN ('sent', 'overdue')
+    AND client_viewed_followup_sent_at IS NOT NULL
+    AND second_client_viewed_followup_sent_at IS NULL;
+
 -- Sent-but-never-viewed nudge stamp (Milestone 4 — first invoice sent →
 -- first payment received). Covers the cohort where the freelancer fired a
 -- share-intent button (WhatsApp/SMS/Email/Copy) on /invoices/:id 72h+ ago
