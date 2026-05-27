@@ -234,9 +234,11 @@
       data-testid="fresh-draft-prompt"
       data-invoice-id="<%= freshDraftPrompt.id %>"
       data-age-minutes="<%= freshDraftPrompt.ageMinutes %>"
+      data-direct-email="<%= freshDraftPrompt.directEmail ? 'true' : 'false' %>"
       class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4 flex items-start gap-3 print:hidden"
       role="region"
       aria-label="You created an invoice — send it to your client"
+      x-data="{ emailSending: false, emailSent: false, emailError: '', emailSendDirect() { try { this.emailSending = true; this.emailError = ''; fetch('/invoices/<%= freshDraftPrompt.id %>/email-client', { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Accept': 'application/json' } }).then(r => r.json().then(d => ({ ok: r.ok, status: r.status, data: d }))).then(res => { if (res.ok && res.data && res.data.ok) { this.emailSending = false; this.emailSent = true; setTimeout(() => { try { window.location.reload(); } catch (e) {} }, 1200); } else { this.emailSending = false; this.emailError = (res.data && res.data.error) || 'send_failed'; } }).catch(() => { this.emailSending = false; this.emailError = 'network_error'; }); } catch (e) { this.emailSending = false; this.emailError = 'js_error'; } } }"
     >
       <div class="text-emerald-600 text-xl leading-none mt-0.5" aria-hidden="true">&#128640;</div>
       <div class="flex-1 text-sm">
@@ -272,6 +274,35 @@
             </button>
           </form>
         </div>
+        <%
+          // Direct send-by-email (Pro/Agency with client_email). Mirrors the
+          // /:id draft-send-banner direct-email surface but on the dashboard
+          // prompt — collapses the "dashboard → /:id → Send by email" step
+          // to a single tap. POST /:id/email-client both sends via Resend and
+          // atomically flips the draft to 'sent'. Reload on success so the
+          // status badge + prompt disappear. Error feedback surfaces inline
+          // (no_client_email / not_configured / send_failed mapped to
+          // human-readable copy). Free / no-client_email users keep the
+          // mailto: fallback in the share-intent row below.
+        %>
+        <% if (freshDraftPrompt.directEmail) { %>
+          <div class="mt-3" data-testid="fresh-draft-direct-email-row">
+            <button type="button"
+              data-testid="fresh-draft-direct-email"
+              x-bind:disabled="emailSending || emailSent"
+              @click="emailSendDirect()"
+              class="inline-flex items-center gap-2 bg-emerald-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed transition text-sm">
+              <span aria-hidden="true">&#128231;</span>
+              <span x-show="!emailSending && !emailSent">Send by email to <%= freshDraftPrompt.clientEmail %></span>
+              <span x-show="emailSending" x-cloak>Sending&hellip;</span>
+              <span x-show="emailSent" x-cloak>&check; Sent to <%= freshDraftPrompt.clientEmail %></span>
+            </button>
+            <p x-show="emailError" x-cloak x-text="emailError === 'no_client_email' ? 'Add a client email on this invoice first.' : emailError === 'not_configured' ? 'Email delivery is not configured yet — use another channel below.' : 'Could not send — try another channel below.'"
+              data-testid="fresh-draft-direct-email-error"
+              class="text-red-600 text-xs mt-2"></p>
+            <p class="text-xs text-emerald-700 mt-1">One tap — we deliver the invoice to your client&rsquo;s inbox and mark it Sent.</p>
+          </div>
+        <% } %>
         <%
           // One-tap share-intent buttons (WhatsApp / SMS / Copy link). When the
           // draft already has a public_token (eagerly minted at create time),
@@ -327,9 +358,11 @@
       data-testid="stale-draft-prompt"
       data-invoice-id="<%= staleDraftPrompt.id %>"
       data-hours-old="<%= staleDraftPrompt.hoursOld %>"
+      data-direct-email="<%= staleDraftPrompt.directEmail ? 'true' : 'false' %>"
       class="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 flex items-start gap-3 print:hidden"
       role="region"
       aria-label="Draft invoice waiting to be sent"
+      x-data="{ emailSending: false, emailSent: false, emailError: '', emailSendDirect() { try { this.emailSending = true; this.emailError = ''; fetch('/invoices/<%= staleDraftPrompt.id %>/email-client', { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Accept': 'application/json' } }).then(r => r.json().then(d => ({ ok: r.ok, status: r.status, data: d }))).then(res => { if (res.ok && res.data && res.data.ok) { this.emailSending = false; this.emailSent = true; setTimeout(() => { try { window.location.reload(); } catch (e) {} }, 1200); } else { this.emailSending = false; this.emailError = (res.data && res.data.error) || 'send_failed'; } }).catch(() => { this.emailSending = false; this.emailError = 'network_error'; }); } catch (e) { this.emailSending = false; this.emailError = 'js_error'; } } }"
     >
       <div class="text-amber-500 text-xl leading-none mt-0.5" aria-hidden="true">&#128228;</div>
       <div class="flex-1 text-sm">
@@ -363,6 +396,24 @@
             Open invoice &rarr;
           </a>
         </div>
+        <% if (staleDraftPrompt.directEmail) { %>
+          <div class="mt-3" data-testid="stale-draft-direct-email-row">
+            <button type="button"
+              data-testid="stale-draft-direct-email"
+              x-bind:disabled="emailSending || emailSent"
+              @click="emailSendDirect()"
+              class="inline-flex items-center gap-2 bg-amber-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-amber-700 disabled:opacity-60 disabled:cursor-not-allowed transition text-sm">
+              <span aria-hidden="true">&#128231;</span>
+              <span x-show="!emailSending && !emailSent">Send by email to <%= staleDraftPrompt.clientEmail %></span>
+              <span x-show="emailSending" x-cloak>Sending&hellip;</span>
+              <span x-show="emailSent" x-cloak>&check; Sent to <%= staleDraftPrompt.clientEmail %></span>
+            </button>
+            <p x-show="emailError" x-cloak x-text="emailError === 'no_client_email' ? 'Add a client email on this invoice first.' : emailError === 'not_configured' ? 'Email delivery is not configured yet — use another channel below.' : 'Could not send — try another channel below.'"
+              data-testid="stale-draft-direct-email-error"
+              class="text-red-600 text-xs mt-2"></p>
+            <p class="text-xs text-amber-700 mt-1">One tap — we deliver the invoice to your client&rsquo;s inbox and mark it Sent.</p>
+          </div>
+        <% } %>
         <% if (staleDraftPrompt.shareIntents && staleDraftPrompt.shareIntents.url) { %>
           <div class="mt-3 flex flex-wrap items-center gap-2" data-testid="stale-draft-share-intents">
             <span class="text-xs text-amber-700 font-medium mr-1">or tap a channel:</span>

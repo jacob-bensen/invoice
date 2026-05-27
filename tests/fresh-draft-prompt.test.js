@@ -662,6 +662,184 @@ test('view: hostile URL in shareIntents.url is HTML-attribute-escaped (XSS guard
   assert.match(html, /data-share-url="(?:&#34;|&quot;) onmouseover=(?:&#34;|&quot;)alert\(1\)(?:&#34;|&quot;)"/);
 });
 
+// ---- Layer 1 (additions): directEmail eligibility ----------------------
+//
+// Pro/Agency users with a non-empty client_email on the eligible draft get
+// the dashboard's one-tap "Send by email to <client>" surface — collapses
+// dashboard → /:id → Send-by-email to a single tap from the prompt itself.
+// Free users keep the existing mailto: share-intent fallback (the upsell
+// surfaces own the upgrade story).
+
+test('builder: directEmail=true and clientEmail carried when plan=pro and client_email is set', () => {
+  const user = { id: 1, first_sent_at: null, plan: 'pro' };
+  const invoices = [{
+    id: 7, status: 'draft', is_seed: false,
+    created_at: minutesAgo(30),
+    invoice_number: 'INV-2026-0001',
+    client_name: 'Acme', client_email: 'ap@acme.example',
+    total: 500
+  }];
+  const out = routes.buildFreshDraftPrompt(user, invoices);
+  assert.ok(out, 'prompt must build');
+  assert.strictEqual(out.directEmail, true,
+    'pro + client_email set → directEmail eligible');
+  assert.strictEqual(out.clientEmail, 'ap@acme.example',
+    'clientEmail is the trimmed raw email so the view can label the button with it');
+});
+
+test('builder: directEmail=true when plan=agency (parity with pro)', () => {
+  const user = { id: 1, first_sent_at: null, plan: 'agency' };
+  const invoices = [{
+    id: 7, status: 'draft', is_seed: false,
+    created_at: minutesAgo(30),
+    invoice_number: 'INV', client_name: 'A',
+    client_email: 'c@x.example', total: 1
+  }];
+  const out = routes.buildFreshDraftPrompt(user, invoices);
+  assert.strictEqual(out.directEmail, true);
+});
+
+test('builder: directEmail=false for plan=free even with client_email set', () => {
+  const user = { id: 1, first_sent_at: null, plan: 'free' };
+  const invoices = [{
+    id: 7, status: 'draft', is_seed: false,
+    created_at: minutesAgo(30),
+    invoice_number: 'INV', client_name: 'A',
+    client_email: 'c@x.example', total: 1
+  }];
+  const out = routes.buildFreshDraftPrompt(user, invoices);
+  assert.strictEqual(out.directEmail, false,
+    'free users do not get the direct-email surface — Pro-locked behaviour matches /:id draft-send-banner');
+  assert.strictEqual(out.clientEmail, 'c@x.example',
+    'clientEmail still surfaced so a future Pro upgrade renders the button without a refresh');
+});
+
+test('builder: directEmail=false when client_email is empty / whitespace', () => {
+  const user = { id: 1, first_sent_at: null, plan: 'pro' };
+  for (const ce of ['', '   ', null, undefined]) {
+    const invoices = [{
+      id: 7, status: 'draft', is_seed: false,
+      created_at: minutesAgo(30),
+      invoice_number: 'INV', client_name: 'A',
+      client_email: ce, total: 1
+    }];
+    const out = routes.buildFreshDraftPrompt(user, invoices);
+    assert.strictEqual(out.directEmail, false,
+      `pro user with client_email=${JSON.stringify(ce)} must not get direct-email — no recipient`);
+    assert.strictEqual(out.clientEmail, '',
+      `whitespace / null client_email normalised to '' for view consumers (got ${JSON.stringify(out.clientEmail)})`);
+  }
+});
+
+test('view: direct-email button RENDERS when freshDraftPrompt.directEmail=true', () => {
+  const html = renderDashboard({
+    freshDraftPrompt: {
+      id: 17, invoiceNumber: 'INV-2026-0042',
+      clientName: 'Acme Co.', total: 1500, ageMinutes: 30,
+      directEmail: true, clientEmail: 'ap@acme.example'
+    }
+  });
+  assert.match(html, /data-testid="fresh-draft-direct-email"/);
+  assert.match(html, /Send by email to ap@acme\.example/,
+    'button label surfaces the recipient so the user knows where it is going');
+});
+
+test('view: direct-email button OMITTED when freshDraftPrompt.directEmail=false', () => {
+  const html = renderDashboard({
+    freshDraftPrompt: {
+      id: 17, invoiceNumber: 'INV', clientName: 'A', total: 1, ageMinutes: 5,
+      directEmail: false, clientEmail: ''
+    }
+  });
+  assert.doesNotMatch(html, /data-testid="fresh-draft-direct-email"/,
+    'free / no-client-email users must not see the direct-email button — mailto: fallback remains');
+});
+
+test('view: direct-email button wires to POST /invoices/<id>/email-client with CSRF + reload', () => {
+  const html = renderDashboard({
+    freshDraftPrompt: {
+      id: 17, invoiceNumber: 'INV', clientName: 'A', total: 1, ageMinutes: 5,
+      directEmail: true, clientEmail: 'c@x.example'
+    }
+  });
+  const promptIdx = html.indexOf('data-testid="fresh-draft-prompt"');
+  const buttonIdx = html.indexOf('data-testid="fresh-draft-direct-email"');
+  assert.ok(promptIdx >= 0 && buttonIdx > promptIdx, 'button sits inside the prompt');
+  // The Alpine x-data on the prompt wires the fetch.
+  const block = html.slice(promptIdx, buttonIdx + 200);
+  assert.ok(/\/invoices\/17\/email-client/.test(block),
+    'handler must POST to /invoices/<id>/email-client');
+  assert.ok(/X-CSRF-Token[\s\S]{0,80}TEST_CSRF/.test(block),
+    'POST carries the CSRF token from locals');
+  assert.ok(/window\.location\.reload/.test(block),
+    'on success the page reloads so the status badge updates + the prompt disappears');
+  assert.ok(/@click="emailSendDirect\(\)"/.test(html.slice(buttonIdx, buttonIdx + 600)),
+    'button @click invokes the emailSendDirect handler defined on the prompt x-data');
+});
+
+test('view: direct-email button disables while sending OR after sent (no double-tap)', () => {
+  const html = renderDashboard({
+    freshDraftPrompt: {
+      id: 17, invoiceNumber: 'INV', clientName: 'A', total: 1, ageMinutes: 5,
+      directEmail: true, clientEmail: 'c@x.example'
+    }
+  });
+  const buttonIdx = html.indexOf('data-testid="fresh-draft-direct-email"');
+  const window = html.slice(buttonIdx, buttonIdx + 1000);
+  assert.ok(/emailSending\s*\|\|\s*emailSent/.test(window),
+    'button disables on emailSending OR emailSent so a double-tap does not double-send');
+  assert.ok(/Sending&hellip;|Sending…|Sending\.\.\./.test(window),
+    'in-flight state surfaces a "Sending…" label');
+  assert.ok(/Sent to c@x\.example/.test(window),
+    'success state surfaces "Sent to <client_email>"');
+});
+
+test('view: direct-email error element + human-readable copy for known reasons', () => {
+  const html = renderDashboard({
+    freshDraftPrompt: {
+      id: 17, invoiceNumber: 'INV', clientName: 'A', total: 1, ageMinutes: 5,
+      directEmail: true, clientEmail: 'c@x.example'
+    }
+  });
+  assert.match(html, /data-testid="fresh-draft-direct-email-error"/);
+  // Both known error reasons map to human copy that names the recovery path.
+  assert.match(html, /Add a client email on this invoice first\./);
+  assert.match(html, /Email delivery is not configured yet/);
+});
+
+test('view: hostile clientEmail is HTML-escaped on the button label (XSS guard)', () => {
+  const html = renderDashboard({
+    freshDraftPrompt: {
+      id: 17, invoiceNumber: 'INV', clientName: 'A', total: 1, ageMinutes: 5,
+      directEmail: true, clientEmail: '<script>alert(1)</script>@x'
+    }
+  });
+  assert.doesNotMatch(html, /<script>alert\(1\)<\/script>@x/);
+  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;@x/);
+});
+
+test('view: direct-email row sits ABOVE the share-intent (mailto:) row', () => {
+  // Positional contract — Pro users with client_email see the one-tap
+  // option first; the mailto:/whatsapp/sms fallbacks remain below for
+  // users who'd rather pick a different channel.
+  const html = renderDashboard({
+    freshDraftPrompt: {
+      id: 17, invoiceNumber: 'INV', clientName: 'A', total: 1, ageMinutes: 5,
+      directEmail: true, clientEmail: 'c@x.example',
+      shareIntents: {
+        whatsapp: 'https://wa.me/?text=hi',
+        sms: 'sms:?&body=hi',
+        mailto: 'mailto:c@x.example?subject=Invoice',
+        url: 'https://app.example/i/abc123'
+      }
+    }
+  });
+  const directIdx = html.indexOf('data-testid="fresh-draft-direct-email"');
+  const intentsIdx = html.indexOf('data-testid="fresh-draft-share-intents"');
+  assert.ok(directIdx !== -1 && intentsIdx !== -1, 'both blocks render');
+  assert.ok(directIdx < intentsIdx, 'direct-email row precedes the share-intent row');
+});
+
 // ---- Run ---------------------------------------------------------------
 
 (async () => {

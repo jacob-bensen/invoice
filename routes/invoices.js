@@ -389,6 +389,21 @@ function buildPendingQuickInvoiceBanner(user) {
   };
 }
 
+// Direct-email-send eligibility for a draft. Pro/Agency users with a
+// non-empty client_email on the draft can fire POST /:id/email-client
+// directly from the dashboard prompt — no mailto: roundtrip, no /:id
+// nav step. Free users keep the existing mailto: share-intent fallback
+// (and the Pro upsell surfaces own the upgrade story). Mirrors the
+// gating on the draft-send-banner at /invoices/:id.
+function buildDraftDirectEmail(user, draft) {
+  if (!user || !draft) return { directEmail: false, clientEmail: '' };
+  const plan = (user.plan != null) ? String(user.plan) : '';
+  const ce = draft.client_email;
+  const rawEmail = (ce != null) ? String(ce).trim() : '';
+  const directEmail = (plan === 'pro' || plan === 'agency') && rawEmail.length > 0;
+  return { directEmail, clientEmail: rawEmail };
+}
+
 function buildStaleDraftPrompt(user, draft) {
   if (!user || !draft || draft.id == null) return null;
   const createdMs = draft.created_at ? new Date(draft.created_at).getTime() : NaN;
@@ -414,13 +429,16 @@ function buildStaleDraftPrompt(user, draft) {
       url: surface.url
     };
   }
+  const { directEmail, clientEmail } = buildDraftDirectEmail(user, draft);
   return {
     id: draft.id,
     invoiceNumber: draft.invoice_number || '',
     clientName: draft.client_name || '',
     total: Number(draft.total) || 0,
     hoursOld,
-    shareIntents
+    shareIntents,
+    directEmail,
+    clientEmail
   };
 }
 
@@ -487,13 +505,16 @@ function buildFreshDraftPrompt(user, invoices, otherPrompts) {
       url: surface.url
     };
   }
+  const { directEmail, clientEmail } = buildDraftDirectEmail(user, best);
   return {
     id: best.id,
     invoiceNumber: best.invoice_number || '',
     clientName: best.client_name || '',
     total: Number(best.total) || 0,
     ageMinutes,
-    shareIntents
+    shareIntents,
+    directEmail,
+    clientEmail
   };
 }
 

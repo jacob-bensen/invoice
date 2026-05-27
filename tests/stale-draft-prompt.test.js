@@ -684,6 +684,161 @@ test('view: banner sits ABOVE the invoice-limit-progress block (positional contr
     'stale-draft prompt must render BEFORE invoice-limit-progress');
 });
 
+// ---- Layer 1 (additions): directEmail eligibility ----------------------
+//
+// Mirrors the freshDraftPrompt direct-email contract — Pro/Agency users
+// with a non-empty client_email get the dashboard's one-tap "Send by
+// email to <client>" button right inside the stale-draft prompt. Frees
+// keep the mailto: share-intent fallback.
+
+test('builder: directEmail=true and clientEmail carried when plan=pro and client_email is set', () => {
+  const r = installDbStub();
+  const out = r.buildStaleDraftPrompt(
+    { id: 1, plan: 'pro' },
+    { id: 42, invoice_number: 'INV', client_name: 'Acme',
+      client_email: 'ap@acme.example', total: 500,
+      created_at: new Date(Date.now() - 36 * 3600000) }
+  );
+  assert.ok(out);
+  assert.strictEqual(out.directEmail, true,
+    'pro + client_email set → directEmail eligible on stale-draft prompt');
+  assert.strictEqual(out.clientEmail, 'ap@acme.example');
+});
+
+test('builder: directEmail=true when plan=agency (parity with pro)', () => {
+  const r = installDbStub();
+  const out = r.buildStaleDraftPrompt(
+    { id: 1, plan: 'agency' },
+    { id: 42, invoice_number: 'INV', client_name: 'A',
+      client_email: 'c@x.example', total: 1,
+      created_at: new Date(Date.now() - 36 * 3600000) }
+  );
+  assert.strictEqual(out.directEmail, true);
+});
+
+test('builder: directEmail=false for plan=free even with client_email set', () => {
+  const r = installDbStub();
+  const out = r.buildStaleDraftPrompt(
+    { id: 1, plan: 'free' },
+    { id: 42, invoice_number: 'INV', client_name: 'A',
+      client_email: 'c@x.example', total: 1,
+      created_at: new Date(Date.now() - 36 * 3600000) }
+  );
+  assert.strictEqual(out.directEmail, false,
+    'free users do not get the direct-email surface — Pro-lock matches /:id banner');
+  assert.strictEqual(out.clientEmail, 'c@x.example');
+});
+
+test('builder: directEmail=false when client_email is empty / whitespace', () => {
+  const r = installDbStub();
+  for (const ce of ['', '   ', null, undefined]) {
+    const out = r.buildStaleDraftPrompt(
+      { id: 1, plan: 'pro' },
+      { id: 42, invoice_number: 'INV', client_name: 'A',
+        client_email: ce, total: 1,
+        created_at: new Date(Date.now() - 36 * 3600000) }
+    );
+    assert.strictEqual(out.directEmail, false,
+      `pro + client_email=${JSON.stringify(ce)} → no direct-email (no recipient)`);
+    assert.strictEqual(out.clientEmail, '',
+      'whitespace / null normalised to "" for view consumers');
+  }
+});
+
+test('view: direct-email button RENDERS when staleDraftPrompt.directEmail=true', () => {
+  const html = renderDashboard({
+    staleDraftPrompt: {
+      id: 17, invoiceNumber: 'INV', clientName: 'Acme', total: 500, hoursOld: 36,
+      directEmail: true, clientEmail: 'ap@acme.example'
+    }
+  });
+  assert.match(html, /data-testid="stale-draft-direct-email"/);
+  assert.match(html, /Send by email to ap@acme\.example/);
+});
+
+test('view: direct-email button OMITTED when staleDraftPrompt.directEmail=false', () => {
+  const html = renderDashboard({
+    staleDraftPrompt: {
+      id: 17, invoiceNumber: 'INV', clientName: 'A', total: 1, hoursOld: 36,
+      directEmail: false, clientEmail: ''
+    }
+  });
+  assert.doesNotMatch(html, /data-testid="stale-draft-direct-email"/);
+});
+
+test('view: direct-email button wires to POST /invoices/<id>/email-client with CSRF + reload', () => {
+  const html = renderDashboard({
+    staleDraftPrompt: {
+      id: 17, invoiceNumber: 'INV', clientName: 'A', total: 1, hoursOld: 36,
+      directEmail: true, clientEmail: 'c@x.example'
+    }
+  });
+  const promptIdx = html.indexOf('data-testid="stale-draft-prompt"');
+  const buttonIdx = html.indexOf('data-testid="stale-draft-direct-email"');
+  assert.ok(promptIdx >= 0 && buttonIdx > promptIdx);
+  const block = html.slice(promptIdx, buttonIdx + 200);
+  assert.ok(/\/invoices\/17\/email-client/.test(block));
+  assert.ok(/X-CSRF-Token[\s\S]{0,80}TEST_CSRF/.test(block));
+  assert.ok(/window\.location\.reload/.test(block));
+  assert.ok(/@click="emailSendDirect\(\)"/.test(html.slice(buttonIdx, buttonIdx + 600)));
+});
+
+test('view: direct-email button disables while sending OR after sent (no double-tap)', () => {
+  const html = renderDashboard({
+    staleDraftPrompt: {
+      id: 17, invoiceNumber: 'INV', clientName: 'A', total: 1, hoursOld: 36,
+      directEmail: true, clientEmail: 'c@x.example'
+    }
+  });
+  const buttonIdx = html.indexOf('data-testid="stale-draft-direct-email"');
+  const window = html.slice(buttonIdx, buttonIdx + 1000);
+  assert.ok(/emailSending\s*\|\|\s*emailSent/.test(window));
+  assert.ok(/Sending&hellip;|Sending…|Sending\.\.\./.test(window));
+  assert.ok(/Sent to c@x\.example/.test(window));
+});
+
+test('view: direct-email error element + human-readable copy for known reasons', () => {
+  const html = renderDashboard({
+    staleDraftPrompt: {
+      id: 17, invoiceNumber: 'INV', clientName: 'A', total: 1, hoursOld: 36,
+      directEmail: true, clientEmail: 'c@x.example'
+    }
+  });
+  assert.match(html, /data-testid="stale-draft-direct-email-error"/);
+  assert.match(html, /Add a client email on this invoice first\./);
+  assert.match(html, /Email delivery is not configured yet/);
+});
+
+test('view: hostile clientEmail is HTML-escaped on the button label (XSS guard)', () => {
+  const html = renderDashboard({
+    staleDraftPrompt: {
+      id: 17, invoiceNumber: 'INV', clientName: 'A', total: 1, hoursOld: 36,
+      directEmail: true, clientEmail: '<script>alert(1)</script>@x'
+    }
+  });
+  assert.doesNotMatch(html, /<script>alert\(1\)<\/script>@x/);
+  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;@x/);
+});
+
+test('view: direct-email row sits ABOVE the share-intent (mailto:) row', () => {
+  const html = renderDashboard({
+    staleDraftPrompt: {
+      id: 17, invoiceNumber: 'INV', clientName: 'A', total: 1, hoursOld: 36,
+      directEmail: true, clientEmail: 'c@x.example',
+      shareIntents: {
+        whatsapp: 'https://wa.me/?text=hi',
+        sms: 'sms:?&body=hi',
+        mailto: 'mailto:c@x.example?subject=Invoice',
+        url: 'https://app.example/i/abc'
+      }
+    }
+  });
+  const directIdx = html.indexOf('data-testid="stale-draft-direct-email"');
+  const intentsIdx = html.indexOf('data-testid="stale-draft-share-intents"');
+  assert.ok(directIdx !== -1 && intentsIdx !== -1);
+  assert.ok(directIdx < intentsIdx, 'direct-email row precedes the share-intent row');
+});
+
 // ---- Run ----------------------------------------------------------------
 
 (async () => {
