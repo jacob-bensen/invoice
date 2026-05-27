@@ -9,6 +9,9 @@
  *       parseDateRange accepts a YYYY-MM-DD pair
  *       parseDateRange rejects malformed dates / out-of-order / >365-day spans
  *       loadFunnelCounts issues the right SQL params and parses string ints
+ *       loadFunnelByDay issues a GROUP BY day SQL + parses string ints + DESC
+ *       loadFunnelByDay tolerates empty + null rows and throws on missing args
+ *       buildDailyRows shape + sentRate; zero-signup day yields null; non-array → []
  *       buildStageRows computes from-previous and from-cohort ratios
  *       buildStageRows yields null ratios on a zero cohort (no NaN leak)
  *       formatPct renders 12.3% / — for null
@@ -275,7 +278,13 @@ async function testBuildReportHappyPath() {
   clearReq('../lib/activation-funnel');
   const { buildReport } = require('../lib/activation-funnel');
   const fakeDb = {
-    async query() {
+    async query(sql) {
+      if (/GROUP BY/i.test(sql)) {
+        return { rows: [
+          { day: '2026-05-10', signed_up: 30, welcomed: 22, returned: 18, created_real: 12, sent_one: 9, got_paid: 3 },
+          { day: '2026-05-09', signed_up: 20, welcomed: 18, returned: 12, created_real: 8,  sent_one: 6, got_paid: 2 }
+        ] };
+      }
       return { rows: [{
         signed_up: 50, welcomed: 40, returned: 30, created_real: 20, sent_one: 15, got_paid: 5
       }] };
@@ -298,13 +307,104 @@ async function testBuildReportHappyPath() {
   assert.strictEqual(r.stages[5].count, 5);
   assert.ok(typeof r.generatedAt === 'string' && r.generatedAt.endsWith('Z'),
     'generatedAt must be ISO');
+  assert.ok(Array.isArray(r.daily), 'report.daily must be an array');
+  assert.strictEqual(r.daily.length, 2, 'two daily rows');
+  assert.strictEqual(r.daily[0].day, '2026-05-10');
+  assert.strictEqual(r.daily[0].signed_up, 30);
+  assert.ok(Math.abs(r.daily[0].sentRate - (9 / 30)) < 1e-9,
+    'sentRate computed per-day from sent_one / signed_up');
+}
+
+async function testLoadFunnelByDaySqlContract() {
+  clearReq('../lib/activation-funnel');
+  const { loadFunnelByDay, parseDateRange } = require('../lib/activation-funnel');
+  const range = parseDateRange({ from: '2026-05-01', to: '2026-05-10' }, new Date());
+  const calls = [];
+  const fakeDb = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      return {
+        rows: [
+          { day: '2026-05-10', signed_up: '3', welcomed: '2', returned: '1', created_real: '1', sent_one: 0, got_paid: 0 },
+          { day: '2026-05-09', signed_up: 1,   welcomed: 1,   returned: 0,   created_real: 0,   sent_one: 0, got_paid: 0 }
+        ]
+      };
+    }
+  };
+  const rows = await loadFunnelByDay(fakeDb, range);
+  assert.strictEqual(calls.length, 1, 'one SQL round-trip for the per-day breakdown');
+  const sql = calls[0].sql;
+  assert.ok(/FROM users/i.test(sql), 'SQL must scan users');
+  assert.ok(/GROUP BY/i.test(sql), 'must GROUP BY for per-day aggregation');
+  assert.ok(/DATE_TRUNC\('day', created_at AT TIME ZONE 'UTC'\)/.test(sql),
+    'must truncate to UTC day so buckets are TZ-stable');
+  assert.ok(/to_char/i.test(sql),
+    'must to_char the bucket so the result is a stable YYYY-MM-DD string regardless of pg client config');
+  assert.ok(/ORDER BY .* DESC/i.test(sql),
+    'must order newest-first so the operator eye lands on the latest cohort');
+  assert.ok(/welcome_email_sent_at IS NOT NULL/.test(sql),
+    'must aggregate welcomed (drift-guard: same six stages as loadFunnelCounts)');
+  assert.ok(/last_login_at IS NOT NULL/.test(sql), 'must aggregate returned');
+  assert.ok(/invoice_count > 0/.test(sql), 'must aggregate created_real');
+  assert.ok(/status IN \('sent','paid','overdue'\)/.test(sql), 'must subquery invoices for sent_one');
+  assert.ok(/first_paid_at IS NOT NULL/.test(sql), 'must aggregate got_paid');
+  assert.strictEqual(calls[0].params.length, 2, 'two SQL params (from, toExclusive)');
+  assert.strictEqual(isoDate(calls[0].params[0]), '2026-05-01');
+  assert.strictEqual(isoDate(calls[0].params[1]), '2026-05-11');
+  assert.deepStrictEqual(rows, [
+    { day: '2026-05-10', signed_up: 3, welcomed: 2, returned: 1, created_real: 1, sent_one: 0, got_paid: 0 },
+    { day: '2026-05-09', signed_up: 1, welcomed: 1, returned: 0, created_real: 0, sent_one: 0, got_paid: 0 }
+  ]);
+}
+
+async function testLoadFunnelByDayHandlesEmptyAndNullRows() {
+  clearReq('../lib/activation-funnel');
+  const { loadFunnelByDay, parseDateRange } = require('../lib/activation-funnel');
+  const range = parseDateRange({ from: '2026-05-01', to: '2026-05-10' }, new Date());
+  // pg returns rows=[] when GROUP BY has no signups; the helper must
+  // tolerate that (the route still renders, the view shows "no signups").
+  const empty = await loadFunnelByDay({ async query() { return { rows: [] }; } }, range);
+  assert.deepStrictEqual(empty, [], 'empty cohort returns empty array');
+  // Null-rows defence-in-depth — a future pg driver upgrade that returns
+  // { rows: null } shouldn't crash the report.
+  const nullRows = await loadFunnelByDay({ async query() { return { rows: null }; } }, range);
+  assert.deepStrictEqual(nullRows, []);
+  // Missing range + missing db both throw — fail loud, not silent zeros.
+  await assert.rejects(() => loadFunnelByDay(null, range), /requires a db/);
+  await assert.rejects(() => loadFunnelByDay({ async query() {} }, null), /requires a parsed range/);
+}
+
+async function testBuildDailyRowsShapeAndSentRate() {
+  clearReq('../lib/activation-funnel');
+  const { buildDailyRows } = require('../lib/activation-funnel');
+  const rows = buildDailyRows([
+    { day: '2026-05-10', signed_up: 10, welcomed: 8, returned: 6, created_real: 4, sent_one: 2, got_paid: 1 },
+    { day: '2026-05-09', signed_up: 0,  welcomed: 0, returned: 0, created_real: 0, sent_one: 0, got_paid: 0 }
+  ]);
+  assert.strictEqual(rows.length, 2);
+  assert.strictEqual(rows[0].day, '2026-05-10');
+  assert.strictEqual(rows[0].signed_up, 10);
+  assert.strictEqual(rows[0].sent_one, 2);
+  assert.strictEqual(rows[0].sentRate, 0.2, '2/10 = 0.2');
+  assert.strictEqual(rows[1].signed_up, 0);
+  assert.strictEqual(rows[1].sentRate, null,
+    'zero-signup day must yield null sentRate so the view renders an em-dash, not NaN');
+  // Non-array input is tolerated (returns []) — defence against a future
+  // refactor that hands the helper a malformed payload.
+  assert.deepStrictEqual(buildDailyRows(null), []);
+  assert.deepStrictEqual(buildDailyRows(undefined), []);
+  assert.deepStrictEqual(buildDailyRows('not-an-array'), []);
 }
 
 // ---------- Route integration tests -----------------------------------------
 
-// In-memory query stub: each test sets `nextRows` to drive the response, and
-// `nextError` to force a SQL throw.
+// In-memory query stub. The buildReport() helper issues TWO queries — one
+// aggregate (loadFunnelCounts, no GROUP BY) + one per-day (loadFunnelByDay,
+// GROUP BY DATE_TRUNC). The stub branches on the SQL so each test can set
+// the aggregate row(s) AND the daily row(s) independently. `nextError`
+// throws on the FIRST query (covers both helpers' error paths).
 let nextRows = [];
+let nextDailyRows = [];
 let nextError = null;
 const queryCalls = [];
 
@@ -312,6 +412,10 @@ function resetDbStub() {
   nextRows = [{
     signed_up: 12, welcomed: 9, returned: 7, created_real: 5, sent_one: 3, got_paid: 1
   }];
+  nextDailyRows = [
+    { day: '2026-05-15', signed_up: 7, welcomed: 6, returned: 5, created_real: 3, sent_one: 2, got_paid: 1 },
+    { day: '2026-05-14', signed_up: 5, welcomed: 3, returned: 2, created_real: 2, sent_one: 1, got_paid: 0 }
+  ];
   nextError = null;
   queryCalls.length = 0;
 }
@@ -322,7 +426,8 @@ const fakeDbModule = {
     async query(sql, params) {
       queryCalls.push({ sql, params });
       if (nextError) throw nextError;
-      return { rows: nextRows };
+      const isDaily = /GROUP BY/i.test(sql);
+      return { rows: isDaily ? nextDailyRows : nextRows };
     }
   }
 };
@@ -427,8 +532,17 @@ async function testRouteRendersHtmlForOperator() {
     'cohort size 12 must appear in the body');
   assert.ok(res.body.includes('noindex'),
     'admin pages must opt out of indexing');
-  assert.strictEqual(queryCalls.length, 1,
-    'one SQL query per render (no N+1)');
+  assert.strictEqual(queryCalls.length, 2,
+    'two SQL queries per render: one aggregate, one per-day GROUP BY');
+  // Per-day cohort card surfaces with one row per signup day.
+  assert.ok(res.body.includes('data-testid="admin-activation-daily-card"'),
+    'per-day cohort card must render below the aggregate stages table');
+  assert.ok(res.body.includes('data-testid="admin-activation-daily-row-2026-05-15"'),
+    'most-recent daily-row testid must render');
+  assert.ok(res.body.includes('data-testid="admin-activation-daily-row-2026-05-14"'),
+    'older daily-row testid must render too');
+  assert.ok(/Daily signup cohorts/.test(res.body),
+    'daily card heading must appear');
 }
 
 async function testRouteRendersJsonForOperator() {
@@ -452,6 +566,17 @@ async function testRouteRendersJsonForOperator() {
   assert.strictEqual(body.stages[5].key, 'got_paid');
   assert.strictEqual(body.stages[5].count, 1);
   assert.strictEqual(body.stages[1].conversionFromCohort, 9 / 12);
+  // Per-day cohort breakdown surfaces in JSON too — operator scripts /
+  // dashboards consuming this endpoint get a machine-readable per-day signal
+  // without having to scrape the HTML.
+  assert.ok(Array.isArray(body.daily), 'JSON must include a daily[] array');
+  assert.strictEqual(body.daily.length, 2, 'two daily rows seeded in stub');
+  assert.strictEqual(body.daily[0].day, '2026-05-15', 'newest day comes first');
+  assert.strictEqual(body.daily[0].signed_up, 7);
+  assert.strictEqual(body.daily[0].sent_one, 2);
+  assert.ok(Math.abs(body.daily[0].sentRate - (2 / 7)) < 1e-9,
+    'sentRate = sent_one / signed_up — the PLAN.md terminal funnel conversion');
+  assert.strictEqual(body.daily[1].day, '2026-05-14');
 }
 
 async function testJsonRoute404ForNonOperator() {
@@ -503,6 +628,23 @@ async function testJsonRoute500OnSqlThrow() {
   assert.strictEqual(body.error, 'report_failed');
 }
 
+async function testRouteEmptyDailyShowsHintNotTable() {
+  resetDbStub();
+  // Force aggregate to a zero-cohort + empty daily rows — simulates a date
+  // range with no signups. The view should render the empty-state hint
+  // instead of an empty table.
+  nextRows = [{ signed_up: 0, welcomed: 0, returned: 0, created_real: 0, sent_one: 0, got_paid: 0 }];
+  nextDailyRows = [];
+  process.env.OPERATOR_EMAIL = 'op@x.com';
+  const app = buildApp({ id: 1, email: 'op@x.com' });
+  const res = await request(app, 'GET', '/admin/activation');
+  assert.strictEqual(res.status, 200);
+  assert.ok(res.body.includes('data-testid="admin-activation-daily-empty"'),
+    'empty-cohort window must surface the hint testid');
+  assert.ok(!/data-testid="admin-activation-daily-card"/.test(res.body),
+    'daily card must NOT render on zero-cohort window (no empty table shipped to operator)');
+}
+
 async function testRobotsTxtBlocksAdminPath() {
   // server.js renders robots.txt inline; load it through a minimal app build.
   const serverModulePath = require.resolve('../server.js');
@@ -526,6 +668,9 @@ async function run() {
     ['parseDateRange rejects out-of-order ranges', testParseDateRangeRejectsOutOfOrder],
     ['parseDateRange rejects > 365-day spans (365 OK)', testParseDateRangeRejectsTooWide],
     ['loadFunnelCounts issues the right SQL + params', testLoadFunnelCountsIssuesRightSql],
+    ['loadFunnelByDay SQL contract (GROUP BY day + same 6 stages + DESC)', testLoadFunnelByDaySqlContract],
+    ['loadFunnelByDay tolerates empty/null rows + throws on missing args', testLoadFunnelByDayHandlesEmptyAndNullRows],
+    ['buildDailyRows computes sentRate; zero-signup day → null; non-array → []', testBuildDailyRowsShapeAndSentRate],
     ['buildStageRows computes from-prev / from-cohort', testBuildStageRowsComputesRatios],
     ['buildStageRows yields null ratios on zero cohort (no NaN)', testBuildStageRowsZeroCohortNoNaN],
     ['STAGE_DEFS canonical order + returned stage label/milestone', testReturnedStageOrderAndMilestoneLabel],
@@ -542,6 +687,7 @@ async function run() {
     ['route 400 on invalid date input', testRoute400OnInvalidDate],
     ['route 500 surfaces SQL throw (HTML)', testRoute500OnSqlThrow],
     ['route 500 surfaces SQL throw (JSON)', testJsonRoute500OnSqlThrow],
+    ['route empty daily window renders hint, not an empty table', testRouteEmptyDailyShowsHintNotTable],
     ['robots.txt disallows /admin/', testRobotsTxtBlocksAdminPath]
   ];
 

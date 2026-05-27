@@ -93,6 +93,52 @@
       </table>
     </div>
 
+    <% if (Array.isArray(report.daily) && report.daily.length > 0) { %>
+      <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden mt-6" data-testid="admin-activation-daily-card">
+        <div class="px-5 py-4 border-b border-gray-100">
+          <p class="text-sm text-gray-500">Daily signup cohorts</p>
+          <p class="text-base font-semibold text-gray-900">
+            One row per signup day &mdash; PLAN.md &ldquo;positive day-over-day flow&rdquo; signal.
+          </p>
+          <p class="text-xs text-gray-500 mt-1">
+            Days are UTC. <em>Sent rate</em> = sent_one / signups for that day&rsquo;s cohort (the Primary Objective&rsquo;s terminal funnel conversion).
+          </p>
+        </div>
+        <table class="w-full text-sm" data-testid="admin-activation-daily-table">
+          <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+            <tr>
+              <th class="text-left  px-5 py-2 font-medium">Day (UTC)</th>
+              <th class="text-right px-5 py-2 font-medium">Signups</th>
+              <th class="text-right px-5 py-2 font-medium">Welcomed</th>
+              <th class="text-right px-5 py-2 font-medium">Returned</th>
+              <th class="text-right px-5 py-2 font-medium">Created</th>
+              <th class="text-right px-5 py-2 font-medium">Sent</th>
+              <th class="text-right px-5 py-2 font-medium">Paid</th>
+              <th class="text-right px-5 py-2 font-medium">Sent rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% report.daily.forEach(function (row) { %>
+              <tr class="border-t border-gray-100" data-testid="admin-activation-daily-row-<%= row.day %>">
+                <td class="px-5 py-2 font-mono text-gray-900"><%= row.day %></td>
+                <td class="px-5 py-2 text-right font-mono text-gray-900" data-testid="admin-activation-daily-signed_up-<%= row.day %>"><%= row.signed_up.toLocaleString('en-US') %></td>
+                <td class="px-5 py-2 text-right font-mono text-gray-700"><%= row.welcomed.toLocaleString('en-US') %></td>
+                <td class="px-5 py-2 text-right font-mono text-gray-700"><%= row.returned.toLocaleString('en-US') %></td>
+                <td class="px-5 py-2 text-right font-mono text-gray-700"><%= row.created_real.toLocaleString('en-US') %></td>
+                <td class="px-5 py-2 text-right font-mono text-gray-700"><%= row.sent_one.toLocaleString('en-US') %></td>
+                <td class="px-5 py-2 text-right font-mono text-gray-700"><%= row.got_paid.toLocaleString('en-US') %></td>
+                <td class="px-5 py-2 text-right font-mono text-gray-900" data-testid="admin-activation-daily-sent_rate-<%= row.day %>"><%= formatPct(row.sentRate) %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    <% } else if (Array.isArray(report.daily)) { %>
+      <p class="text-xs text-gray-400 mt-6" data-testid="admin-activation-daily-empty">
+        No signups in this window &mdash; widen the date range to see a daily cohort breakdown.
+      </p>
+    <% } %>
+
     <p class="text-xs text-gray-400 mt-3" data-testid="admin-activation-generated-at">
       Generated <%= report.generatedAt %>.
     </p>
