@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="DecentInvoice">
+  <rect width="512" height="512" fill="#4f46e5"/>
+  <g fill="#ffffff">
+    <rect x="170" y="128" width="44" height="256" rx="6"/>
+    <path d="M214 128 h44 a128 128 0 0 1 0 256 h-44 v-44 h44 a84 84 0 0 0 0 -168 h-44 z"/>
+  </g>
+</svg>

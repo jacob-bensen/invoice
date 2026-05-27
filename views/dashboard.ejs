@@ -1355,6 +1355,86 @@
       </table>
     </div>
   <% } %>
+
+  <!--
+    iOS "Add to Home Screen" install tile (Milestone 1 — signup → first
+    dashboard re-entry). Chrome/Edge/Android show a native install affordance
+    in the URL bar or via beforeinstallprompt, but iOS Safari hides the path
+    inside the Share sheet where most users never look. A home-screen icon
+    converts the app from "another URL I have to remember" into a one-tap
+    launcher that visibly compounds re-entry rate for the dominant freelancer
+    device. Only renders when (a) UA detection identifies iOS Safari (not
+    Chrome iOS, not Firefox iOS, not in-app webviews), (b) the page is NOT
+    already running in standalone display-mode, and (c) the user hasn't
+    dismissed it (localStorage). Self-contained Alpine factory — no server
+    state, no DB hit, no PII.
+  -->
+  <div
+    x-data="installToHomeScreenTile()"
+    x-init="evaluate()"
+    x-show="visible"
+    x-cloak
+    data-testid="install-home-screen-tile"
+    class="mt-8 rounded-2xl border border-brand-200 bg-brand-50 px-5 py-4 flex items-start gap-3 print:hidden"
+    role="region"
+    aria-label="Add DecentInvoice to your home screen"
+  >
+    <div class="text-brand-600 text-xl leading-none mt-0.5" aria-hidden="true">📲</div>
+    <div class="flex-1 text-sm">
+      <p class="font-semibold text-brand-800">Add DecentInvoice to your home screen</p>
+      <p class="text-brand-700 mt-0.5">
+        Open invoices and chase payment in one tap, no more typing the URL.
+        Tap the
+        <span aria-hidden="true" class="inline-flex items-center justify-center w-4 h-5 border border-brand-500 rounded text-[10px] font-bold align-middle">&#x2191;</span>
+        Share button below, then choose
+        <strong>Add to Home Screen</strong>.
+      </p>
+      <button
+        type="button"
+        data-testid="install-home-screen-dismiss"
+        @click="dismiss()"
+        class="mt-2 text-brand-700 text-xs font-medium underline hover:text-brand-900"
+      >Not now</button>
+    </div>
+  </div>
+
+  <script data-testid="install-home-screen-script">
+    function installToHomeScreenTile() {
+      return {
+        visible: false,
+        STORAGE_KEY: 'qi.installTileDismissed',
+        isIOSSafari() {
+          try {
+            var ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+            if (!/iPhone|iPad|iPod/i.test(ua)) return false;
+            // Exclude Chrome iOS (CriOS), Firefox iOS (FxiOS), Edge (EdgiOS), in-app webviews (FBAN/FBAV/Instagram/Line/WeChat).
+            if (/CriOS|FxiOS|EdgiOS|OPiOS|FBAN|FBAV|Instagram|Line|MicroMessenger/.test(ua)) return false;
+            // Real Safari has "Safari/" in the UA.
+            return /Safari\//.test(ua);
+          } catch (e) { return false; }
+        },
+        isStandalone() {
+          try {
+            if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
+            if (typeof navigator !== 'undefined' && navigator.standalone === true) return true;
+          } catch (e) {}
+          return false;
+        },
+        readDismissed() {
+          try { return typeof localStorage !== 'undefined' && localStorage.getItem(this.STORAGE_KEY) === '1'; }
+          catch (e) { return false; }
+        },
+        evaluate() {
+          this.visible = this.isIOSSafari() && !this.isStandalone() && !this.readDismissed();
+        },
+        dismiss() {
+          this.visible = false;
+          try { if (typeof localStorage !== 'undefined') localStorage.setItem(this.STORAGE_KEY, '1'); }
+          catch (e) {}
+        }
+      };
+    }
+  </script>
 </div>
 
 <%- include('partials/upgrade-modal') %>
