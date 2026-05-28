@@ -8,6 +8,30 @@
     email: invoice && invoice.client_email ? invoice.client_email : '',
     address: invoice && invoice.client_address ? invoice.client_address : ''
   };
+  // Inline business_name + payment_instructions capture, mirroring
+  // /invoices/quick. A user who lands on the advanced form because they need
+  // line items / tax / custom dates still ships their first invoice — and
+  // the same activation gap applies: without business_name the rendered
+  // header reads "Your Business" and the public share page introduces them
+  // as "A DecentInvoice user"; without payment_instructions the free-plan
+  // share link offers no way to actually pay. Edit-flow (`invoice` set)
+  // suppresses the blocks — the user is past activation by then. Server-
+  // side gating in POST /invoices/new is the canonical guard against
+  // forged payloads.
+  const planNameNew = (locals.user && typeof user.plan === 'string') ? user.plan : 'free';
+  const ownerBusinessNameNew = (locals.user && typeof user.business_name === 'string')
+    ? user.business_name.trim() : '';
+  const showBusinessNameCaptureNew = !invoice && ownerBusinessNameNew.length === 0;
+  const ownerPaymentInstructionsNew = (locals.user && typeof user.payment_instructions === 'string')
+    ? user.payment_instructions.trim() : '';
+  const showPaymentInstructionsCaptureNew = !invoice
+    && planNameNew === 'free'
+    && ownerPaymentInstructionsNew.length === 0;
+  const submittedNew = (locals.submitted && typeof submitted === 'object') ? submitted : {};
+  const initialBusinessNameNew = typeof submittedNew.business_name === 'string'
+    ? submittedNew.business_name : '';
+  const initialPaymentInstructionsNew = typeof submittedNew.payment_instructions === 'string'
+    ? submittedNew.payment_instructions : '';
 %>
 <div class="max-w-4xl mx-auto px-4 py-10" x-data="invoiceEditor(<%= JSON.stringify(invoice ? invoice.items : []) %>, <%= JSON.stringify(recentClientsList) %>, <%= JSON.stringify(initialClient) %>)">
   <div class="flex items-center gap-3 mb-8">
@@ -24,6 +48,27 @@
 
   <form action="/invoices/<%= invoice ? invoice.id + '/edit' : 'new' %>" method="POST">
     <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+
+    <% if (showBusinessNameCaptureNew) { %>
+      <div data-testid="invoice-new-business-name-block"
+        class="mb-6 rounded-lg border border-sky-200 bg-sky-50 p-4">
+        <label class="block text-sm font-semibold text-sky-900 mb-1" for="new-business-name">
+          💼 Your business name <span class="text-sky-700 font-normal text-xs">(appears as the sender on every invoice)</span>
+        </label>
+        <p class="text-xs text-sky-800 mb-2">
+          Without this your invoice will just say &ldquo;Your Business&rdquo; at the top &mdash; clients are less likely to pay something that doesn&rsquo;t look branded.
+        </p>
+        <input id="new-business-name" type="text" name="business_name"
+          maxlength="255"
+          data-testid="invoice-new-business-name-input"
+          placeholder="Acme Studio, or your own name"
+          value="<%= initialBusinessNameNew %>"
+          class="w-full border border-sky-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400">
+        <p class="text-xs text-sky-700 mt-2">
+          Saved to your account &mdash; every invoice you share from now on will show this.
+        </p>
+      </div>
+    <% } %>
     <div class="grid md:grid-cols-2 gap-6">
 
       <!-- Invoice Details -->
@@ -179,6 +224,26 @@
       <textarea name="notes" rows="3" placeholder="Payment terms, bank details, thank you note..."
         class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"><%= invoice ? (invoice.notes || '') : '' %></textarea>
     </div>
+
+    <% if (showPaymentInstructionsCaptureNew) { %>
+      <div data-testid="invoice-new-payment-instructions-block"
+        class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
+        <label class="block text-sm font-semibold text-amber-900 mb-1" for="new-payment-instructions">
+          💰 How will your client pay you? <span class="text-amber-700 font-normal text-xs">(optional, shows on the share link)</span>
+        </label>
+        <p class="text-xs text-amber-800 mb-2">
+          On the free plan your share link has no Pay button — give your client a way to send the money. Venmo, Zelle, bank, cheque, anything.
+        </p>
+        <textarea id="new-payment-instructions" name="payment_instructions"
+          rows="3" maxlength="2000"
+          data-testid="invoice-new-payment-instructions-input"
+          placeholder="Venmo @yourhandle&#10;Zelle: you@bank.com&#10;Bank: Chase, routing 021000021, acct 1234567890"
+          class="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm font-mono bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400"><%= initialPaymentInstructionsNew %></textarea>
+        <p class="text-xs text-amber-700 mt-2">
+          Saved to your account — every invoice you share from now on will show these.
+        </p>
+      </div>
+    <% } %>
 
     <!-- Actions -->
     <div class="flex items-center justify-between mt-6">

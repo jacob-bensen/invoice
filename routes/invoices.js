@@ -1400,6 +1400,10 @@ router.post('/new', requireAuth, [
       title: 'New Invoice',
       invoice: null, invoiceNumber, recentClients, user,
       flash: { type: 'error', message: errors.array()[0].msg },
+      submitted: {
+        business_name: req.body.business_name || '',
+        payment_instructions: req.body.payment_instructions || ''
+      },
       noindex: true
     });
   }
@@ -1433,6 +1437,43 @@ router.post('/new', requireAuth, [
     } catch (e) {
       console.error('New invoice public-token mint failed:', e && e.message);
     }
+
+    // Inline business_name capture, mirroring POST /quick. The /new advanced
+    // form is the activation path for users with multi-line work; without
+    // this, their first share lands with a "Your Business" header. Gated
+    // server-side on the user's current value being empty so a forged
+    // payload can't stomp an existing brand. Plan-agnostic.
+    if (typeof req.body.business_name === 'string'
+        && (!user.business_name || !String(user.business_name).trim())) {
+      const bizName = req.body.business_name.trim();
+      if (bizName.length > 0 && bizName.length <= 255) {
+        try {
+          await db.updateUser(req.session.user.id, { business_name: bizName });
+        } catch (e) {
+          console.error('New invoice business-name save failed:', e && e.message);
+        }
+      }
+    }
+
+    // Inline payment_instructions capture, mirroring POST /quick. Free-tier
+    // owners have no Stripe Pay button; the public /i/<token> share page
+    // otherwise has no payment path for the client. Server hard-gates on
+    // plan=free AND no existing instructions so a Pro user (who has a Pay
+    // Link) or a free user who already saved instructions can't overwrite
+    // via a forged payload.
+    if (typeof req.body.payment_instructions === 'string'
+        && user.plan === 'free'
+        && (!user.payment_instructions || !String(user.payment_instructions).trim())) {
+      const payInstr = req.body.payment_instructions.trim();
+      if (payInstr.length > 0 && payInstr.length <= 2000) {
+        try {
+          await db.updateUser(req.session.user.id, { payment_instructions: payInstr });
+        } catch (e) {
+          console.error('New invoice payment-instructions save failed:', e && e.message);
+        }
+      }
+    }
+
     res.redirect(`/invoices/${invoice.id}`);
   } catch (err) {
     console.error('Create invoice error:', err);
@@ -1443,6 +1484,10 @@ router.post('/new', requireAuth, [
     res.render('invoice-form', {
       title: 'New Invoice', invoice: null, invoiceNumber, recentClients, user,
       flash: { type: 'error', message: 'Failed to save invoice. Please try again.' },
+      submitted: {
+        business_name: req.body.business_name || '',
+        payment_instructions: req.body.payment_instructions || ''
+      },
       noindex: true
     });
   }
