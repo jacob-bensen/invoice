@@ -884,6 +884,54 @@ const db = {
   },
 
   /*
+   * Inactive-user re-engagement cron query (Milestone 1 — signup → first
+   * dashboard re-entry, for the activated-but-silent cohort). Picks up
+   * users who already activated (`invoice_count > 0`) and then went silent
+   * for `minInactiveHours` past their last_login_at — the cohort every
+   * existing cron misses because the no-invoice gates require
+   * invoice_count=0, the draft gates require an open draft, and the
+   * sent-side gates require recent invoice activity. A friendly
+   * "anything new to bill?" email pulls them back; every return re-arms
+   * the full Milestone 2-4 cascade for any new invoice they create.
+   * One-shot per user (inactive_reengagement_sent_at IS NULL). Honours
+   * the lifecycle opt-out. Bounded batch so a legacy backlog doesn't
+   * blast SMTP. Sanitises non-numeric / negative input to the default.
+   */
+  async getUsersForInactiveReengagement(minInactiveHours = 14 * 24) {
+    const hours = Number.isFinite(minInactiveHours) && minInactiveHours > 0
+      ? Math.floor(minInactiveHours)
+      : 14 * 24;
+    const { rows } = await pool.query(
+      `SELECT id, email, name, business_name, reply_to_email, business_email,
+              last_login_at, invoice_count, unsubscribe_token
+         FROM users
+        WHERE invoice_count > 0
+          AND email IS NOT NULL
+          AND welcome_email_sent_at IS NOT NULL
+          AND lifecycle_emails_opted_out_at IS NULL
+          AND last_login_at IS NOT NULL
+          AND last_login_at <= NOW() - ($1 * INTERVAL '1 hour')
+          AND inactive_reengagement_sent_at IS NULL
+        ORDER BY last_login_at ASC
+        LIMIT 500`,
+      [hours]
+    );
+    return rows;
+  },
+
+  async markInactiveReengagementSent(userId) {
+    if (!userId) return null;
+    const { rows } = await pool.query(
+      `UPDATE users SET inactive_reengagement_sent_at = NOW(), updated_at = NOW()
+         WHERE id = $1
+           AND inactive_reengagement_sent_at IS NULL
+         RETURNING id, inactive_reengagement_sent_at`,
+      [userId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Pending-quick-invoice nudge cron query (Milestone 2). Picks up users who
    * autosaved a /invoices/quick draft (pending_quick_invoice IS NOT NULL),
    * bounced before submitting, and are now `minAgeHours` past their last

@@ -307,5 +307,14 @@ app.listen(PORT, () => {
     } catch (err) {
       console.error('[payment-claim-followup] startup failed:', err && err.message);
     }
+
+    try {
+      const { startInactiveReengagementJob } = require('./jobs/inactive-reengagement');
+      const ir = startInactiveReengagementJob();
+      if (ir && ir.ok) console.log(`[inactive-reengagement] scheduled (${ir.schedule})`);
+      else console.warn('[inactive-reengagement] not scheduled:', ir && ir.reason);
+    } catch (err) {
+      console.error('[inactive-reengagement] startup failed:', err && err.message);
+    }
   }
 });

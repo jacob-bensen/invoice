@@ -481,3 +481,27 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS lifecycle_emails_opted_out_at TIMESTA
 -- like "google" / "twitter" / "freelance-developer-niche" fits comfortably).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS signup_source VARCHAR(32);
 CREATE INDEX IF NOT EXISTS idx_users_signup_source ON users(signup_source) WHERE signup_source IS NOT NULL;
+
+-- Inactive-user re-engagement stamp (Milestone 1 — signup → first dashboard
+-- re-entry, applied to the activated-but-silent cohort). The full
+-- activation cascade (no-invoice-nudge x2, stale-draft x2, sent-not-viewed
+-- nudge, client-viewed-followup x2, overdue-digest, payment-claim-followup,
+-- pending-quick-invoice-nudge) fires on invoice-state cohorts. A user who
+-- ALREADY activated once (invoice_count > 0) and then went silent for 14+
+-- days falls through every existing cron: the no-invoice gates require
+-- invoice_count = 0, the draft gates require an open draft, the sent-side
+-- gates require recent invoice activity. This cron picks up activated users
+-- who haven't logged in for `minInactiveHours` hours with a friendly
+-- "anything new to bill?" magic-login CTA back to /invoices/quick. One-shot
+-- per user — a user silent after one re-engagement nudge isn't moved by a
+-- second. Bounded batch (LIMIT 500) so a legacy backlog doesn't blast SMTP
+-- in a single tick. Honours `lifecycle_emails_opted_out_at` like every
+-- other lifecycle email.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS inactive_reengagement_sent_at TIMESTAMP;
+CREATE INDEX IF NOT EXISTS idx_users_inactive_reengagement
+  ON users(last_login_at)
+  WHERE invoice_count > 0
+    AND welcome_email_sent_at IS NOT NULL
+    AND lifecycle_emails_opted_out_at IS NULL
+    AND last_login_at IS NOT NULL
+    AND inactive_reengagement_sent_at IS NULL;
