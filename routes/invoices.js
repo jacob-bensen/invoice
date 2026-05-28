@@ -86,7 +86,8 @@ router.get('/', requireAuth, async (req, res) => {
     const firstRealInvoicePrompt = buildFirstRealInvoicePrompt(user, invoices);
     const freshDraftPrompt = buildFreshDraftPrompt(user, invoices, { staleDraftPrompt });
     const repeatClientPrompt = buildRepeatClientPrompt(invoices);
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, paymentClaimPrompt, recentViewPrompt, clientViewedFollowupPrompt, sentNotViewedPrompt, overduePrompt, firstRealInvoicePrompt, freshDraftPrompt, repeatClientPrompt, pendingQuickInvoice, noindex: true });
+    const tableFollowUpIntents = buildTableFollowUpIntents(invoices);
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, paymentClaimPrompt, recentViewPrompt, clientViewedFollowupPrompt, sentNotViewedPrompt, overduePrompt, firstRealInvoicePrompt, freshDraftPrompt, repeatClientPrompt, pendingQuickInvoice, tableFollowUpIntents, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
@@ -102,7 +103,7 @@ router.get('/', requireAuth, async (req, res) => {
       firstRealInvoicePrompt: null,
       freshDraftPrompt: null,
       repeatClientPrompt: null,
-      pendingQuickInvoice: null, noindex: true
+      pendingQuickInvoice: null, tableFollowUpIntents: {}, noindex: true
     });
   }
 });
@@ -849,6 +850,50 @@ function buildRepeatClientPrompt(invoices, opts) {
     total: Number(best.total) || 0,
     daysAgo
   };
+}
+
+/*
+ * Per-row "Send reminder" follow-up surface for the dashboard invoices table
+ * (Milestone 4 — first invoice sent → first payment received). The existing
+ * prompt banners (recentViewPrompt / clientViewedFollowupPrompt /
+ * sentNotViewedPrompt / overduePrompt) each surface ONE invoice at a time —
+ * the oldest qualifying row in each cohort. A freelancer with multiple open
+ * unpaid invoices only gets a single banner-driven retry; the rest of the
+ * unpaid list sits in the table with no inline action, forcing a nav into
+ * /invoices/:id to reach the share-intent buttons.
+ *
+ * This helper produces a `{ [invoiceId]: { url, followUpIntents } }` map
+ * keyed by invoice id, populated only for rows that:
+ *   - are real (not is_seed),
+ *   - sit in status 'sent' or 'overdue' (drafts have their own prompt path;
+ *     paid rows don't need follow-up),
+ *   - have no payment_claimed_at (the client says they paid — verify the
+ *     deposit and mark-paid, don't nudge),
+ *   - carry a valid public_token (we don't lazy-mint here — that's the
+ *     responsibility of the per-prompt loaders; rows without a token render
+ *     no reminder cluster but still navigate-on-click to /:id where the
+ *     full share surface is available).
+ *
+ * `now` is injected for deterministic daysOverdue computation in tests.
+ */
+function buildTableFollowUpIntents(invoices, opts) {
+  if (!Array.isArray(invoices)) return {};
+  const now = (opts && opts.now instanceof Date) ? opts.now : new Date();
+  const result = {};
+  for (const inv of invoices) {
+    if (!inv || inv.id == null) continue;
+    if (inv.is_seed) continue;
+    if (inv.status !== 'sent' && inv.status !== 'overdue') continue;
+    if (inv.payment_claimed_at) continue;
+    if (!inv.public_token) continue;
+    const surface = buildShareSurfaceForInvoice(inv, { now });
+    if (!surface || !surface.followUpIntents || !surface.url) continue;
+    result[String(inv.id)] = {
+      url: surface.url,
+      followUpIntents: Object.assign({}, surface.followUpIntents, { url: surface.url })
+    };
+  }
+  return result;
 }
 
 function buildOverduePrompt(user, invoice, otherPrompts) {
@@ -1912,6 +1957,7 @@ module.exports.buildFirstRealInvoicePrompt = buildFirstRealInvoicePrompt;
 module.exports.buildFreshDraftPrompt = buildFreshDraftPrompt;
 module.exports.FRESH_DRAFT_MAX_AGE_HOURS = FRESH_DRAFT_MAX_AGE_HOURS;
 module.exports.buildRepeatClientPrompt = buildRepeatClientPrompt;
+module.exports.buildTableFollowUpIntents = buildTableFollowUpIntents;
 module.exports.buildPendingQuickInvoiceBanner = buildPendingQuickInvoiceBanner;
 module.exports.readPendingQuickInvoice = readPendingQuickInvoice;
 module.exports.normalizePendingQuickInvoiceInput = normalizePendingQuickInvoiceInput;

@@ -1373,6 +1373,88 @@
                     Client reports paid<% if (claimMethodLabel) { %> via <%= claimMethodLabel %><% } %>
                   </span>
                 <% } %>
+                <%
+                  // Per-row "Send reminder" follow-up cluster (Milestone 4 —
+                  // first invoice sent → first payment received). Surfaces on
+                  // every sent/overdue row that carries a public_token AND
+                  // does not have a pending payment-claim. The single-banner
+                  // prompt stack (recentView / clientViewedFollowup /
+                  // sentNotViewed / overdue) only ever surfaces the OLDEST
+                  // qualifying invoice — this fills the long-tail gap so a
+                  // freelancer with 3+ open unpaid invoices can fire a
+                  // one-tap WhatsApp / SMS / Email / Copy follow-up on any
+                  // of them straight from the table view.
+                  const tableIntents = (locals.tableFollowUpIntents && tableFollowUpIntents[String(inv.id)]) || null;
+                %>
+                <% if (tableIntents && !showClaim) { %>
+                  <div
+                    class="mt-2 print:hidden inline-block relative align-top"
+                    x-data="{ open: false }"
+                    @click.outside="open = false"
+                    @keydown.escape.window="open = false"
+                    onclick="event.stopPropagation()"
+                    data-testid="table-reminder-<%= inv.id %>"
+                  >
+                    <button
+                      type="button"
+                      data-testid="table-reminder-toggle-<%= inv.id %>"
+                      @click.stop="open = !open"
+                      :aria-expanded="open ? 'true' : 'false'"
+                      aria-haspopup="true"
+                      class="inline-flex items-center gap-1 text-[11px] font-semibold text-orange-800 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded hover:bg-orange-100 transition"
+                    >
+                      <span aria-hidden="true">&#128228;</span>
+                      <span>Send reminder</span>
+                      <span aria-hidden="true" x-text="open ? '▴' : '▾'">▾</span>
+                    </button>
+                    <div
+                      x-show="open"
+                      x-cloak
+                      x-transition.opacity
+                      data-testid="table-reminder-popover-<%= inv.id %>"
+                      class="absolute z-20 left-0 mt-1 bg-white border border-orange-200 rounded-lg shadow-lg p-2 flex flex-wrap gap-1.5 min-w-[180px]"
+                      onclick="event.stopPropagation()"
+                    >
+                      <a
+                        href="<%= tableIntents.followUpIntents.whatsapp %>"
+                        target="_blank"
+                        rel="noopener"
+                        data-testid="table-reminder-whatsapp-<%= inv.id %>"
+                        onclick="try { fetch('/invoices/<%= inv.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'whatsapp' }) }).catch(function(){}); } catch (e) {}"
+                        class="inline-flex items-center gap-1 bg-white border border-orange-300 text-orange-800 font-semibold px-2 py-1 rounded hover:bg-green-50 hover:border-green-400 transition text-[11px]"
+                      >
+                        <span aria-hidden="true">&#128172;</span><span>WhatsApp</span>
+                      </a>
+                      <a
+                        href="<%= tableIntents.followUpIntents.sms %>"
+                        data-testid="table-reminder-sms-<%= inv.id %>"
+                        onclick="try { fetch('/invoices/<%= inv.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'sms' }) }).catch(function(){}); } catch (e) {}"
+                        class="inline-flex items-center gap-1 bg-white border border-orange-300 text-orange-800 font-semibold px-2 py-1 rounded hover:bg-blue-50 hover:border-blue-400 transition text-[11px]"
+                      >
+                        <span aria-hidden="true">&#128241;</span><span>SMS</span>
+                      </a>
+                      <% if (tableIntents.followUpIntents.mailto) { %>
+                        <a
+                          href="<%= tableIntents.followUpIntents.mailto %>"
+                          data-testid="table-reminder-email-<%= inv.id %>"
+                          onclick="try { fetch('/invoices/<%= inv.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'email' }) }).catch(function(){}); } catch (e) {}"
+                          class="inline-flex items-center gap-1 bg-white border border-orange-300 text-orange-800 font-semibold px-2 py-1 rounded hover:bg-indigo-50 hover:border-indigo-400 transition text-[11px]"
+                        >
+                          <span aria-hidden="true">&#9993;&#65039;</span><span>Email</span>
+                        </a>
+                      <% } %>
+                      <button
+                        type="button"
+                        data-testid="table-reminder-copy-<%= inv.id %>"
+                        data-share-url="<%= tableIntents.url %>"
+                        onclick="(function(btn){ try { var u = btn.getAttribute('data-share-url') || ''; fetch('/invoices/<%= inv.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'copy' }) }).catch(function(){}); if (u && typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') { navigator.clipboard.writeText(u).then(function(){ var prev = btn.innerHTML; btn.innerHTML = '<span>Copied!</span>'; setTimeout(function(){ btn.innerHTML = prev; }, 2000); }).catch(function(){}); } } catch (e) {} })(this)"
+                        class="inline-flex items-center gap-1 bg-white border border-orange-300 text-orange-800 font-semibold px-2 py-1 rounded hover:bg-orange-100 transition text-[11px]"
+                      >
+                        <span aria-hidden="true">&#128279;</span><span>Copy link</span>
+                      </button>
+                    </div>
+                  </div>
+                <% } %>
               </td>
               <% if (isProUser) { %>
                 <td class="px-4 py-4 text-right print:hidden" onclick="event.stopPropagation()">
