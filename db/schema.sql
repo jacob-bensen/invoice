@@ -407,6 +407,29 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_quick_invoice_updated_at TIME
 -- the generic nudges so a pending-nudged user isn't dupe-emailed.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_invoice_nudge_sent_at TIMESTAMP;
 
+-- Second pending-quick-invoice nudge stamp. The first pending nudge is
+-- one-shot; the generic 7-day second-no-invoice nudge gates on
+-- pending_invoice_nudge_sent_at IS NULL — meaning a user who autosaved /quick,
+-- got the pending-specific nudge, and stayed silent gets nothing else. That
+-- cohort has the highest first-invoice intent we capture (they typed real
+-- client/amount/description data we still hold) so silence after the first
+-- pending nudge wastes the strongest activation signal in the funnel. This
+-- second pass fires 7+ days after the first pending nudge for users still at
+-- invoice_count = 0 with pending_quick_invoice still populated, with
+-- empathetic "still want to send it?" framing on the same magic-login →
+-- /invoices/quick CTA so the click auto-signs-in onto the form with their
+-- typed values restored. Also one-shot — a silent user after two pending
+-- nudges isn't moved by a third.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS second_pending_invoice_nudge_sent_at TIMESTAMP;
+CREATE INDEX IF NOT EXISTS idx_users_second_pending_invoice_nudge
+  ON users(pending_invoice_nudge_sent_at)
+  WHERE invoice_count = 0
+    AND welcome_email_sent_at IS NOT NULL
+    AND lifecycle_emails_opted_out_at IS NULL
+    AND pending_quick_invoice IS NOT NULL
+    AND pending_invoice_nudge_sent_at IS NOT NULL
+    AND second_pending_invoice_nudge_sent_at IS NULL;
+
 -- Conversion-intelligence signals captured from the upgrade-modal "What's
 -- missing?" widget (#145). user_id is nullable so the table also accepts
 -- anonymous pricing-page submissions; ON DELETE SET NULL preserves the

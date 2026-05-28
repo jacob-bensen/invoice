@@ -983,6 +983,72 @@ const db = {
   },
 
   /*
+   * Second pending-quick-invoice nudge cron query (Milestone 2). The first
+   * pending nudge is one-shot, and the generic 7-day second-no-invoice cron
+   * excludes anyone with `pending_invoice_nudge_sent_at IS NOT NULL` — so a
+   * user who autosaved /quick + got the pending nudge + stayed silent gets
+   * nothing else. That cohort has the highest first-invoice intent we
+   * capture; this query picks them back up at minInnerGapDays days after the
+   * first pending nudge for one final, empathetic follow-up.
+   *
+   * Gating:
+   *   - invoice_count = 0 (still hasn't shipped a real invoice)
+   *   - welcome_email_sent_at IS NOT NULL (activation ordering)
+   *   - lifecycle_emails_opted_out_at IS NULL (honour the opt-out)
+   *   - pending_quick_invoice IS NOT NULL (still have the typed data — if
+   *     they cleared it via the express-form submit + abandon path the
+   *     pending row would be wiped and there'd be nothing to surface)
+   *   - pending_invoice_nudge_sent_at IS NOT NULL (the first pending nudge
+   *     must have shipped — this is a follow-up to it)
+   *   - pending_invoice_nudge_sent_at <= NOW() - INTERVAL '$1 days' (inner
+   *     gap — minInnerGapDays defaults to 7d so the two pending nudges are
+   *     never on the same week)
+   *   - second_pending_invoice_nudge_sent_at IS NULL (one-shot)
+   *   - email IS NOT NULL (defence-in-depth)
+   *
+   * Ordered by oldest first-nudge first (fairness + peak conversion
+   * likelihood: a user 14d post-first-nudge is more likely to convert today
+   * than one 8d post-first-nudge — surfacing oldest first drains the backlog).
+   * Bounded LIMIT 500 so a legacy cohort doesn't blast SMTP on one tick.
+   * Non-numeric / negative minInnerGapDays coerces to the default 7d.
+   */
+  async getUsersForSecondPendingQuickInvoiceNudge(minInnerGapDays = 7) {
+    const days = Number.isFinite(minInnerGapDays) && minInnerGapDays > 0
+      ? Math.floor(minInnerGapDays)
+      : 7;
+    const { rows } = await pool.query(
+      `SELECT id, email, name, business_name, reply_to_email, business_email,
+              pending_quick_invoice, pending_quick_invoice_updated_at,
+              pending_invoice_nudge_sent_at, unsubscribe_token
+         FROM users
+        WHERE invoice_count = 0
+          AND email IS NOT NULL
+          AND welcome_email_sent_at IS NOT NULL
+          AND lifecycle_emails_opted_out_at IS NULL
+          AND pending_quick_invoice IS NOT NULL
+          AND pending_invoice_nudge_sent_at IS NOT NULL
+          AND pending_invoice_nudge_sent_at <= NOW() - ($1 * INTERVAL '1 day')
+          AND second_pending_invoice_nudge_sent_at IS NULL
+        ORDER BY pending_invoice_nudge_sent_at ASC
+        LIMIT 500`,
+      [days]
+    );
+    return rows;
+  },
+
+  async markSecondPendingQuickInvoiceNudgeSent(userId) {
+    if (!userId) return null;
+    const { rows } = await pool.query(
+      `UPDATE users SET second_pending_invoice_nudge_sent_at = NOW(), updated_at = NOW()
+         WHERE id = $1
+           AND second_pending_invoice_nudge_sent_at IS NULL
+         RETURNING id, second_pending_invoice_nudge_sent_at`,
+      [userId]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Overdue-invoice freelancer digest query (Milestone 4 — first invoice sent
    * → first payment received). Aggregates one row per user whose sent
    * invoices are past their due_date, returning counts + totals + the
