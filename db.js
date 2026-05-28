@@ -1686,6 +1686,31 @@ const db = {
   },
 
   /*
+   * Stamps users.signup_source at registration when the visitor arrived
+   * with a `?utm_source=<token>` query string. Idempotent at the SQL
+   * layer (`AND signup_source IS NULL`) so a future re-attribution race
+   * can't overwrite the original source. The validation regex matches
+   * the capture-middleware whitelist exactly so a row that survives the
+   * pipeline always renders cleanly on the operator's /admin/activation
+   * source breakdown.
+   */
+  async attachSignupSource(userId, source) {
+    if (!userId || !source || typeof source !== 'string') return null;
+    const trimmed = source.trim().slice(0, 32);
+    if (!/^[A-Za-z0-9._-]{1,32}$/.test(trimmed)) return null;
+    const { rows } = await pool.query(
+      `UPDATE users
+          SET signup_source = $2,
+              updated_at    = NOW()
+        WHERE id = $1
+          AND signup_source IS NULL
+        RETURNING signup_source`,
+      [userId, trimmed]
+    );
+    return rows[0] ? rows[0].signup_source : null;
+  },
+
+  /*
    * Attaches users.referrer_id at signup when the visitor arrived via a
    * `?ref=<code>` link (#49). The lookup-then-set is a 2-step round-trip
    * rather than a sub-select so callers can short-circuit on bad codes

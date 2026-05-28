@@ -139,6 +139,52 @@
       </p>
     <% } %>
 
+    <% if (Array.isArray(report.bySource) && report.bySource.length > 0) { %>
+      <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden mt-6" data-testid="admin-activation-source-card">
+        <div class="px-5 py-4 border-b border-gray-100">
+          <p class="text-sm text-gray-500">By signup source</p>
+          <p class="text-base font-semibold text-gray-900">
+            Acquisition-channel breakdown &mdash; captured from <code class="text-xs">?utm_source=</code> on first touch.
+          </p>
+          <p class="text-xs text-gray-500 mt-1">
+            <em>direct</em> = unattributed (typed URL, expired referrer, blocked utm capture). <em>Sent rate</em> ranks channels by terminal funnel conversion.
+          </p>
+        </div>
+        <table class="w-full text-sm" data-testid="admin-activation-source-table">
+          <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+            <tr>
+              <th class="text-left  px-5 py-2 font-medium">Source</th>
+              <th class="text-right px-5 py-2 font-medium">Signups</th>
+              <th class="text-right px-5 py-2 font-medium">Welcomed</th>
+              <th class="text-right px-5 py-2 font-medium">Returned</th>
+              <th class="text-right px-5 py-2 font-medium">Created</th>
+              <th class="text-right px-5 py-2 font-medium">Sent</th>
+              <th class="text-right px-5 py-2 font-medium">Paid</th>
+              <th class="text-right px-5 py-2 font-medium">Sent rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% report.bySource.forEach(function (row) { %>
+              <tr class="border-t border-gray-100" data-testid="admin-activation-source-row-<%= row.source %>">
+                <td class="px-5 py-2 font-mono text-gray-900"><%= row.source %></td>
+                <td class="px-5 py-2 text-right font-mono text-gray-900" data-testid="admin-activation-source-signed_up-<%= row.source %>"><%= row.signed_up.toLocaleString('en-US') %></td>
+                <td class="px-5 py-2 text-right font-mono text-gray-700"><%= row.welcomed.toLocaleString('en-US') %></td>
+                <td class="px-5 py-2 text-right font-mono text-gray-700"><%= row.returned.toLocaleString('en-US') %></td>
+                <td class="px-5 py-2 text-right font-mono text-gray-700"><%= row.created_real.toLocaleString('en-US') %></td>
+                <td class="px-5 py-2 text-right font-mono text-gray-700"><%= row.sent_one.toLocaleString('en-US') %></td>
+                <td class="px-5 py-2 text-right font-mono text-gray-700"><%= row.got_paid.toLocaleString('en-US') %></td>
+                <td class="px-5 py-2 text-right font-mono text-gray-900" data-testid="admin-activation-source-sent_rate-<%= row.source %>"><%= formatPct(row.sentRate) %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    <% } else if (Array.isArray(report.bySource)) { %>
+      <p class="text-xs text-gray-400 mt-6" data-testid="admin-activation-source-empty">
+        No signups in this window &mdash; widen the date range to see an acquisition-source breakdown.
+      </p>
+    <% } %>
+
     <p class="text-xs text-gray-400 mt-3" data-testid="admin-activation-generated-at">
       Generated <%= report.generatedAt %>.
     </p>

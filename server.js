@@ -71,6 +71,23 @@ app.use((req, res, next) => {
       req.session.referral_code = code;
     }
   }
+  // Signup-source attribution. Captures `?utm_source=<token>` into the
+  // session so /auth/register can persist it on users.signup_source. The
+  // whitelist regex matches the db.attachSignupSource validator exactly —
+  // alnum + `.`, `_`, `-` up to 32 chars (covers `google`, `twitter`,
+  // `freelance-developer-niche`, `appsumo-2026`, etc.). First-touch
+  // sticky: a visitor who lands on a niche page via one channel then
+  // clicks a competing utm-tagged link before registering keeps the
+  // original attribution. The session row is small (≤32 chars) and is
+  // cleared on register in routes/auth.js whether or not the persist
+  // succeeded, so a stale value can't leak across an account-switching
+  // browser session.
+  if (req.query && typeof req.query.utm_source === 'string' && !req.session.signup_source) {
+    const src = req.query.utm_source.trim().slice(0, 32);
+    if (/^[A-Za-z0-9._-]{1,32}$/.test(src)) {
+      req.session.signup_source = src;
+    }
+  }
   next();
 });
 

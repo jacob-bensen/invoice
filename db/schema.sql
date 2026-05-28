@@ -465,3 +465,19 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP;
 -- would orphan inboxes).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS unsubscribe_token VARCHAR(32) UNIQUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS lifecycle_emails_opted_out_at TIMESTAMP;
+
+-- Signup-source attribution. Captured at registration time from the
+-- visitor's `?utm_source=…` query string (with session stickiness across
+-- the click → bounce → return → register flow) and persisted forever on
+-- the user row. Surfaces as a "By signup source" breakdown on the
+-- operator's /admin/activation report so the funnel can be sliced by
+-- acquisition channel — different sources (niche landing pages, organic
+-- referrals, paid traffic, in-app referral links) have wildly different
+-- downstream activation rates, and without the breakdown the operator
+-- can't tell which channel produces converting users vs. tire-kickers.
+-- The middleware whitelists `[A-Za-z0-9._-]{1,32}` on capture so a hostile
+-- visitor can't seed arbitrary content into the column or the report.
+-- Values longer than 32 chars are silently dropped (a real utm_source
+-- like "google" / "twitter" / "freelance-developer-niche" fits comfortably).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS signup_source VARCHAR(32);
+CREATE INDEX IF NOT EXISTS idx_users_signup_source ON users(signup_source) WHERE signup_source IS NOT NULL;

@@ -279,6 +279,13 @@ async function testBuildReportHappyPath() {
   const { buildReport } = require('../lib/activation-funnel');
   const fakeDb = {
     async query(sql) {
+      if (/signup_source/i.test(sql)) {
+        return { rows: [
+          { source: 'google',        signed_up: 18, welcomed: 14, returned: 11, created_real: 7, sent_one: 5, got_paid: 2 },
+          { source: 'direct',        signed_up: 12, welcomed: 10, returned: 7,  created_real: 4, sent_one: 2, got_paid: 1 },
+          { source: 'appsumo',       signed_up: 0,  welcomed: 0,  returned: 0,  created_real: 0, sent_one: 0, got_paid: 0 }
+        ] };
+      }
       if (/GROUP BY/i.test(sql)) {
         return { rows: [
           { day: '2026-05-10', signed_up: 30, welcomed: 22, returned: 18, created_real: 12, sent_one: 9, got_paid: 3 },
@@ -313,6 +320,14 @@ async function testBuildReportHappyPath() {
   assert.strictEqual(r.daily[0].signed_up, 30);
   assert.ok(Math.abs(r.daily[0].sentRate - (9 / 30)) < 1e-9,
     'sentRate computed per-day from sent_one / signed_up');
+  assert.ok(Array.isArray(r.bySource), 'report.bySource must be an array');
+  assert.strictEqual(r.bySource.length, 3);
+  assert.strictEqual(r.bySource[0].source, 'google');
+  assert.strictEqual(r.bySource[0].signed_up, 18);
+  assert.ok(Math.abs(r.bySource[0].sentRate - (5 / 18)) < 1e-9,
+    'sentRate per source = sent_one / signed_up');
+  assert.strictEqual(r.bySource[2].sentRate, null,
+    'zero-signup source row → null sentRate (no NaN)');
 }
 
 async function testLoadFunnelByDaySqlContract() {
@@ -374,6 +389,78 @@ async function testLoadFunnelByDayHandlesEmptyAndNullRows() {
   await assert.rejects(() => loadFunnelByDay({ async query() {} }, null), /requires a parsed range/);
 }
 
+async function testLoadFunnelBySourceSqlContract() {
+  clearReq('../lib/activation-funnel');
+  const { loadFunnelBySource, parseDateRange } = require('../lib/activation-funnel');
+  const range = parseDateRange({ from: '2026-05-01', to: '2026-05-10' }, new Date());
+  const calls = [];
+  const fakeDb = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      return {
+        rows: [
+          { source: 'google',  signed_up: '5', welcomed: '4', returned: '3', created_real: '2', sent_one: '1', got_paid: '0' },
+          { source: 'direct',  signed_up: 3,   welcomed: 2,   returned: 2,   created_real: 1,   sent_one: 1,   got_paid: 0 }
+        ]
+      };
+    }
+  };
+  const rows = await loadFunnelBySource(fakeDb, range);
+  assert.strictEqual(calls.length, 1, 'one SQL round-trip for the per-source breakdown');
+  const sql = calls[0].sql;
+  assert.ok(/FROM users/i.test(sql), 'SQL must scan users');
+  assert.ok(/GROUP BY/i.test(sql), 'must GROUP BY for per-source aggregation');
+  assert.ok(/COALESCE\(signup_source,\s*'direct'\)/.test(sql),
+    "must COALESCE NULL signup_source to 'direct' so unattributed signups fold into one bucket");
+  assert.ok(/ORDER BY signed_up DESC/i.test(sql),
+    'must order by signup count DESC so the largest-volume source surfaces first');
+  // Drift-guard: the same six stage aggregates that loadFunnelCounts uses
+  // — a future stage addition to loadFunnelCounts must be added here too,
+  // or the breakdown lies about the funnel.
+  assert.ok(/welcome_email_sent_at IS NOT NULL/.test(sql), 'must aggregate welcomed');
+  assert.ok(/last_login_at IS NOT NULL/.test(sql), 'must aggregate returned');
+  assert.ok(/invoice_count > 0/.test(sql), 'must aggregate created_real');
+  assert.ok(/status IN \('sent','paid','overdue'\)/.test(sql), 'must subquery invoices for sent_one');
+  assert.ok(/first_paid_at IS NOT NULL/.test(sql), 'must aggregate got_paid');
+  assert.strictEqual(calls[0].params.length, 2, 'two SQL params (from, toExclusive)');
+  assert.strictEqual(isoDate(calls[0].params[0]), '2026-05-01');
+  assert.strictEqual(isoDate(calls[0].params[1]), '2026-05-11');
+  assert.deepStrictEqual(rows, [
+    { source: 'google', signed_up: 5, welcomed: 4, returned: 3, created_real: 2, sent_one: 1, got_paid: 0 },
+    { source: 'direct', signed_up: 3, welcomed: 2, returned: 2, created_real: 1, sent_one: 1, got_paid: 0 }
+  ]);
+}
+
+async function testLoadFunnelBySourceHandlesEmptyAndNullRows() {
+  clearReq('../lib/activation-funnel');
+  const { loadFunnelBySource, parseDateRange } = require('../lib/activation-funnel');
+  const range = parseDateRange({ from: '2026-05-01', to: '2026-05-10' }, new Date());
+  const empty = await loadFunnelBySource({ async query() { return { rows: [] }; } }, range);
+  assert.deepStrictEqual(empty, [], 'zero-cohort window returns empty array');
+  const nullRows = await loadFunnelBySource({ async query() { return { rows: null }; } }, range);
+  assert.deepStrictEqual(nullRows, []);
+  await assert.rejects(() => loadFunnelBySource(null, range), /requires a db/);
+  await assert.rejects(() => loadFunnelBySource({ async query() {} }, null), /requires a parsed range/);
+}
+
+async function testBuildSourceRowsShapeAndSentRate() {
+  clearReq('../lib/activation-funnel');
+  const { buildSourceRows } = require('../lib/activation-funnel');
+  const rows = buildSourceRows([
+    { source: 'google',  signed_up: 10, welcomed: 8, returned: 6, created_real: 4, sent_one: 2, got_paid: 1 },
+    { source: 'appsumo', signed_up: 0,  welcomed: 0, returned: 0, created_real: 0, sent_one: 0, got_paid: 0 }
+  ]);
+  assert.strictEqual(rows.length, 2);
+  assert.strictEqual(rows[0].source, 'google');
+  assert.strictEqual(rows[0].signed_up, 10);
+  assert.strictEqual(rows[0].sentRate, 0.2, '2/10 = 0.2 sent rate for google');
+  assert.strictEqual(rows[1].sentRate, null,
+    'zero-signup source must yield null sentRate (no NaN — view renders em-dash)');
+  assert.deepStrictEqual(buildSourceRows(null), []);
+  assert.deepStrictEqual(buildSourceRows(undefined), []);
+  assert.deepStrictEqual(buildSourceRows('not-an-array'), []);
+}
+
 async function testBuildDailyRowsShapeAndSentRate() {
   clearReq('../lib/activation-funnel');
   const { buildDailyRows } = require('../lib/activation-funnel');
@@ -405,6 +492,7 @@ async function testBuildDailyRowsShapeAndSentRate() {
 // throws on the FIRST query (covers both helpers' error paths).
 let nextRows = [];
 let nextDailyRows = [];
+let nextSourceRows = [];
 let nextError = null;
 const queryCalls = [];
 
@@ -416,6 +504,11 @@ function resetDbStub() {
     { day: '2026-05-15', signed_up: 7, welcomed: 6, returned: 5, created_real: 3, sent_one: 2, got_paid: 1 },
     { day: '2026-05-14', signed_up: 5, welcomed: 3, returned: 2, created_real: 2, sent_one: 1, got_paid: 0 }
   ];
+  nextSourceRows = [
+    { source: 'google', signed_up: 6, welcomed: 5, returned: 4, created_real: 3, sent_one: 2, got_paid: 1 },
+    { source: 'direct', signed_up: 4, welcomed: 3, returned: 2, created_real: 1, sent_one: 0, got_paid: 0 },
+    { source: 'twitter', signed_up: 2, welcomed: 1, returned: 1, created_real: 1, sent_one: 1, got_paid: 0 }
+  ];
   nextError = null;
   queryCalls.length = 0;
 }
@@ -426,8 +519,9 @@ const fakeDbModule = {
     async query(sql, params) {
       queryCalls.push({ sql, params });
       if (nextError) throw nextError;
-      const isDaily = /GROUP BY/i.test(sql);
-      return { rows: isDaily ? nextDailyRows : nextRows };
+      if (/signup_source/i.test(sql)) return { rows: nextSourceRows };
+      if (/GROUP BY/i.test(sql)) return { rows: nextDailyRows };
+      return { rows: nextRows };
     }
   }
 };
@@ -532,8 +626,8 @@ async function testRouteRendersHtmlForOperator() {
     'cohort size 12 must appear in the body');
   assert.ok(res.body.includes('noindex'),
     'admin pages must opt out of indexing');
-  assert.strictEqual(queryCalls.length, 2,
-    'two SQL queries per render: one aggregate, one per-day GROUP BY');
+  assert.strictEqual(queryCalls.length, 3,
+    'three SQL queries per render: aggregate + per-day GROUP BY + per-source GROUP BY');
   // Per-day cohort card surfaces with one row per signup day.
   assert.ok(res.body.includes('data-testid="admin-activation-daily-card"'),
     'per-day cohort card must render below the aggregate stages table');
@@ -543,6 +637,15 @@ async function testRouteRendersHtmlForOperator() {
     'older daily-row testid must render too');
   assert.ok(/Daily signup cohorts/.test(res.body),
     'daily card heading must appear');
+  // Per-source breakdown card surfaces with one row per acquisition channel.
+  assert.ok(res.body.includes('data-testid="admin-activation-source-card"'),
+    'per-source breakdown card must render');
+  assert.ok(res.body.includes('data-testid="admin-activation-source-row-google"'),
+    'google source row testid must render');
+  assert.ok(res.body.includes('data-testid="admin-activation-source-row-direct"'),
+    'direct (unattributed) source row testid must render');
+  assert.ok(/By signup source/.test(res.body),
+    'source card heading must appear');
 }
 
 async function testRouteRendersJsonForOperator() {
@@ -577,6 +680,15 @@ async function testRouteRendersJsonForOperator() {
   assert.ok(Math.abs(body.daily[0].sentRate - (2 / 7)) < 1e-9,
     'sentRate = sent_one / signed_up — the PLAN.md terminal funnel conversion');
   assert.strictEqual(body.daily[1].day, '2026-05-14');
+  // Per-source breakdown lands in JSON too — operator scripts get a
+  // machine-readable acquisition-channel signal without HTML scraping.
+  assert.ok(Array.isArray(body.bySource), 'JSON must include a bySource[] array');
+  assert.strictEqual(body.bySource.length, 3, 'three source rows seeded in stub');
+  assert.strictEqual(body.bySource[0].source, 'google', 'largest-volume source first');
+  assert.strictEqual(body.bySource[0].signed_up, 6);
+  assert.strictEqual(body.bySource[0].sent_one, 2);
+  assert.ok(Math.abs(body.bySource[0].sentRate - (2 / 6)) < 1e-9,
+    'sentRate per source = sent_one / signed_up');
 }
 
 async function testJsonRoute404ForNonOperator() {
@@ -635,6 +747,7 @@ async function testRouteEmptyDailyShowsHintNotTable() {
   // instead of an empty table.
   nextRows = [{ signed_up: 0, welcomed: 0, returned: 0, created_real: 0, sent_one: 0, got_paid: 0 }];
   nextDailyRows = [];
+  nextSourceRows = [];
   process.env.OPERATOR_EMAIL = 'op@x.com';
   const app = buildApp({ id: 1, email: 'op@x.com' });
   const res = await request(app, 'GET', '/admin/activation');
@@ -643,6 +756,10 @@ async function testRouteEmptyDailyShowsHintNotTable() {
     'empty-cohort window must surface the hint testid');
   assert.ok(!/data-testid="admin-activation-daily-card"/.test(res.body),
     'daily card must NOT render on zero-cohort window (no empty table shipped to operator)');
+  assert.ok(res.body.includes('data-testid="admin-activation-source-empty"'),
+    'empty-cohort window must surface the source-empty hint too');
+  assert.ok(!/data-testid="admin-activation-source-card"/.test(res.body),
+    'source card must NOT render on zero-cohort window');
 }
 
 async function testRobotsTxtBlocksAdminPath() {
@@ -671,6 +788,9 @@ async function run() {
     ['loadFunnelByDay SQL contract (GROUP BY day + same 6 stages + DESC)', testLoadFunnelByDaySqlContract],
     ['loadFunnelByDay tolerates empty/null rows + throws on missing args', testLoadFunnelByDayHandlesEmptyAndNullRows],
     ['buildDailyRows computes sentRate; zero-signup day → null; non-array → []', testBuildDailyRowsShapeAndSentRate],
+    ['loadFunnelBySource SQL contract (COALESCE direct + ORDER BY signed_up DESC + same 6 stages)', testLoadFunnelBySourceSqlContract],
+    ['loadFunnelBySource tolerates empty/null rows + throws on missing args', testLoadFunnelBySourceHandlesEmptyAndNullRows],
+    ['buildSourceRows computes sentRate; zero-signup → null; non-array → []', testBuildSourceRowsShapeAndSentRate],
     ['buildStageRows computes from-prev / from-cohort', testBuildStageRowsComputesRatios],
     ['buildStageRows yields null ratios on zero cohort (no NaN)', testBuildStageRowsZeroCohortNoNaN],
     ['STAGE_DEFS canonical order + returned stage label/milestone', testReturnedStageOrderAndMilestoneLabel],

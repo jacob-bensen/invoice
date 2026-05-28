@@ -82,6 +82,22 @@ router.post('/register', redirectIfAuth, authLimiter, [
       delete req.session.referral_code;
     }
 
+    // Signup-source attribution. The server.js middleware captured
+    // `?utm_source=<token>` into the session on first touch; persist it on
+    // the users row so the /admin/activation `bySource[]` breakdown can
+    // group cohorts by acquisition channel. Clear the session value either
+    // way so a subsequent register-from-the-same-browser flow doesn't
+    // double-attribute the next user. Soft-fail on any DB hiccup — signup
+    // must never block on attribution plumbing.
+    if (req.session.signup_source && typeof db.attachSignupSource === 'function') {
+      try {
+        await db.attachSignupSource(user.id, req.session.signup_source);
+      } catch (err) {
+        console.error('Signup source attach failed:', err && err.message);
+      }
+      delete req.session.signup_source;
+    }
+
     req.session.user = {
       id: user.id, email: user.email, name: user.name,
       plan: user.plan, invoice_count: user.invoice_count,
