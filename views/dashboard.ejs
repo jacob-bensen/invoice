@@ -878,6 +878,27 @@
             </button>
           </div>
         <% } %>
+        <% if (overduePrompt.clientEmail) { %>
+          <div class="mt-3 print:hidden" data-testid="overdue-send-reminder-wrapper">
+            <button
+              type="button"
+              data-testid="overdue-send-reminder"
+              data-invoice-id="<%= overduePrompt.id %>"
+              data-csrf="<%= locals.csrfToken || '' %>"
+              data-client-email="<%= overduePrompt.clientEmail %>"
+              class="inline-flex items-center gap-1.5 bg-red-700 text-white font-semibold px-3 py-1.5 rounded-lg hover:bg-red-800 transition text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+              onclick="(function(btn){ if (btn.disabled) return; btn.disabled = true; var prev = btn.innerHTML; btn.innerHTML = '<span>Sending…</span>'; var status = document.querySelector('[data-testid=\'overdue-send-reminder-status\']'); fetch('/invoices/' + btn.getAttribute('data-invoice-id') + '/send-reminder', { method: 'POST', headers: { 'X-CSRF-Token': btn.getAttribute('data-csrf'), 'Content-Type': 'application/json', 'Accept': 'application/json' } }).then(function(r){ return r.json().then(function(j){ return { status: r.status, body: j }; }); }).then(function(res){ if (res.status === 200 && res.body && res.body.ok) { btn.innerHTML = '<span>&#10003; Sent to ' + (res.body.sent_to || btn.getAttribute('data-client-email')) + '</span>'; if (status) { status.hidden = false; status.textContent = 'Reminder sent. You can send again in 48 hours.'; } } else { btn.disabled = false; btn.innerHTML = prev; if (status) { status.hidden = false; status.textContent = res.body && res.body.error === 'cooldown' ? 'Already sent in the last 48 hours.' : res.body && res.body.error === 'not_configured' ? 'Email sending is not configured yet.' : 'Could not send the reminder. Try again or use one of the buttons above.'; } } }).catch(function(){ btn.disabled = false; btn.innerHTML = prev; if (status) { status.hidden = false; status.textContent = 'Network error. Try again.'; } }); })(this)"
+            >
+              <span aria-hidden="true">&#128231;</span>
+              <span>Send reminder via DecentInvoice (to <%= overduePrompt.clientEmail %>)</span>
+            </button>
+            <p
+              data-testid="overdue-send-reminder-status"
+              class="text-xs text-red-700 mt-1"
+              hidden
+            ></p>
+          </div>
+        <% } %>
       </div>
     </div>
   <% } %>

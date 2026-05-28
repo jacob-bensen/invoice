@@ -347,6 +347,19 @@ CREATE INDEX IF NOT EXISTS idx_invoices_payment_claim_followup
     AND payment_claimed_at IS NOT NULL
     AND payment_claim_followup_sent_at IS NULL;
 
+-- Server-sent payment-reminder stamp (Milestone 4 — first invoice sent → first
+-- payment received). The dashboard's existing follow-up surfaces are mailto:
+-- / sms: / whatsapp: deep-links that hand off to the user's local mail/SMS
+-- client. On mobile (especially iOS without a configured mail account) those
+-- handoffs frequently dead-end, and the user closes the dashboard without
+-- chasing. A server-sent reminder fired from POST /invoices/:id/send-reminder
+-- works on every device, every time. last_reminder_email_at gates the
+-- cooldown so a panicked freelancer can't blast the same client every five
+-- minutes — UPDATE only fires when last_reminder_email_at IS NULL OR is
+-- older than the cooldown window (default 48h). Rate-limited, not one-shot:
+-- the same invoice can be reminded weekly until paid.
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_reminder_email_at TIMESTAMP;
+
 -- Password reset / magic-link sign-in (Milestone 1 — signup → first dashboard
 -- re-entry). A user who loses their session has to be able to get back into
 -- their seeded dashboard or the activation funnel breaks at step 1. Tokens

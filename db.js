@@ -1402,6 +1402,43 @@ const db = {
   },
 
   /*
+   * Server-sent payment-reminder stamp (Milestone 4 — sent → paid). Atomic
+   * UPDATE used by POST /invoices/:id/send-reminder. Stamps
+   * last_reminder_email_at only when the previous stamp is NULL or older
+   * than `cooldownHours` (default 48). Returns the updated row on success,
+   * null when the cooldown is still active OR the invoice doesn't belong
+   * to the user OR the status doesn't qualify. Status filter
+   * (`status IN ('sent','overdue')`) is in the UPDATE WHERE clause itself
+   * so a paid/draft invoice never gets a reminder stamp even if the route
+   * layer's check is bypassed. user_id in the WHERE clause locks down
+   * cross-tenant invocation. cooldownHours is parameterised so tests can
+   * pin a tighter window and the route can change the cooldown without a
+   * schema migration.
+   */
+  async markInvoiceReminderSent(invoiceId, userId, cooldownHours = 48) {
+    const id = Number(invoiceId);
+    const uid = Number(userId);
+    if (!Number.isInteger(id) || id <= 0) return null;
+    if (!Number.isInteger(uid) || uid <= 0) return null;
+    const hours = Number.isFinite(Number(cooldownHours)) && Number(cooldownHours) >= 0
+      ? Number(cooldownHours) : 48;
+    const { rows } = await pool.query(
+      `UPDATE invoices
+          SET last_reminder_email_at = NOW(),
+              updated_at             = NOW()
+        WHERE id      = $1
+          AND user_id = $2
+          AND status IN ('sent','overdue')
+          AND is_seed = false
+          AND (last_reminder_email_at IS NULL
+               OR last_reminder_email_at <= NOW() - ($3 * INTERVAL '1 hour'))
+        RETURNING id, last_reminder_email_at`,
+      [id, uid, hours]
+    );
+    return rows[0] || null;
+  },
+
+  /*
    * Pending-payment-claim follow-up cron query (Milestone 4 — sent → paid).
    * Picks up invoices where the CLIENT clicked "I've sent payment" on the
    * public /i/<token> share page `minHours` ago (stamping payment_claimed_at)

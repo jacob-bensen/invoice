@@ -10,6 +10,7 @@ const { firePaidWebhook, buildPaidPayload } = require('../lib/outbound-webhook')
 const {
   sendInvoiceEmail,
   sendInvoiceTestEmail,
+  sendPaymentReminderEmail,
   sendReferralCelebrationEmail,
   buildInvoiceSubject,
   buildInvoiceHtml,
@@ -928,10 +929,16 @@ function buildOverduePrompt(user, invoice, otherPrompts) {
   if (surface && surface.followUpIntents && surface.url) {
     followUpIntents = Object.assign({}, surface.followUpIntents, { url: surface.url });
   }
+  // Only surface clientEmail when it's a non-blank string — the view gates
+  // the server-sent reminder button on its presence (no email = no button,
+  // matching the POST route's no_client_email 400).
+  const clientEmail = typeof invoice.client_email === 'string' && invoice.client_email.trim()
+    ? invoice.client_email.trim() : '';
   return {
     id: invoice.id,
     invoiceNumber: invoice.invoice_number || '',
     clientName: invoice.client_name || '',
+    clientEmail,
     total: Number(invoice.total) || 0,
     daysPastDue,
     status: invoice.status || 'sent',
@@ -1915,6 +1922,106 @@ router.post('/:id/email-self', requireAuth, async (req, res) => {
     });
   } catch (err) {
     console.error('email-self send error:', err && err.message);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
+/*
+ * Server-sent payment reminder (Milestone 4 — first sent → first paid).
+ * The dashboard's existing follow-up clusters (overdue prompt,
+ * client-viewed-followup, sent-not-viewed, per-row table popover) all use
+ * mailto:/sms:/whatsapp: deep-links that hand off to the user's local
+ * mail/SMS client. On mobile — especially iOS without a default mail
+ * account configured — those handoffs frequently dead-end, and the
+ * freelancer closes the dashboard without ever firing the chase. This
+ * fires a polite, mobile-friendly reminder from our Resend infrastructure:
+ * works on every device, every time.
+ *
+ * No plan gate. M4 closer; activation/recovery is the goal — gating this
+ * behind Pro would suppress exactly the surface that converts more sent
+ * invoices into paid ones, which IS the upgrade-justifying outcome. Free
+ * plan caps at 3 invoices, so abuse vector (mass spam from an attacker
+ * account) is naturally bounded.
+ *
+ * Cooldown: 48h per invoice, enforced atomically at the DB layer by
+ * markInvoiceReminderSent. UI surfaces a 48h-disabled state after a
+ * successful send. Re-sendable indefinitely after the cooldown so a
+ * 30-day-overdue invoice can be chased weekly.
+ *
+ * Status gate: status IN ('sent','overdue'). Reminding a client about a
+ * draft (they've never seen it) or a paid invoice (it's settled) is a
+ * relationship-damaging bug. The DB UPDATE itself enforces this; the
+ * route layer also checks for a clean 400 response rather than a silent
+ * cooldown-shaped null.
+ *
+ * Spam vector: the recipient is invoice.client_email (the freelancer's
+ * own client) and the From/Reply-To carry the freelancer's identity. An
+ * authenticated user can only fire reminders to email addresses they
+ * already put on their own invoices. Cross-tenant ids 404 via the
+ * user_id filter on getInvoiceById and on the UPDATE.
+ */
+router.post('/:id/send-reminder', requireAuth, async (req, res) => {
+  try {
+    const user = await db.getUserById(req.session.user.id);
+    if (!user) return res.status(401).json({ error: 'unauthorized' });
+    const invoice = await db.getInvoiceById(req.params.id, req.session.user.id);
+    if (!invoice) return res.status(404).json({ error: 'not_found' });
+    if (invoice.is_seed) return res.status(400).json({ error: 'is_seed' });
+    if (invoice.status !== 'sent' && invoice.status !== 'overdue') {
+      return res.status(400).json({ error: 'wrong_status', status: invoice.status });
+    }
+    const clientEmail = typeof invoice.client_email === 'string'
+      ? invoice.client_email.trim() : '';
+    if (!clientEmail) return res.status(400).json({ error: 'no_client_email' });
+
+    // Stamp first — atomic cooldown check. A concurrent double-tap races on
+    // the UPDATE and exactly one wins; the other gets null back and returns
+    // the cooldown response without firing a duplicate email.
+    let stamped;
+    try {
+      stamped = await db.markInvoiceReminderSent(invoice.id, user.id);
+    } catch (e) {
+      console.error('send-reminder stamp threw:', e && e.message);
+      return res.status(500).json({ error: 'server_error' });
+    }
+    if (!stamped) {
+      return res.status(429).json({ error: 'cooldown' });
+    }
+
+    let sendResult;
+    try {
+      sendResult = await sendPaymentReminderEmail({ ...invoice, client_email: clientEmail }, user);
+    } catch (e) {
+      console.error('send-reminder send threw:', e && e.message);
+      sendResult = { ok: false, reason: 'error', error: e && e.message };
+    }
+    if (!sendResult || sendResult.ok !== true) {
+      // Unstamp so the user can retry once the underlying issue clears
+      // (Resend not_configured, transient throw). Without the unstamp the
+      // 48h cooldown would lock the invoice out of all reminder attempts
+      // because of a one-off Resend hiccup.
+      try {
+        await db.query(
+          'UPDATE invoices SET last_reminder_email_at = NULL WHERE id = $1 AND user_id = $2',
+          [invoice.id, user.id]
+        );
+      } catch (e) {
+        console.error('send-reminder unstamp failed:', e && e.message);
+      }
+      const reason = (sendResult && sendResult.reason) || 'send_failed';
+      const status = reason === 'not_configured' ? 503 : 502;
+      return res.status(status).json({ error: reason });
+    }
+
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      sent_to: clientEmail,
+      message_id: sendResult.id || null,
+      last_reminder_email_at: stamped.last_reminder_email_at || null
+    });
+  } catch (err) {
+    console.error('send-reminder error:', err && err.message);
     res.status(500).json({ error: 'server_error' });
   }
 });
