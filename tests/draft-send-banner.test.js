@@ -51,10 +51,12 @@ function makeIntents() {
   };
 }
 
-function renderView({ invoice, prefetchedShare, userPlan }) {
+function renderView({ invoice, prefetchedShare, userPlan, userOverrides }) {
+  const baseUser = { plan: userPlan || 'free', email: 'me@example.com', name: 'Me', business_name: null };
+  const user = Object.assign(baseUser, userOverrides || {});
   return ejs.renderFile(path.join(VIEWS, 'invoice-view.ejs'), {
     title: 'Invoice',
-    user: { plan: userPlan || 'free', email: 'me@example.com', name: 'Me', business_name: null },
+    user,
     invoice: invoice || makeInvoice(),
     paymentMethods: ['card'],
     csrfToken: 'csrf-test-tkn',
@@ -307,6 +309,160 @@ async function testBannerPrintHidden() {
     'banner carries print:hidden so it does NOT appear on printed/PDF invoice exports');
 }
 
+/*
+ * Inline "Send a test to my inbox" affordance (Milestone 3 — first invoice
+ * created → first invoice sent). The /email-self route already exists and
+ * is reachable via the small "👀 Preview what your client gets" link, but a
+ * brand-new freelancer hesitating on the very first send wants the
+ * confidence-builder one tap away, not two clicks deep. The block surfaces
+ * the test-send inline on the draft-send-banner for ALL plans (the route
+ * itself is plan-agnostic), so the dominant pre-send anxiety beat closes
+ * without nav.
+ */
+async function testBannerSelfTestRendersWithOwnerEmail() {
+  const html = await renderView({
+    invoice: makeInvoice({ status: 'draft' }),
+    prefetchedShare: { url: 'https://decentinvoice.com/i/cafef00ddeadbeef',
+      shareIntents: makeIntents(), followUpIntents: null }
+  });
+  const banner = sliceBanner(html);
+  assert.ok(banner, 'banner present');
+  assert.ok(/data-testid="draft-send-banner-self-test"/.test(banner),
+    'inline self-test block renders when user.email is present');
+  assert.ok(/data-testid="draft-send-banner-self-test-button"/.test(banner),
+    'self-test button has stable testid');
+  // Plan-agnostic — the renderView default is plan='free', so the assertion
+  // above already proves free-plan visibility.
+}
+
+async function testBannerSelfTestPlanAgnostic() {
+  for (const plan of ['free', 'trial', 'pro', 'agency']) {
+    const html = await renderView({
+      invoice: makeInvoice({ status: 'draft' }),
+      prefetchedShare: { url: 'https://decentinvoice.com/i/cafef00ddeadbeef',
+        shareIntents: makeIntents(), followUpIntents: null },
+      userPlan: plan
+    });
+    const banner = sliceBanner(html);
+    assert.ok(/data-testid="draft-send-banner-self-test-button"/.test(banner),
+      'self-test button renders for plan=' + plan + ' (the underlying /email-self route is not plan-gated)');
+  }
+}
+
+async function testBannerSelfTestHiddenWhenOwnerEmailMissing() {
+  // Two failure modes: user.email = '' (signup oddity) and user.email = null.
+  // Both must short-circuit the block — sending a test to nowhere is a
+  // pointless surface that would also confuse the freelancer.
+  for (const email of ['', null, undefined]) {
+    const html = await renderView({
+      invoice: makeInvoice({ status: 'draft' }),
+      prefetchedShare: { url: 'https://decentinvoice.com/i/cafef00ddeadbeef',
+        shareIntents: makeIntents(), followUpIntents: null },
+      userOverrides: { email }
+    });
+    const banner = sliceBanner(html) || '';
+    assert.ok(!/data-testid="draft-send-banner-self-test"/.test(banner),
+      'self-test block must NOT render when user.email is ' + JSON.stringify(email));
+  }
+}
+
+async function testBannerSelfTestNamesOwnerEmail() {
+  const html = await renderView({
+    invoice: makeInvoice({ status: 'draft' }),
+    prefetchedShare: { url: 'https://decentinvoice.com/i/cafef00ddeadbeef',
+      shareIntents: makeIntents(), followUpIntents: null },
+    userOverrides: { email: 'pat@example.com' }
+  });
+  const banner = sliceBanner(html);
+  assert.ok(/Send a test to pat@example\.com/.test(banner),
+    'button label names the owner email so the freelancer knows exactly where the test lands');
+  assert.ok(/Test sent &mdash; check pat@example\.com/.test(banner),
+    'success-state copy also names the owner email');
+}
+
+async function testBannerSelfTestFiresEmailSelfWithCsrf() {
+  const html = await renderView({
+    invoice: makeInvoice({ id: 7, status: 'draft' }),
+    prefetchedShare: { url: 'https://decentinvoice.com/i/cafef00ddeadbeef',
+      shareIntents: makeIntents(), followUpIntents: null }
+  });
+  const banner = sliceBanner(html);
+  // The x-data scope on the test-send wrapper carries the selfSendTest()
+  // method. The fetch target must be POST /invoices/<id>/email-self with the
+  // X-CSRF-Token header — anything else means the test send is broken.
+  const block = (banner.match(/data-testid="draft-send-banner-self-test"[\s\S]{0,3000}/) || [''])[0];
+  assert.ok(block.includes("/invoices/7/email-self"),
+    'self-test fetch posts to /invoices/<id>/email-self');
+  assert.ok(/method:\s*['"]POST['"]/.test(block),
+    'self-test fetch uses POST');
+  assert.ok(/X-CSRF-Token['"]?\s*:\s*['"]csrf-test-tkn['"]/.test(block),
+    'self-test fetch threads the CSRF token header');
+  assert.ok(/@click="selfSendTest\(\)"/.test(block),
+    'button click handler invokes selfSendTest()');
+  assert.ok(/x-bind:disabled="selfSending \|\| selfSent"/.test(block),
+    'button disables on selfSending OR selfSent so a double-tap cannot fire two test sends');
+}
+
+async function testBannerSelfTestErrorMappings() {
+  const html = await renderView({
+    invoice: makeInvoice({ status: 'draft' }),
+    prefetchedShare: { url: 'https://decentinvoice.com/i/cafef00ddeadbeef',
+      shareIntents: makeIntents(), followUpIntents: null }
+  });
+  const banner = sliceBanner(html);
+  const block = (banner.match(/data-testid="draft-send-banner-self-test"[\s\S]{0,3000}/) || [''])[0];
+  assert.ok(/Email delivery is not configured/.test(block),
+    'self-test maps the not_configured error reason to human-readable copy');
+  assert.ok(/No email on file/.test(block),
+    'self-test maps the no_owner_email error reason to actionable copy');
+  assert.ok(/Could not send the test/.test(block),
+    'self-test has a generic fallback copy for unknown error reasons');
+  assert.ok(/data-testid="draft-send-banner-self-test-error"/.test(block),
+    'error paragraph carries a stable testid');
+}
+
+async function testBannerSelfTestEscapesHostileOwnerEmail() {
+  // user.email comes from signup input — a hostile or test-rig email like
+  // `"><img src=x onerror=alert(1)>` must be HTML-entity-escaped on the
+  // button label + success copy. EJS `<%= %>` escapes by default; this test
+  // locks in the contract.
+  const hostile = '"><img src=x onerror=alert(1)>@evil.example';
+  const html = await renderView({
+    invoice: makeInvoice({ status: 'draft' }),
+    prefetchedShare: { url: 'https://decentinvoice.com/i/cafef00ddeadbeef',
+      shareIntents: makeIntents(), followUpIntents: null },
+    userOverrides: { email: hostile }
+  });
+  const banner = sliceBanner(html);
+  assert.ok(banner, 'banner present');
+  assert.ok(!banner.includes('<img src=x onerror=alert(1)>'),
+    'hostile user.email must NOT render as a live <img> tag');
+  assert.ok(banner.includes('&lt;img src=x onerror=alert(1)&gt;'),
+    'hostile user.email must HTML-entity-escape into the button label');
+}
+
+async function testBannerSelfTestPositionedAboveFooter() {
+  // Visual hierarchy contract: the test-send affordance lives BELOW the
+  // primary channel buttons (WhatsApp/SMS/Email/Copy) but ABOVE the small
+  // "👀 Preview / ↓ More share options" footer. This ensures the primary
+  // CTAs win clicks while the test-send remains discoverable.
+  const html = await renderView({
+    invoice: makeInvoice({ status: 'draft' }),
+    prefetchedShare: { url: 'https://decentinvoice.com/i/cafef00ddeadbeef',
+      shareIntents: makeIntents(), followUpIntents: null }
+  });
+  const banner = sliceBanner(html);
+  const idxWa = banner.indexOf('data-testid="draft-send-banner-whatsapp"');
+  const idxSelf = banner.indexOf('data-testid="draft-send-banner-self-test"');
+  const idxFooter = banner.indexOf('data-testid="draft-send-banner-preview-email"');
+  assert.ok(idxWa > 0 && idxSelf > 0 && idxFooter > 0,
+    'all three reference anchors are present in the banner');
+  assert.ok(idxWa < idxSelf,
+    'self-test block appears AFTER the WhatsApp primary CTA');
+  assert.ok(idxSelf < idxFooter,
+    'self-test block appears BEFORE the "Preview / More options" footer link');
+}
+
 async function run() {
   const tests = [
     ['banner renders on status=draft with prefetched share', testBannerRendersOnDraftWithPrefetchedShare],
@@ -321,7 +477,15 @@ async function run() {
     ['WhatsApp link opens in a new tab + rel=noopener', testBannerWhatsappTargetBlank],
     ['headline falls back gracefully without a client name', testBannerHeadlineWithoutClientName],
     ['"More options" link anchors to #public-share-section', testBannerMoreOptionsLinksToShareSection],
-    ['banner is hidden on print', testBannerPrintHidden]
+    ['banner is hidden on print', testBannerPrintHidden],
+    ['inline self-test block renders with owner email', testBannerSelfTestRendersWithOwnerEmail],
+    ['inline self-test button is plan-agnostic (free/trial/pro/agency)', testBannerSelfTestPlanAgnostic],
+    ['inline self-test block is hidden when user.email is missing', testBannerSelfTestHiddenWhenOwnerEmailMissing],
+    ['inline self-test label + success copy name the owner email', testBannerSelfTestNamesOwnerEmail],
+    ['inline self-test fires POST /:id/email-self with CSRF + selfSendTest()', testBannerSelfTestFiresEmailSelfWithCsrf],
+    ['inline self-test error copy maps not_configured / no_owner_email / fallback', testBannerSelfTestErrorMappings],
+    ['inline self-test HTML-escapes hostile owner email', testBannerSelfTestEscapesHostileOwnerEmail],
+    ['inline self-test sits below WhatsApp CTA and above "Preview / More options" footer', testBannerSelfTestPositionedAboveFooter]
   ];
   let passed = 0, failed = 0;
   for (const [name, fn] of tests) {
