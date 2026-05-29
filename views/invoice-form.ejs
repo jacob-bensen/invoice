@@ -27,6 +27,13 @@
   const showPaymentInstructionsCaptureNew = !invoice
     && planNameNew === 'free'
     && ownerPaymentInstructionsNew.length === 0;
+  // "Create & email to client" combined action (Milestone 3 — first invoice
+  // created → first invoice sent). Mirrors the proven /invoices/quick dual-
+  // CTA pattern: Pro/Agency users on the advanced form collapse create →
+  // land on /:id → tap Send into a single submit. Edit-flow ("invoice" set)
+  // and free/trial users keep the single primary button — free can't email
+  // from the app and edit isn't the activation surface.
+  const canEmailFromFormNew = !invoice && (planNameNew === 'pro' || planNameNew === 'agency');
   const submittedNew = (locals.submitted && typeof submitted === 'object') ? submitted : {};
   const initialBusinessNameNew = typeof submittedNew.business_name === 'string'
     ? submittedNew.business_name : '';
@@ -246,12 +253,42 @@
     <% } %>
 
     <!-- Actions -->
-    <div class="flex items-center justify-between mt-6">
-      <a href="/invoices" class="text-gray-500 hover:text-gray-700 text-sm">Cancel</a>
-      <button type="submit" class="bg-brand-600 text-white font-semibold px-8 py-3 rounded-xl hover:bg-brand-700 transition">
-        <% if (invoice) { %>Save changes<% } else { %>Create invoice &rarr;<% } %>
-      </button>
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-6">
+      <a href="/invoices" class="text-gray-500 hover:text-gray-700 text-sm order-2 sm:order-1">Cancel</a>
+      <div class="flex flex-col sm:flex-row gap-2 sm:items-center order-1 sm:order-2">
+        <% if (canEmailFromFormNew) { %>
+          <button type="submit"
+            name="action" value="create_only"
+            data-testid="invoice-new-submit-draft"
+            class="text-brand-700 hover:text-brand-800 hover:underline text-sm font-medium px-4 py-3 text-center">
+            Save as draft
+          </button>
+          <button type="submit"
+            name="action" value="create_and_email"
+            data-testid="invoice-new-submit-email"
+            data-action="create_and_email"
+            :disabled="!clientEmail || !clientEmail.trim()"
+            :class="!clientEmail || !clientEmail.trim()
+              ? 'bg-brand-300 text-white cursor-not-allowed'
+              : 'bg-brand-600 text-white hover:bg-brand-700'"
+            class="font-semibold px-6 py-3 rounded-xl transition">
+            <span x-show="!clientEmail || !clientEmail.trim()">Add client email to send &darr;</span>
+            <span x-show="clientEmail && clientEmail.trim()" x-cloak>📧 Create &amp; email to client &rarr;</span>
+          </button>
+        <% } else { %>
+          <button type="submit"
+            data-testid="invoice-new-submit"
+            class="bg-brand-600 text-white font-semibold px-8 py-3 rounded-xl hover:bg-brand-700 transition">
+            <% if (invoice) { %>Save changes<% } else { %>Create invoice &rarr;<% } %>
+          </button>
+        <% } %>
+      </div>
     </div>
+    <% if (canEmailFromFormNew) { %>
+      <p class="text-xs text-gray-400 pt-1 text-right" data-testid="invoice-new-email-hint">
+        &ldquo;Email to client&rdquo; sends the invoice straight to their inbox and marks it as sent in one tap.
+      </p>
+    <% } %>
   </form>
 </div>
 

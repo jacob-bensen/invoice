@@ -1481,6 +1481,46 @@ router.post('/new', requireAuth, [
       }
     }
 
+    // Combined create+email path (Milestone 3 — first invoice created →
+    // first invoice sent). Mirrors the proven /invoices/quick create+email
+    // branch: collapse create → land on /:id → tap Send into one submit
+    // for advanced-form Pro/Agency users (the line-items / tax / custom-
+    // dates cohort, which is exactly the high-LTV billing pattern). Hard-
+    // gated on plan + client_email being present — defence-in-depth
+    // against a free-tier client forging the action payload past the
+    // view-side button hide.
+    const sendEmail = req.body.action === 'create_and_email'
+      && (user.plan === 'pro' || user.plan === 'agency')
+      && !!invoice.client_email;
+
+    if (sendEmail) {
+      let sendResult = null;
+      try {
+        sendResult = await sendInvoiceEmail(invoice, user);
+      } catch (e) {
+        console.error('New invoice email send threw:', e && e.message);
+      }
+      if (sendResult && sendResult.ok === true) {
+        try {
+          await db.markInvoiceSentFromShareIntent(invoice.id, req.session.user.id);
+        } catch (e) {
+          console.error('New invoice status flip failed:', e && e.message);
+        }
+        triggerFirstSentCelebration(db, req.session.user.id, invoice)
+          .catch(e => console.error('First-sent celebration error:', e && e.message));
+        req.session.flash = {
+          type: 'success',
+          message: `Invoice created and emailed to ${invoice.client_email}.`
+        };
+      } else {
+        const reason = (sendResult && sendResult.reason) || 'send_failed';
+        const copy = reason === 'not_configured'
+          ? 'Invoice created, but email delivery is not configured yet. Use the share buttons below to send it.'
+          : 'Invoice created, but the email could not be sent. Use the share buttons below to send it.';
+        req.session.flash = { type: 'error', message: copy };
+      }
+    }
+
     res.redirect(`/invoices/${invoice.id}`);
   } catch (err) {
     console.error('Create invoice error:', err);
