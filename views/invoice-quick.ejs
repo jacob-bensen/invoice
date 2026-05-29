@@ -275,9 +275,16 @@
         <% } else { %>
           <button type="submit"
             name="action" value="create_only"
+            data-testid="invoice-quick-submit-draft"
+            class="text-brand-700 hover:text-brand-800 hover:underline text-sm font-medium px-4 py-3 text-center">
+            Save as draft
+          </button>
+          <button type="submit"
+            name="action" value="create_and_whatsapp"
             data-testid="invoice-quick-submit"
-            class="bg-brand-600 text-white font-semibold px-8 py-3 rounded-xl hover:bg-brand-700 transition">
-            Create invoice &rarr;
+            data-action="create_and_whatsapp"
+            class="bg-brand-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-brand-700 transition">
+            &#128241; Create &amp; open WhatsApp &rarr;
           </button>
         <% } %>
       </div>
@@ -285,6 +292,10 @@
     <% if (canEmailFromForm) { %>
       <p class="text-xs text-gray-400 pt-1" data-testid="invoice-quick-email-hint">
         &ldquo;Email to client&rdquo; sends the invoice straight to their inbox and marks it as sent in one tap.
+      </p>
+    <% } else { %>
+      <p class="text-xs text-gray-400 pt-1" data-testid="invoice-quick-whatsapp-hint">
+        &ldquo;Open WhatsApp&rdquo; marks this as sent and pre-fills the message with a tap-to-pay link &mdash; pick a contact in WhatsApp to deliver it.
       </p>
     <% } %>
   </form>

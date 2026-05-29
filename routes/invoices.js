@@ -1298,6 +1298,44 @@ router.post('/quick', requireAuth, [
       }
     }
 
+    // Combined create+open-WhatsApp path: the freelancer ticked "Create &
+    // open WhatsApp" on the form (the free-tier analog of the Pro/Agency
+    // create_and_email shortcut). Collapses create → land on /:id → tap
+    // WhatsApp into a single action. Plan-agnostic — no plan gate is
+    // needed because the action only flips status + redirects to a wa.me/
+    // deep link, both of which the existing /share-intent endpoint already
+    // exposes to every plan. Skipped silently if the eagerly-minted public
+    // token didn't land (rare DB hiccup above) so the user falls through to
+    // the normal /:id redirect where the draft-send-banner has the same
+    // WhatsApp button.
+    if (req.body.action === 'create_and_whatsapp') {
+      const waSurface = invoice.public_token
+        ? buildShareSurfaceForInvoice(invoice)
+        : null;
+      const waUrl = waSurface && waSurface.shareIntents && waSurface.shareIntents.whatsapp;
+      if (waUrl) {
+        try {
+          await db.markInvoiceSentFromShareIntent(invoice.id, req.session.user.id);
+        } catch (e) {
+          console.error('Quick invoice WhatsApp share-flip failed:', e && e.message);
+        }
+        triggerFirstSentCelebration(db, req.session.user.id, invoice)
+          .catch(e => console.error('First-sent celebration error:', e && e.message));
+        req.session.flash = {
+          type: 'success',
+          message: `Invoice ${invoice.invoice_number} marked as sent — pick a WhatsApp contact to deliver the link.`
+        };
+        return res.redirect(waUrl);
+      }
+      // Token mint failed earlier — land the user on /:id so they can tap
+      // WhatsApp manually from the draft-send-banner instead of bouncing.
+      req.session.flash = {
+        type: 'error',
+        message: 'Invoice created — tap WhatsApp below to share the link.'
+      };
+      return res.redirect(`/invoices/${invoice.id}`);
+    }
+
     // Combined create+send path: the freelancer ticked "Create & email to
     // client" on the form, which collapses the create → land on /:id →
     // click "Send by email" two-step into a single action. Gated on

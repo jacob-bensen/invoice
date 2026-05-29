@@ -1104,12 +1104,15 @@ async function testViewHidesEmailButtonForFree() {
   });
   assert.ok(!html.includes('value="create_and_email"'),
     'free user MUST NOT see the create_and_email button (server hard-rejects anyway)');
-  assert.ok(!html.includes('data-testid="invoice-quick-submit-draft"'),
-    'free user sees a single "Create invoice" button, not the dual draft/email pair');
   assert.ok(!html.includes('data-testid="invoice-quick-email-hint"'),
     'free user must not see the Pro-only "email to client" hint');
   assert.ok(html.includes('data-testid="invoice-quick-submit"'),
     'free user still gets the primary submit button');
+  // Free user's primary CTA is now the WhatsApp share shortcut (the free-tier
+  // analog of Pro's create_and_email). Asserted in detail in the dedicated
+  // create-and-whatsapp test file.
+  assert.ok(html.includes('value="create_and_whatsapp"'),
+    'free user must see the create_and_whatsapp button (M3 — collapses create→/:id→tap WA into one tap)');
 }
 
 async function testViewRendersEmailButtonForAgency() {
