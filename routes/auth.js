@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const { body, validationResult } = require('express-validator');
 const { db } = require('../db');
@@ -27,7 +28,13 @@ router.get('/login', redirectIfAuth, (req, res) => {
 router.get('/register', redirectIfAuth, (req, res) => {
   const flash = req.session.flash;
   delete req.session.flash;
-  res.render('auth/register', { title: 'Create Account', flash, noindex: true });
+  // ?mode=magic switches the form to the passwordless variant (name+email
+  // only, server emails a one-tap sign-in link). Any other value renders the
+  // default password form. The toggle is round-trip-safe: a user who picks
+  // the passwordless mode and validation re-renders the form keeps the
+  // passwordless layout via the same query string.
+  const mode = (req.query && req.query.mode === 'magic') ? 'magic' : 'password';
+  res.render('auth/register', { title: 'Create Account', mode, flash, noindex: true });
 });
 
 router.post('/register', redirectIfAuth, authLimiter, [
@@ -59,44 +66,7 @@ router.post('/register', redirectIfAuth, authLimiter, [
     const password_hash = await bcrypt.hash(req.body.password, 12);
     const user = await db.createUser({ email: req.body.email, password_hash, name: req.body.name });
 
-    // Seed a sample draft invoice (#39) so the dashboard is never empty.
-    // Best-effort: a seed failure must NOT abort account creation.
-    try {
-      if (typeof db.createSeedInvoice === 'function') {
-        await db.createSeedInvoice({ user_id: user.id });
-      }
-    } catch (err) {
-      console.error('Seed invoice failed:', err && err.message);
-    }
-
-    // Referral attribution (#49). The visitor arrived via `?ref=<code>` and
-    // the server.js middleware stashed the code in their session. Attach
-    // it now so users.referrer_id captures who sent them; clear the cookie
-    // either way so a self-signed-up user later can't double-attribute.
-    if (req.session.referral_code && typeof db.attachReferrerByCode === 'function') {
-      try {
-        await db.attachReferrerByCode(user.id, req.session.referral_code);
-      } catch (err) {
-        console.error('Referrer attach failed:', err && err.message);
-      }
-      delete req.session.referral_code;
-    }
-
-    // Signup-source attribution. The server.js middleware captured
-    // `?utm_source=<token>` into the session on first touch; persist it on
-    // the users row so the /admin/activation `bySource[]` breakdown can
-    // group cohorts by acquisition channel. Clear the session value either
-    // way so a subsequent register-from-the-same-browser flow doesn't
-    // double-attribute the next user. Soft-fail on any DB hiccup — signup
-    // must never block on attribution plumbing.
-    if (req.session.signup_source && typeof db.attachSignupSource === 'function') {
-      try {
-        await db.attachSignupSource(user.id, req.session.signup_source);
-      } catch (err) {
-        console.error('Signup source attach failed:', err && err.message);
-      }
-      delete req.session.signup_source;
-    }
+    await applyPostSignupSideEffects(req, user);
 
     req.session.user = {
       id: user.id, email: user.email, name: user.name,
@@ -130,6 +100,128 @@ router.post('/register', redirectIfAuth, authLimiter, [
     console.error('Register error:', err);
     res.render('auth/register', {
       title: 'Create Account',
+      flash: { type: 'error', message: 'Something went wrong. Please try again.' },
+      values: req.body,
+      noindex: true
+    });
+  }
+});
+
+// Shared side-effects for any new-signup path (password OR passwordless):
+// seed sample invoice (#39 — dashboard never empty), referral attribution
+// (#49), signup-source attribution (utm_source). All three are soft-fail —
+// signup itself MUST never abort on attribution plumbing or seed errors.
+async function applyPostSignupSideEffects(req, user) {
+  try {
+    if (typeof db.createSeedInvoice === 'function') {
+      await db.createSeedInvoice({ user_id: user.id });
+    }
+  } catch (err) {
+    console.error('Seed invoice failed:', err && err.message);
+  }
+  if (req.session.referral_code && typeof db.attachReferrerByCode === 'function') {
+    try {
+      await db.attachReferrerByCode(user.id, req.session.referral_code);
+    } catch (err) {
+      console.error('Referrer attach failed:', err && err.message);
+    }
+    delete req.session.referral_code;
+  }
+  if (req.session.signup_source && typeof db.attachSignupSource === 'function') {
+    try {
+      await db.attachSignupSource(user.id, req.session.signup_source);
+    } catch (err) {
+      console.error('Signup source attach failed:', err && err.message);
+    }
+    delete req.session.signup_source;
+  }
+}
+
+// --- Passwordless registration --------------------------------------------
+//
+// Removes the password-creation step from signup — the dominant friction
+// point at the very top of the activation funnel. The user provides name +
+// email; we create the account with an unguessable random password (a real
+// password can be picked later via /auth/forgot) and fire the welcome email,
+// whose CTAs already auto-sign-in via a 7-day baked-in magic-login URL
+// (see lib/welcome.js). The user clicks any CTA → lands authenticated on
+// /invoices/new (or /billing/upgrade) → activation funnel resumes.
+//
+// Existing-account collision: we fire requestMagicLink against the existing
+// account so the user gets a fresh sign-in link in the same inbox, and we
+// render the same generic "check your inbox" success either way (no email
+// enumeration). The response is identical for new vs. existing.
+//
+// Security:
+//   - Random password (32 random bytes hex → bcrypt) is unguessable; the
+//     account cannot be password-logged-in until the user runs /auth/forgot.
+//   - CSRF + authLimiter inherited from the route mount.
+//   - Same input validation as POST /register minus the password constraint.
+router.post('/register/magic', redirectIfAuth, authLimiter, [
+  body('name').trim().notEmpty().withMessage('Name is required'),
+  body('email').isEmail().normalizeEmail().withMessage('Valid email required')
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.render('auth/register', {
+      title: 'Create Account',
+      mode: 'magic',
+      flash: { type: 'error', message: errors.array()[0].msg },
+      values: req.body,
+      noindex: true
+    });
+  }
+
+  const email = req.body.email;
+  const name = req.body.name.trim();
+
+  try {
+    const existing = await db.getUserByEmail(email);
+
+    if (existing) {
+      // Email already has an account. Fire a magic-login email so the user
+      // can sign in, and render the same generic success below — never
+      // reveal that the address is taken. Fire-and-forget.
+      requestMagicLink(db, email)
+        .catch((e) => console.error('Magic-link error (existing on /register/magic):', e && e.message));
+    } else {
+      // New account path. Mint an unguessable bcrypt-hashed random password
+      // so the row satisfies the NOT NULL schema constraint without giving
+      // anyone a way to password-login. The user can set a real password
+      // later via /auth/forgot if they want one.
+      const random = crypto.randomBytes(32).toString('hex');
+      const password_hash = await bcrypt.hash(random, 12);
+      const user = await db.createUser({ email, password_hash, name });
+
+      await applyPostSignupSideEffects(req, user);
+
+      // Welcome email IS the magic-login surface here — its CTAs already
+      // carry a 7-day auto-sign-in URL (see lib/welcome.js). The user
+      // clicking ANY CTA in the welcome email signs them in. Fire-and-
+      // forget; idempotent at the DB layer; soft-fails on Resend not
+      // configured / send errors so a transactional-email outage never
+      // surfaces here.
+      triggerWelcomeEmail(db, user.id)
+        .then(r => {
+          if (!r.ok && r.reason !== 'not_configured' && r.reason !== 'already_sent') {
+            console.warn(`Welcome email skipped for user ${user.id}: ${r.reason}`);
+          }
+        })
+        .catch(e => console.error('Welcome email error (passwordless signup):', e && e.message));
+    }
+
+    return res.render('auth/register', {
+      title: 'Create Account',
+      mode: 'magic',
+      sent: true,
+      submittedEmail: email,
+      noindex: true
+    });
+  } catch (err) {
+    console.error('Passwordless register error:', err);
+    return res.render('auth/register', {
+      title: 'Create Account',
+      mode: 'magic',
       flash: { type: 'error', message: 'Something went wrong. Please try again.' },
       values: req.body,
       noindex: true
