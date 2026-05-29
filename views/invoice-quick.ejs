@@ -280,6 +280,13 @@
             Save as draft
           </button>
           <button type="submit"
+            name="action" value="create_and_sms"
+            data-testid="invoice-quick-submit-sms"
+            data-action="create_and_sms"
+            class="bg-brand-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-brand-700 transition">
+            &#128172; Create &amp; open SMS &rarr;
+          </button>
+          <button type="submit"
             name="action" value="create_and_whatsapp"
             data-testid="invoice-quick-submit"
             data-action="create_and_whatsapp"
@@ -295,7 +302,7 @@
       </p>
     <% } else { %>
       <p class="text-xs text-gray-400 pt-1" data-testid="invoice-quick-whatsapp-hint">
-        &ldquo;Open WhatsApp&rdquo; marks this as sent and pre-fills the message with a tap-to-pay link &mdash; pick a contact in WhatsApp to deliver it.
+        Either &ldquo;Open SMS&rdquo; or &ldquo;Open WhatsApp&rdquo; marks this as sent and pre-fills the message with a tap-to-pay link &mdash; pick a contact in your messaging app to deliver it.
       </p>
     <% } %>
   </form>

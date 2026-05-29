@@ -1375,6 +1375,41 @@ router.post('/quick', requireAuth, [
       return res.redirect(`/invoices/${invoice.id}`);
     }
 
+    // Combined create+open-SMS path: the US/Canada/UK freelancer cohort runs
+    // most client comms over SMS, not WhatsApp; the WhatsApp shortcut alone
+    // leaves them with no one-tap send shortcut at all on /quick. Mirrors
+    // create_and_whatsapp exactly except the redirect target is the sms:
+    // deep link from the same share-link surface, so the share-flip semantics
+    // (atomic draft→sent, first-sent celebration, idempotent at SQL layer)
+    // match. Plan-agnostic for the same reason as create_and_whatsapp: a
+    // forged action from a Pro user is a benign no-op equivalent to tapping
+    // SMS on /share-intent.
+    if (req.body.action === 'create_and_sms') {
+      const smsSurface = invoice.public_token
+        ? buildShareSurfaceForInvoice(invoice)
+        : null;
+      const smsUrl = smsSurface && smsSurface.shareIntents && smsSurface.shareIntents.sms;
+      if (smsUrl) {
+        try {
+          await db.markInvoiceSentFromShareIntent(invoice.id, req.session.user.id);
+        } catch (e) {
+          console.error('Quick invoice SMS share-flip failed:', e && e.message);
+        }
+        triggerFirstSentCelebration(db, req.session.user.id, invoice)
+          .catch(e => console.error('First-sent celebration error:', e && e.message));
+        req.session.flash = {
+          type: 'success',
+          message: `Invoice ${invoice.invoice_number} marked as sent — pick a contact in Messages to deliver the link.`
+        };
+        return res.redirect(smsUrl);
+      }
+      req.session.flash = {
+        type: 'error',
+        message: 'Invoice created — tap SMS below to share the link.'
+      };
+      return res.redirect(`/invoices/${invoice.id}`);
+    }
+
     // Combined create+send path: the freelancer ticked "Create & email to
     // client" on the form, which collapses the create → land on /:id →
     // click "Send by email" two-step into a single action. Gated on
