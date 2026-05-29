@@ -401,11 +401,11 @@ router.post('/webhook-url', requireAuth, async (req, res) => {
 // activation time is the documented drop-off — this endpoint accepts a
 // single-field POST from a prompt that renders at the share moment, then
 // redirects back to the originating invoice page with a success flash.
-// `return_to` is hard-whitelisted against /invoices/<positive-int> as
-// defence-in-depth against open-redirect tampering; anything else
-// (including /admin, http(s)://…, //evil, /invoices/0) falls back to
-// /billing/settings.
-const PAYMENT_INSTRUCTIONS_RETURN_TO_RE = /^\/invoices\/[1-9][0-9]*$/;
+// `return_to` is hard-whitelisted against /invoices (the dashboard) and
+// /invoices/<positive-int> (a single invoice page) as defence-in-depth
+// against open-redirect tampering; anything else (including /admin,
+// http(s)://…, //evil, /invoices/0) falls back to /billing/settings.
+const PAYMENT_INSTRUCTIONS_RETURN_TO_RE = /^\/invoices(?:\/[1-9][0-9]*)?$/;
 
 router.post('/payment-instructions', requireAuth, async (req, res) => {
   const rawReturnTo = (req.body && typeof req.body.return_to === 'string')

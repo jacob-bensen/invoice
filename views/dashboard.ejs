@@ -229,6 +229,38 @@
     </div>
   <% } %>
 
+  <% if (locals.paymentInstructionsPrompt && paymentInstructionsPrompt) { %>
+    <form action="/billing/payment-instructions" method="POST"
+      data-testid="dashboard-payment-instructions-prompt"
+      data-unpaid-count="<%= paymentInstructionsPrompt.unpaidCount %>"
+      class="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-5 print:hidden">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <input type="hidden" name="return_to" value="/invoices" data-testid="dashboard-payment-instructions-return-to">
+      <p class="text-base font-semibold text-amber-900">
+        💰 Tell your clients how to pay you
+      </p>
+      <p class="text-sm text-amber-800 mt-1">
+        <% if (paymentInstructionsPrompt.unpaidCount === 1) { %>
+          You have <strong>1 unpaid invoice</strong> — but your share link doesn't show your client a way to pay yet. Add Venmo, Zelle, bank details, anything — and every share link you've already sent will surface it instantly.
+        <% } else { %>
+          You have <strong data-testid="dashboard-payment-instructions-unpaid-count"><%= paymentInstructionsPrompt.unpaidCount %></strong> unpaid invoices — but your share link doesn't show your client a way to pay yet. Add Venmo, Zelle, bank details, anything — and every share link you've already sent will surface it instantly.
+        <% } %>
+      </p>
+      <textarea name="payment_instructions" rows="3" maxlength="2000" required
+        data-testid="dashboard-payment-instructions-input"
+        placeholder="Venmo @yourhandle&#10;Zelle: you@bank.com&#10;Bank: Chase, routing 021000021, acct 1234567890"
+        class="w-full mt-3 border border-amber-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400"></textarea>
+      <div class="mt-3 flex flex-wrap items-center gap-3">
+        <button type="submit"
+          data-testid="dashboard-payment-instructions-submit"
+          class="bg-amber-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-amber-700 transition text-sm">
+          Save payment instructions
+        </button>
+        <p class="text-xs text-amber-700">Applies to every share link you've already sent — no need to resend.</p>
+      </div>
+    </form>
+  <% } %>
+
   <% if (locals.freshDraftPrompt && freshDraftPrompt) { %>
     <div
       data-testid="fresh-draft-prompt"

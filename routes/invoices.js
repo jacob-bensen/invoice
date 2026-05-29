@@ -87,8 +87,9 @@ router.get('/', requireAuth, async (req, res) => {
     const firstRealInvoicePrompt = buildFirstRealInvoicePrompt(user, invoices);
     const freshDraftPrompt = buildFreshDraftPrompt(user, invoices, { staleDraftPrompt });
     const repeatClientPrompt = buildRepeatClientPrompt(invoices);
+    const paymentInstructionsPrompt = buildPaymentInstructionsPrompt(user, invoices);
     const tableFollowUpIntents = buildTableFollowUpIntents(invoices);
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, paymentClaimPrompt, recentViewPrompt, clientViewedFollowupPrompt, sentNotViewedPrompt, overduePrompt, firstRealInvoicePrompt, freshDraftPrompt, repeatClientPrompt, pendingQuickInvoice, tableFollowUpIntents, noindex: true });
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, paymentClaimPrompt, recentViewPrompt, clientViewedFollowupPrompt, sentNotViewedPrompt, overduePrompt, firstRealInvoicePrompt, freshDraftPrompt, repeatClientPrompt, paymentInstructionsPrompt, pendingQuickInvoice, tableFollowUpIntents, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
@@ -104,6 +105,7 @@ router.get('/', requireAuth, async (req, res) => {
       firstRealInvoicePrompt: null,
       freshDraftPrompt: null,
       repeatClientPrompt: null,
+      paymentInstructionsPrompt: null,
       pendingQuickInvoice: null, tableFollowUpIntents: {}, noindex: true
     });
   }
@@ -810,6 +812,43 @@ function buildPaymentClaimPrompt(user, invoice) {
  * 30 days ago, edited 5 days ago) is harmless — the prompt is non-
  * destructive; the user reviews the duplicate before sending.
  */
+/*
+ * Free-tier payment-instructions dashboard prompt (Milestone 4 — first
+ * invoice sent → first payment received). Free users have no Stripe Pay
+ * button on the public /i/<token> share page, so a client opening the
+ * share link can only pay if users.payment_instructions has been filled
+ * in. The /invoices/:id inline capture (shipped earlier) only surfaces
+ * when the freelancer is on the invoice page itself; a freelancer who
+ * sent invoice X via the dashboard share-intent row and then returns to
+ * /invoices via a magic-link email never gets a chance to fix the gap —
+ * meanwhile their client opens the share link, sees no payment path,
+ * and silently bounces. This dashboard-level prompt fires whenever a
+ * free user with no payment_instructions has at least one sent or
+ * overdue (still unpaid) invoice: the cohort where the gap is actively
+ * costing payments. Setting the value once flows through to every
+ * existing share link automatically (owner_payment_instructions is a
+ * JOIN onto users.payment_instructions — no per-invoice backfill is
+ * needed). Pro and Agency users are excluded — they have the Stripe Pay
+ * button and the upgrade story owns the "make payment easy" surface.
+ */
+function buildPaymentInstructionsPrompt(user, invoices) {
+  if (!user) return null;
+  if (user.plan !== 'free') return null;
+  const existing = user.payment_instructions;
+  if (typeof existing === 'string' && existing.trim().length > 0) return null;
+  if (existing != null && typeof existing !== 'string') return null;
+  if (!Array.isArray(invoices)) return null;
+  let unpaidCount = 0;
+  for (const inv of invoices) {
+    if (!inv) continue;
+    if (inv.is_seed) continue;
+    if (inv.status !== 'sent' && inv.status !== 'overdue') continue;
+    unpaidCount++;
+  }
+  if (unpaidCount === 0) return null;
+  return { unpaidCount };
+}
+
 function buildRepeatClientPrompt(invoices, opts) {
   if (!Array.isArray(invoices)) return null;
   const now = (opts && Number.isFinite(opts.now)) ? opts.now : Date.now();
@@ -2187,6 +2226,7 @@ module.exports.buildFirstRealInvoicePrompt = buildFirstRealInvoicePrompt;
 module.exports.buildFreshDraftPrompt = buildFreshDraftPrompt;
 module.exports.FRESH_DRAFT_MAX_AGE_HOURS = FRESH_DRAFT_MAX_AGE_HOURS;
 module.exports.buildRepeatClientPrompt = buildRepeatClientPrompt;
+module.exports.buildPaymentInstructionsPrompt = buildPaymentInstructionsPrompt;
 module.exports.buildTableFollowUpIntents = buildTableFollowUpIntents;
 module.exports.buildPendingQuickInvoiceBanner = buildPendingQuickInvoiceBanner;
 module.exports.readPendingQuickInvoice = readPendingQuickInvoice;
