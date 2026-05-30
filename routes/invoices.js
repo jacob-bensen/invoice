@@ -1484,15 +1484,17 @@ router.get('/new', requireAuth, async (req, res) => {
   if (user.plan === 'free' && user.invoice_count >= FREE_LIMIT) {
     return res.redirect('/invoices?limit_hit=1');
   }
-  const [invoiceNumber, recentClients] = await Promise.all([
+  const [invoiceNumber, recentClients, recentItems] = await Promise.all([
     db.getNextInvoiceNumber(req.session.user.id),
-    loadRecentClients(req.session.user.id)
+    loadRecentClients(req.session.user.id),
+    loadRecentItems(req.session.user.id)
   ]);
   res.render('invoice-form', {
     title: 'New Invoice',
     invoice: null,
     invoiceNumber,
     recentClients,
+    recentItems,
     user,
     flash: null,
     noindex: true
@@ -1511,13 +1513,14 @@ router.post('/new', requireAuth, [
 
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    const [invoiceNumber, recentClients] = await Promise.all([
+    const [invoiceNumber, recentClients, recentItems] = await Promise.all([
       db.getNextInvoiceNumber(req.session.user.id),
-      loadRecentClients(req.session.user.id)
+      loadRecentClients(req.session.user.id),
+      loadRecentItems(req.session.user.id)
     ]);
     return res.render('invoice-form', {
       title: 'New Invoice',
-      invoice: null, invoiceNumber, recentClients, user,
+      invoice: null, invoiceNumber, recentClients, recentItems, user,
       flash: { type: 'error', message: errors.array()[0].msg },
       submitted: {
         business_name: req.body.business_name || '',
@@ -1636,12 +1639,13 @@ router.post('/new', requireAuth, [
     res.redirect(`/invoices/${invoice.id}`);
   } catch (err) {
     console.error('Create invoice error:', err);
-    const [invoiceNumber, recentClients] = await Promise.all([
+    const [invoiceNumber, recentClients, recentItems] = await Promise.all([
       db.getNextInvoiceNumber(req.session.user.id),
-      loadRecentClients(req.session.user.id)
+      loadRecentClients(req.session.user.id),
+      loadRecentItems(req.session.user.id)
     ]);
     res.render('invoice-form', {
-      title: 'New Invoice', invoice: null, invoiceNumber, recentClients, user,
+      title: 'New Invoice', invoice: null, invoiceNumber, recentClients, recentItems, user,
       flash: { type: 'error', message: 'Failed to save invoice. Please try again.' },
       submitted: {
         business_name: req.body.business_name || '',

@@ -1618,12 +1618,14 @@ const db = {
     const safe = (Number.isFinite(parsed) && parsed > 0) ? parsed : 8;
     const cap = Math.min(50, safe);
     const { rows } = await pool.query(
-      `SELECT description, amount
+      `SELECT description, amount, unit_price, quantity
          FROM (
            SELECT DISTINCT ON (LOWER(TRIM(item->>'description')))
                   TRIM(item->>'description') AS description,
                   (COALESCE(NULLIF(item->>'quantity', ''), '1')::numeric
                    * (item->>'unit_price')::numeric) AS amount,
+                  (item->>'unit_price')::numeric AS unit_price,
+                  COALESCE(NULLIF(item->>'quantity', ''), '1')::numeric AS quantity,
                   i.created_at AS used_at
              FROM invoices i,
                   LATERAL jsonb_array_elements(i.items) AS item
@@ -1641,7 +1643,13 @@ const db = {
     );
     return rows.map(r => ({
       description: r.description,
-      amount: typeof r.amount === 'string' ? parseFloat(r.amount) : Number(r.amount)
+      amount: typeof r.amount === 'string' ? parseFloat(r.amount) : Number(r.amount),
+      unit_price: r.unit_price == null
+        ? null
+        : (typeof r.unit_price === 'string' ? parseFloat(r.unit_price) : Number(r.unit_price)),
+      quantity: r.quantity == null
+        ? null
+        : (typeof r.quantity === 'string' ? parseFloat(r.quantity) : Number(r.quantity))
     }));
   },
 
