@@ -473,6 +473,10 @@ router.post('/settings', requireAuth, async (req, res) => {
       }
       payInstr = payInstrRaw;
     }
+    // bcc_invoice_emails is a checkbox: present (any value) means ON,
+    // absent means OFF. Browsers omit unchecked checkboxes from form
+    // submissions, so a missing key is the intentional "uncheck" signal.
+    const bccInvoiceEmails = Object.prototype.hasOwnProperty.call(req.body, 'bcc_invoice_emails');
     const updated = await db.updateUser(req.session.user.id, {
       name: req.body.name,
       business_name: req.body.business_name || null,
@@ -480,7 +484,8 @@ router.post('/settings', requireAuth, async (req, res) => {
       business_phone: req.body.business_phone || null,
       business_email: req.body.business_email || null,
       reply_to_email: replyTo,
-      payment_instructions: payInstr
+      payment_instructions: payInstr,
+      bcc_invoice_emails: bccInvoiceEmails
     });
     if (!updated) return res.redirect('/auth/login');
     req.session.user = { ...req.session.user, name: updated.name };

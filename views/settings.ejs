@@ -48,6 +48,17 @@
         <p class="text-xs text-gray-500 mt-1">When clients reply to invoice emails, replies go here. Defaults to your business email.</p>
       </div>
       <div>
+        <label class="flex items-start gap-3 cursor-pointer">
+          <input type="checkbox" name="bcc_invoice_emails" value="1" <%= user.bcc_invoice_emails ? 'checked' : '' %>
+            data-testid="settings-bcc-invoice-emails"
+            class="mt-0.5 h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500">
+          <span>
+            <span class="block text-sm font-medium text-gray-700">Send me a copy of every invoice I email</span>
+            <span class="block text-xs text-gray-500 mt-0.5">A silent BCC of the same email goes to <%= user.email %> so you have a paper trail in your own inbox.</span>
+          </span>
+        </label>
+      </div>
+      <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">How clients can pay you <span class="text-gray-400 font-normal">(optional)</span></label>
         <textarea name="payment_instructions" rows="4" maxlength="2000" data-testid="settings-payment-instructions"
           placeholder="Venmo @yourhandle&#10;Zelle: you@bank.com&#10;Bank: Chase, routing 021000021, acct 1234567890&#10;Cheque to: Your Name, 123 Main St"

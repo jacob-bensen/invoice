@@ -541,3 +541,16 @@ CREATE INDEX IF NOT EXISTS idx_users_inactive_reengagement
     AND lifecycle_emails_opted_out_at IS NULL
     AND last_login_at IS NOT NULL
     AND inactive_reengagement_sent_at IS NULL;
+
+-- Owner-side BCC opt-in (Milestone 3 — first invoice created → first
+-- invoice sent). When true, every outbound client invoice email (the
+-- one sendInvoiceEmail delivers from POST /invoices/:id/email-client,
+-- POST /invoices/quick action=create_and_email, POST /invoices/new
+-- action=create_and_email, and the existing draft→sent silent send)
+-- also delivers a silent copy to the freelancer's own users.email. The
+-- BCC is suppressed when client_email == owner.email (case-insensitive
+-- dedupe — sending the user a duplicate of their own self-addressed
+-- invoice confuses "did the client get it?"). Defaults to false so
+-- existing users don't get an unexpected inbox flood after migration;
+-- the settings page exposes the toggle.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS bcc_invoice_emails BOOLEAN DEFAULT false;
