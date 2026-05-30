@@ -226,9 +226,10 @@ async function testAutosaveStoresValidPayload() {
   assert.deepStrictEqual(setPendingCalls[0].payload, {
     client_name: 'Acme Corp',
     client_email: 'pay@acme.com',
+    client_phone: '',
     description: 'Brand identity',
     amount: '1200'
-  }, 'payload normalized to the 4-field shape, strings preserved');
+  }, 'payload normalized to the 5-field shape (incl. client_phone), strings preserved');
 }
 
 async function testAutosaveAllEmptyClears() {
@@ -270,10 +271,10 @@ async function testAutosaveStripsUnknownFields() {
   }, { json: true });
 
   assert.strictEqual(setPendingCalls.length, 1, 'autosave fires for valid payload');
-  // Defence-in-depth: only the four known keys survive normalization.
+  // Defence-in-depth: only the five known keys survive normalization.
   assert.deepStrictEqual(Object.keys(setPendingCalls[0].payload).sort(),
-    ['amount', 'client_email', 'client_name', 'description'],
-    'unknown fields stripped — payload exposes only the four expected keys');
+    ['amount', 'client_email', 'client_name', 'client_phone', 'description'],
+    'unknown fields stripped — payload exposes only the five expected keys (incl. client_phone)');
 }
 
 async function testAutosaveClampsOversizeFields() {

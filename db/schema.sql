@@ -518,6 +518,21 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS lifecycle_emails_opted_out_at TIMESTA
 ALTER TABLE users ADD COLUMN IF NOT EXISTS signup_source VARCHAR(32);
 CREATE INDEX IF NOT EXISTS idx_users_signup_source ON users(signup_source) WHERE signup_source IS NOT NULL;
 
+-- Client phone capture on invoices (Milestone 3 — first invoice created →
+-- first invoice sent). Without this, the SMS / WhatsApp share-intent URLs
+-- emitted from /invoices/quick (and from the public-share-intents surface on
+-- /i/<token>) carry no recipient — `sms:?&body=...` and `https://wa.me/?text=...`
+-- — and the freelancer has to hand-pick the client's contact inside Messages
+-- or WhatsApp after the tap. Capturing the phone once + threading it into
+-- `sms:+15551234567?body=...` and `https://wa.me/15551234567?text=...` cuts a
+-- step from the very moment of intent and is what gives the recent-clients
+-- quick-pick on a second invoice to the same client real one-tap-send energy.
+-- Stored per-invoice (not on users) because freelancers bill multiple clients
+-- with different numbers; the recent-clients DISTINCT-ON dropdown surfaces the
+-- last-used number per client so a repeat client also gets the same one-tap
+-- behaviour without the freelancer re-typing it.
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_phone VARCHAR(50);
+
 -- Inactive-user re-engagement stamp (Milestone 1 — signup → first dashboard
 -- re-entry, applied to the activated-but-silent cohort). The full
 -- activation cascade (no-invoice-nudge x2, stale-draft x2, sent-not-viewed

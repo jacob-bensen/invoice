@@ -5,6 +5,7 @@
   const sub = (locals.submitted && typeof submitted === 'object') ? submitted : {};
   const initialClientName = typeof sub.client_name === 'string' ? sub.client_name : '';
   const initialClientEmail = typeof sub.client_email === 'string' ? sub.client_email : '';
+  const initialClientPhone = typeof sub.client_phone === 'string' ? sub.client_phone : '';
   const initialDescription = typeof sub.description === 'string' ? sub.description : '';
   const initialAmount = typeof sub.amount === 'string' || typeof sub.amount === 'number' ? sub.amount : '';
   const initialPaymentInstructions = typeof sub.payment_instructions === 'string' ? sub.payment_instructions : '';
@@ -114,6 +115,7 @@
     x-data="quickInvoiceAutosave(<%= JSON.stringify({
       client_name: initialClientName,
       client_email: initialClientEmail,
+      client_phone: initialClientPhone,
       description: initialDescription,
       amount: typeof initialAmount === 'number' ? String(initialAmount) : initialAmount
     }) %>, <%= JSON.stringify(recentClientsList) %>, <%= JSON.stringify(recentItemsList) %>)"
@@ -182,6 +184,21 @@
         x-model="fields.client_email"
         @input.debounce.800ms="autosave()"
         class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+    </div>
+
+    <div data-testid="invoice-quick-client-phone-block">
+      <label class="block text-sm font-medium text-gray-700 mb-1" for="quick-client-phone">
+        Client phone <span class="text-gray-400 font-normal text-xs">(optional, pre-fills the recipient in SMS &amp; WhatsApp)</span>
+      </label>
+      <input id="quick-client-phone" type="tel" name="client_phone"
+        inputmode="tel" maxlength="50"
+        data-testid="invoice-quick-client-phone-input"
+        placeholder="+1 555 123 4567"
+        value="<%= initialClientPhone %>"
+        x-model="fields.client_phone"
+        @input.debounce.800ms="autosave()"
+        class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+      <p class="text-xs text-gray-400 mt-1">Include the country code (e.g. <code>+1</code> for US/Canada) so WhatsApp can route the message.</p>
     </div>
 
     <% if (recentItemsList.length > 0) { %>
@@ -320,6 +337,7 @@
       fields: {
         client_name: (initial && typeof initial.client_name === 'string') ? initial.client_name : '',
         client_email: (initial && typeof initial.client_email === 'string') ? initial.client_email : '',
+        client_phone: (initial && typeof initial.client_phone === 'string') ? initial.client_phone : '',
         description: (initial && typeof initial.description === 'string') ? initial.description : '',
         amount: (initial && typeof initial.amount === 'string') ? initial.amount : ''
       },
@@ -341,6 +359,10 @@
         if (!c) return;
         this.fields.client_name = c.client_name || '';
         this.fields.client_email = c.client_email || '';
+        // Pre-fill the phone too when a previous invoice to the same client
+        // captured one (Milestone 3 — created → sent). Repeat-client flows
+        // then get a one-tap SMS/WhatsApp recipient without re-typing.
+        this.fields.client_phone = c.client_phone || '';
         this.autosave();
       },
       // Quick-pick a previously-billed line item. Fills description + amount
@@ -376,6 +398,7 @@
             body: JSON.stringify({
               client_name: this.fields.client_name || '',
               client_email: this.fields.client_email || '',
+              client_phone: this.fields.client_phone || '',
               description: this.fields.description || '',
               amount: this.fields.amount == null ? '' : String(this.fields.amount)
             })

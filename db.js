@@ -136,16 +136,16 @@ const db = {
 
   async createInvoice(data) {
     const {
-      user_id, invoice_number, client_name, client_email, client_address,
+      user_id, invoice_number, client_name, client_email, client_address, client_phone,
       items, subtotal, tax_rate, tax_amount, total, notes, due_date, issued_date
     } = data;
     const { rows } = await pool.query(
       `INSERT INTO invoices
-        (user_id, invoice_number, client_name, client_email, client_address,
+        (user_id, invoice_number, client_name, client_email, client_address, client_phone,
          items, subtotal, tax_rate, tax_amount, total, notes, due_date, issued_date)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        RETURNING *`,
-      [user_id, invoice_number, client_name, client_email, client_address,
+      [user_id, invoice_number, client_name, client_email, client_address, client_phone || null,
        JSON.stringify(items), subtotal, tax_rate, tax_amount, total, notes, due_date, issued_date]
     );
     await pool.query('UPDATE users SET invoice_count = invoice_count + 1 WHERE id = $1', [user_id]);
@@ -1572,10 +1572,10 @@ const db = {
   async getRecentClientsForUser(userId, limit = 10) {
     const cap = Math.max(1, Math.min(50, parseInt(limit, 10) || 10));
     const { rows } = await pool.query(
-      `SELECT client_name, client_email, client_address
+      `SELECT client_name, client_email, client_address, client_phone
          FROM (
            SELECT DISTINCT ON (LOWER(COALESCE(NULLIF(client_email, ''), client_name)))
-                  client_name, client_email, client_address, created_at
+                  client_name, client_email, client_address, client_phone, created_at
              FROM invoices
             WHERE user_id = $1
               AND client_name IS NOT NULL
@@ -1973,7 +1973,7 @@ const db = {
     if (!/^[a-f0-9]{8,32}$/i.test(trimmed)) return null;
     const { rows } = await pool.query(
       `SELECT
-         i.id, i.invoice_number, i.client_name, i.client_email, i.client_address,
+         i.id, i.invoice_number, i.client_name, i.client_email, i.client_address, i.client_phone,
          i.items, i.subtotal, i.tax_rate, i.tax_amount, i.total, i.notes,
          i.status, i.issued_date, i.due_date,
          i.payment_link_url, i.public_token, i.is_seed,

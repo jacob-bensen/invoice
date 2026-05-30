@@ -22,6 +22,7 @@ const { triggerFirstPaidCelebration, buildReferralUrl } = require('../lib/celebr
 const { triggerFirstSentCelebration } = require('../lib/first-sent-celebration');
 const { triggerPaidReceipt } = require('../lib/paid-receipt');
 const { buildShareSurfaceForInvoice } = require('../lib/share-link');
+const { normalizeClientPhone } = require('../lib/phone');
 
 const router = express.Router();
 const FREE_LIMIT = 3;
@@ -348,11 +349,13 @@ function normalizePendingQuickInvoiceInput(body) {
   const payload = {
     client_name: clamp(body.client_name, PENDING_QUICK_MAX_LEN),
     client_email: clamp(body.client_email, PENDING_QUICK_MAX_LEN),
+    client_phone: clamp(body.client_phone, PENDING_QUICK_MAX_LEN),
     description: clamp(body.description, PENDING_QUICK_MAX_LEN),
     amount: clamp(body.amount, PENDING_QUICK_AMOUNT_MAX_LEN)
   };
   const allEmpty = !payload.client_name.trim()
     && !payload.client_email.trim()
+    && !payload.client_phone.trim()
     && !payload.description.trim()
     && !payload.amount.trim();
   return { payload, allEmpty };
@@ -372,11 +375,13 @@ function readPendingQuickInvoice(user) {
   const fields = {
     client_name: pickStr(raw.client_name),
     client_email: pickStr(raw.client_email),
+    client_phone: pickStr(raw.client_phone),
     description: pickStr(raw.description),
     amount: pickStr(raw.amount)
   };
   const allEmpty = !fields.client_name.trim()
     && !fields.client_email.trim()
+    && !fields.client_phone.trim()
     && !fields.description.trim()
     && !fields.amount.trim();
   if (allEmpty) return null;
@@ -1228,6 +1233,7 @@ router.post('/quick', requireAuth, [
       submitted: {
         client_name: req.body.client_name || '',
         client_email: req.body.client_email || '',
+        client_phone: req.body.client_phone || '',
         description: req.body.description || '',
         amount: req.body.amount || '',
         payment_instructions: req.body.payment_instructions || '',
@@ -1246,6 +1252,12 @@ router.post('/quick', requireAuth, [
     const invoice_number = await db.getNextInvoiceNumber(req.session.user.id);
 
     const client_email = req.body.client_email ? String(req.body.client_email).trim() : null;
+    // Normalise the client phone through the same digits+optional-leading-"+"
+    // whitelist used by the share-link helpers. A malformed phone (mistyped,
+    // letters, too short / too long) silently drops to null so the form
+    // submission is never rejected on a soft optional field — the share
+    // intents simply fall back to the no-recipient default.
+    const client_phone = normalizeClientPhone(req.body.client_phone);
     const defaultNotes = (user && typeof user.default_invoice_notes === 'string')
       ? user.default_invoice_notes.trim() : '';
     const invoice = await db.createInvoice({
@@ -1254,6 +1266,7 @@ router.post('/quick', requireAuth, [
       client_name: String(req.body.client_name).trim(),
       client_email,
       client_address: null,
+      client_phone,
       items: [{ description, quantity: 1, unit_price: amount }],
       subtotal: amount,
       tax_rate: 0,
