@@ -412,7 +412,7 @@
         data-prefetch-url="<%= _prefUrl %>"
         data-prefetch-intents="<%= _prefIntentsJson %>"
         data-prefetch-followup="<%= _prefFollowUpJson %>"
-        x-data="{ url: '', copied: false, loading: false, error: '', intents: null, followUpIntents: null, nativeShareSupported: false, emailSending: false, emailSent: false, emailError: '', fireIntent(kind) { try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: kind }) }).catch(() => {}); } catch (e) {} }, nativeShare(data) { try { if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') { navigator.share(data).catch(() => {}); } } catch (e) {} }, emailSendDirect() { try { this.emailSending = true; this.emailError = ''; fetch('/invoices/<%= invoice.id %>/email-client', { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Accept': 'application/json' } }).then(r => r.json().then(d => ({ ok: r.ok, status: r.status, data: d }))).then(res => { if (res.ok && res.data && res.data.ok) { this.emailSending = false; this.emailSent = true; setTimeout(() => { try { window.location.reload(); } catch (e) {} }, 1200); } else { this.emailSending = false; this.emailError = (res.data && res.data.error) || 'send_failed'; } }).catch(() => { this.emailSending = false; this.emailError = 'network_error'; }); } catch (e) { this.emailSending = false; this.emailError = 'js_error'; } } }"
+        x-data="{ url: '', copied: false, loading: false, error: '', intents: null, followUpIntents: null, nativeShareSupported: false, emailSending: false, emailSent: false, emailError: '', qrOpen: false, qrRendered: false, qrError: '', fireIntent(kind) { try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: kind }) }).catch(() => {}); } catch (e) {} }, nativeShare(data) { try { if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') { navigator.share(data).catch(() => {}); } } catch (e) {} }, emailSendDirect() { try { this.emailSending = true; this.emailError = ''; fetch('/invoices/<%= invoice.id %>/email-client', { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Accept': 'application/json' } }).then(r => r.json().then(d => ({ ok: r.ok, status: r.status, data: d }))).then(res => { if (res.ok && res.data && res.data.ok) { this.emailSending = false; this.emailSent = true; setTimeout(() => { try { window.location.reload(); } catch (e) {} }, 1200); } else { this.emailSending = false; this.emailError = (res.data && res.data.error) || 'send_failed'; } }).catch(() => { this.emailSending = false; this.emailError = 'network_error'; }); } catch (e) { this.emailSending = false; this.emailError = 'js_error'; } }, revealQr() { if (this.qrOpen) { this.qrOpen = false; return; } if (!this.url) { this.qrError = 'no_url'; return; } this.qrOpen = true; if (this.qrRendered) return; try { this.fireIntent('qr'); } catch (e) {} var self = this; var paint = function () { try { var el = document.getElementById('owner-share-qr-<%= invoice.id %>'); if (!el || typeof window.QRCode === 'undefined' || !self.url) { self.qrError = 'qr_unavailable'; return; } window.QRCode.toString(self.url, { type: 'svg', margin: 1, width: 200 }, function (err, svg) { if (err || !svg) { self.qrError = 'qr_render_failed'; return; } el.innerHTML = svg; self.qrRendered = true; self.qrError = ''; }); } catch (e) { self.qrError = 'qr_render_failed'; } }; if (typeof window.QRCode !== 'undefined') { paint(); return; } var s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js'; s.async = true; s.onload = paint; s.onerror = function () { self.qrError = 'qr_script_load_failed'; }; document.head.appendChild(s); } }"
         x-init="try { if ($el.dataset.prefetchUrl) { url = $el.dataset.prefetchUrl; } if ($el.dataset.prefetchIntents) { intents = JSON.parse($el.dataset.prefetchIntents); } if ($el.dataset.prefetchFollowup) { followUpIntents = JSON.parse($el.dataset.prefetchFollowup); } if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') { nativeShareSupported = true; } } catch (e) {}">
         <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Public share link</p>
         <% if (_shareIsPaidOwner) { %>
@@ -528,6 +528,49 @@
             </button>
           </div>
           <p class="text-gray-400 text-xs mt-2">Each button opens your native app with the message prefilled — review and hit send.</p>
+        </div>
+        <!-- QR code for in-person handoff (Milestone 3 — created → sent;
+             Milestone 4 — sent → paid). Mobile-service freelancers
+             (trainers, hairdressers, contractors, tutors, mobile repair) need
+             a scannable share path at the end of a session — typing a URL or
+             a Venmo handle into the client's phone is the friction point.
+             Toggle is lazy: the qrcode.js CDN script is only loaded after the
+             first reveal, so the freelancer pays zero load tax for the panel
+             until they actually use it. On first reveal we fire share-intent
+             ='qr' so the draft → sent auto-flip and the activation funnel's
+             intent counters both pick up the QR cohort. Visible on every plan
+             — the QR points at the same /i/<token> public share page that
+             already exists. -->
+        <div x-show="url" x-cloak class="mt-4 pt-4 border-t border-gray-100"
+          data-testid="public-share-qr">
+          <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">In-person handoff</p>
+          <p class="text-gray-500 text-xs mb-3">Working face-to-face? Show this QR code on your phone and have your client scan it with their camera to open the invoice — no typing, no app install.</p>
+          <button type="button"
+            data-testid="public-share-qr-toggle"
+            @click="revealQr()"
+            class="inline-flex items-center gap-2 border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-gray-50 transition text-sm">
+            <span aria-hidden="true">🔳</span>
+            <span x-show="!qrOpen">Show QR code</span>
+            <span x-show="qrOpen" x-cloak>Hide QR code</span>
+          </button>
+          <div x-show="qrOpen" x-cloak class="mt-4"
+            data-testid="public-share-qr-panel">
+            <div class="inline-flex flex-col items-center gap-2 p-4 rounded-lg border border-gray-200 bg-white">
+              <div id="owner-share-qr-<%= invoice.id %>"
+                data-testid="public-share-qr-image"
+                class="w-[200px] h-[200px] flex items-center justify-center text-gray-300 text-xs"
+                aria-label="QR code that opens the public invoice link">
+                Loading…
+              </div>
+              <p x-show="qrError" x-cloak data-testid="public-share-qr-error"
+                class="text-red-600 text-xs max-w-[220px] text-center">
+                Could not load the QR — copy the link above instead.
+              </p>
+              <p class="text-gray-500 text-xs max-w-[220px] text-center">
+                Scan with the camera app to open <span class="font-mono text-gray-700 break-all" x-text="url"></span>
+              </p>
+            </div>
+          </div>
         </div>
         <!-- Follow-up share intents (Milestone 4 — sent → paid). Visible
              only when the invoice has been sent (status='sent' or 'overdue')
