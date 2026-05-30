@@ -554,3 +554,19 @@ CREATE INDEX IF NOT EXISTS idx_users_inactive_reengagement
 -- existing users don't get an unexpected inbox flood after migration;
 -- the settings page exposes the toggle.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS bcc_invoice_emails BOOLEAN DEFAULT false;
+
+-- Default invoice notes / footer (Milestones 2 + 3). The notes textarea on
+-- /invoices/new and the invoice's notes JSON field on /invoices/quick are
+-- empty by default — every new invoice asks the freelancer to retype the
+-- same boilerplate ("Net 30. Late fee 1.5%/mo. Thanks for your business!")
+-- they put on every previous invoice, or to leave it blank. This column
+-- stores a per-user default that pre-fills the notes textarea on the
+-- advanced /new form and is written to invoice.notes by the /quick
+-- shortcut at create time. Saves keystrokes on the first-real-invoice
+-- path (M2) and ships every invoice with consistent payment terms +
+-- thanks copy (M3 / M4 — professional invoices get opened sooner and
+-- paid faster). 2000-char cap matches payment_instructions; rendered
+-- with whitespace preserved on the public /i/<token> page via the
+-- invoice's own notes field, so the default flows through every existing
+-- presentation surface without further plumbing.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS default_invoice_notes TEXT;

@@ -477,6 +477,18 @@ router.post('/settings', requireAuth, async (req, res) => {
     // absent means OFF. Browsers omit unchecked checkboxes from form
     // submissions, so a missing key is the intentional "uncheck" signal.
     const bccInvoiceEmails = Object.prototype.hasOwnProperty.call(req.body, 'bcc_invoice_emails');
+    // Default invoice notes / footer prefill the notes field on every
+    // newly-created invoice (advanced /new + quick /quick). 2000-char cap
+    // mirrors payment_instructions. Empty → NULL so the prefill no-ops.
+    const defaultNotesRaw = (req.body.default_invoice_notes || '').trim();
+    let defaultNotes = null;
+    if (defaultNotesRaw.length > 0) {
+      if (defaultNotesRaw.length > 2000) {
+        req.session.flash = { type: 'error', message: 'Default invoice notes are too long (2000 character limit).' };
+        return res.redirect('/billing/settings');
+      }
+      defaultNotes = defaultNotesRaw;
+    }
     const updated = await db.updateUser(req.session.user.id, {
       name: req.body.name,
       business_name: req.body.business_name || null,
@@ -485,7 +497,8 @@ router.post('/settings', requireAuth, async (req, res) => {
       business_email: req.body.business_email || null,
       reply_to_email: replyTo,
       payment_instructions: payInstr,
-      bcc_invoice_emails: bccInvoiceEmails
+      bcc_invoice_emails: bccInvoiceEmails,
+      default_invoice_notes: defaultNotes
     });
     if (!updated) return res.redirect('/auth/login');
     req.session.user = { ...req.session.user, name: updated.name };

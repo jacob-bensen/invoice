@@ -1246,6 +1246,8 @@ router.post('/quick', requireAuth, [
     const invoice_number = await db.getNextInvoiceNumber(req.session.user.id);
 
     const client_email = req.body.client_email ? String(req.body.client_email).trim() : null;
+    const defaultNotes = (user && typeof user.default_invoice_notes === 'string')
+      ? user.default_invoice_notes.trim() : '';
     const invoice = await db.createInvoice({
       user_id: req.session.user.id,
       invoice_number,
@@ -1257,7 +1259,7 @@ router.post('/quick', requireAuth, [
       tax_rate: 0,
       tax_amount: 0,
       total: amount,
-      notes: null,
+      notes: defaultNotes.length > 0 ? defaultNotes : null,
       issued_date,
       due_date
     });
