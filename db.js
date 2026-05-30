@@ -1987,6 +1987,9 @@ const db = {
          u.business_email   AS owner_business_email,
          u.business_phone   AS owner_business_phone,
          u.payment_instructions AS owner_payment_instructions,
+         u.venmo_handle    AS owner_venmo_handle,
+         u.cashapp_handle  AS owner_cashapp_handle,
+         u.paypal_me_handle AS owner_paypal_me_handle,
          u.plan            AS owner_plan
          FROM invoices i
          JOIN users u ON u.id = i.user_id

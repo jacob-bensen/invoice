@@ -570,3 +570,20 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS bcc_invoice_emails BOOLEAN DEFAULT fa
 -- invoice's own notes field, so the default flows through every existing
 -- presentation surface without further plumbing.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS default_invoice_notes TEXT;
+
+-- Tap-to-pay handles for Venmo, Cash App, PayPal.me (Milestone 4 — first
+-- invoice sent → first payment received). The existing payment_instructions
+-- textarea renders verbatim as a plain-text "How to pay" panel on the
+-- public /i/<token> page — informative, but the client must manually copy
+-- the handle and re-type it inside the Venmo/Cash App/PayPal app to send
+-- payment. These three structured columns let the public page render
+-- universal-link buttons with the invoice's amount and number pre-filled,
+-- collapsing the 4-step copy/switch/paste/type flow into a single tap on
+-- the dominant mobile cohort. Each column is the canonical handle (no
+-- leading `@` or `$`, no URL prefix) — normalization + validation lives
+-- in lib/payment-handles.js. 64-char cap is far above the platform-level
+-- maxes (Venmo 30, Cash App 20, PayPal.me 20) but leaves headroom for
+-- future platforms without another schema migration.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS venmo_handle VARCHAR(64);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS cashapp_handle VARCHAR(64);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS paypal_me_handle VARCHAR(64);

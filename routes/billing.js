@@ -8,6 +8,11 @@ const { getCompetitorPricing } = require('../lib/competitor-pricing');
 const { triggerFirstPaidCelebration } = require('../lib/celebration');
 const { triggerPaidReceipt } = require('../lib/paid-receipt');
 const { creditReferrerForSubscription } = require('../lib/referral');
+const {
+  normalizeVenmoHandle,
+  normalizeCashappHandle,
+  normalizePaypalHandle
+} = require('../lib/payment-handles');
 
 const router = express.Router();
 
@@ -489,6 +494,38 @@ router.post('/settings', requireAuth, async (req, res) => {
       }
       defaultNotes = defaultNotesRaw;
     }
+    // Tap-to-pay handles (Milestone 4). Each is run through the matching
+    // normalize<X>Handle() — strips leading `@`/`$`, pulls the handle out
+    // of a pasted URL ("https://venmo.com/foo" → "foo"), and validates
+    // against the platform's character/length rules. A non-empty raw
+    // value that fails normalization is rejected with a per-field error
+    // flash so the user knows which input was bad rather than silently
+    // dropping it. Empty → NULL so the public-page button just doesn't
+    // render for that platform.
+    function readHandle(raw, normalize, label) {
+      const trimmed = (raw == null ? '' : String(raw).trim());
+      if (!trimmed) return { ok: true, value: null };
+      const normalized = normalize(trimmed);
+      if (!normalized) {
+        return { ok: false, message: `${label} handle isn't valid — check for spaces, special characters, or extra URL parts.` };
+      }
+      return { ok: true, value: normalized };
+    }
+    const venmoResult = readHandle(req.body.venmo_handle, normalizeVenmoHandle, 'Venmo');
+    if (!venmoResult.ok) {
+      req.session.flash = { type: 'error', message: venmoResult.message };
+      return res.redirect('/billing/settings');
+    }
+    const cashappResult = readHandle(req.body.cashapp_handle, normalizeCashappHandle, 'Cash App');
+    if (!cashappResult.ok) {
+      req.session.flash = { type: 'error', message: cashappResult.message };
+      return res.redirect('/billing/settings');
+    }
+    const paypalResult = readHandle(req.body.paypal_me_handle, normalizePaypalHandle, 'PayPal.me');
+    if (!paypalResult.ok) {
+      req.session.flash = { type: 'error', message: paypalResult.message };
+      return res.redirect('/billing/settings');
+    }
     const updated = await db.updateUser(req.session.user.id, {
       name: req.body.name,
       business_name: req.body.business_name || null,
@@ -498,7 +535,10 @@ router.post('/settings', requireAuth, async (req, res) => {
       reply_to_email: replyTo,
       payment_instructions: payInstr,
       bcc_invoice_emails: bccInvoiceEmails,
-      default_invoice_notes: defaultNotes
+      default_invoice_notes: defaultNotes,
+      venmo_handle: venmoResult.value,
+      cashapp_handle: cashappResult.value,
+      paypal_me_handle: paypalResult.value
     });
     if (!updated) return res.redirect('/auth/login');
     req.session.user = { ...req.session.user, name: updated.name };

@@ -20,6 +20,7 @@ const emailLib = require('../lib/email');
 const { triggerFirstSentCelebration } = require('../lib/first-sent-celebration');
 const { buildInvoiceIcs, buildIcsFilename } = require('../lib/calendar');
 const { buildPublicInvoiceOg, PUBLIC_INVOICE_OG_DEFAULT_DESCRIPTION } = require('../lib/public-invoice-og');
+const { buildPayLinks } = require('../lib/payment-handles');
 
 const router = express.Router();
 
@@ -135,6 +136,19 @@ router.get('/i/:token', async (req, res) => {
   // freelancer's send-chain (their device, their forwarded chats) and the
   // client is the recipient, not the subject of the title.
   const ogFields = buildPublicInvoiceOg(invoice) || {};
+  // Tap-to-pay deep-link URLs are pre-computed on the route side rather
+  // than inside the EJS template — the template scope has no `require` by
+  // default, and threading the lib through every render call (vs. a
+  // template helper) keeps the contract explicit. Each value is either a
+  // ready-to-use universal link or null; the template renders one button
+  // per non-null URL.
+  const tapToPayLinks = buildPayLinks({
+    venmo: invoice.owner_venmo_handle,
+    cashapp: invoice.owner_cashapp_handle,
+    paypal: invoice.owner_paypal_me_handle,
+    amount: invoice.total,
+    invoiceNumber: invoice.invoice_number
+  });
   res.render('invoice-public', {
     title: `Invoice ${invoice.invoice_number} — DecentInvoice`,
     invoice,
@@ -142,6 +156,7 @@ router.get('/i/:token', async (req, res) => {
     paymentClaimReferenceMax: PAYMENT_CLAIM_REFERENCE_MAX,
     paymentClaimNoteMax: PAYMENT_CLAIM_NOTE_MAX,
     justClaimed: claimed,
+    tapToPayLinks,
     ogTitle: ogFields.title || `Invoice ${invoice.invoice_number} — DecentInvoice`,
     ogDescription: ogFields.description || PUBLIC_INVOICE_OG_DEFAULT_DESCRIPTION,
     ogPath: `/i/${token.trim()}`,
