@@ -28,6 +28,35 @@
         amount: qty * unit
       };
     });
+  // "Suggested services" presets — only surfaces on the new-flow when the
+  // freelancer has no recent items to pick from (brand-new account, or every
+  // prior invoice was the seed). Mutually exclusive with the recent-items
+  // dropdown above so the form never shows two competing pickers. Same
+  // shape contract { description, quantity, unit_price } so the Alpine
+  // factory's fill semantics can be re-used. Empty / non-array input
+  // collapses to no dropdown (defence-in-depth — if a future refactor
+  // forgets to thread the constant, the form quietly omits the block
+  // rather than rendering a broken empty <select>).
+  const rawServicePresets = (locals.servicePresets && Array.isArray(servicePresets))
+    ? servicePresets : [];
+  const servicePresetsList = (!invoice && recentItemsListNew.length === 0)
+    ? rawServicePresets
+        .filter(it => it
+          && typeof it.description === 'string'
+          && it.description.trim().length > 0
+          && Number.isFinite(Number(it.unit_price))
+          && Number(it.unit_price) > 0)
+        .map(it => {
+          const qtyRaw = Number(it.quantity);
+          const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
+          const unit = Number(it.unit_price);
+          return {
+            description: String(it.description).trim().slice(0, 80),
+            quantity: qty,
+            unit_price: unit
+          };
+        })
+    : [];
   const initialClient = {
     name: invoice ? (invoice.client_name || '') : '',
     email: invoice && invoice.client_email ? invoice.client_email : '',
@@ -66,7 +95,7 @@
   const initialPaymentInstructionsNew = typeof submittedNew.payment_instructions === 'string'
     ? submittedNew.payment_instructions : '';
 %>
-<div class="max-w-4xl mx-auto px-4 py-10" x-data="invoiceEditor(<%= JSON.stringify(invoice ? invoice.items : []) %>, <%= JSON.stringify(recentClientsList) %>, <%= JSON.stringify(initialClient) %>, <%= JSON.stringify(invoice ? [] : recentItemsListNew) %>)">
+<div class="max-w-4xl mx-auto px-4 py-10" x-data="invoiceEditor(<%= JSON.stringify(invoice ? invoice.items : []) %>, <%= JSON.stringify(recentClientsList) %>, <%= JSON.stringify(initialClient) %>, <%= JSON.stringify(invoice ? [] : recentItemsListNew) %>, <%= JSON.stringify(servicePresetsList) %>)">
   <div class="flex items-center gap-3 mb-8">
     <a href="/invoices" class="text-gray-400 hover:text-gray-600 text-sm">← Invoices</a>
     <span class="text-gray-300">/</span>
@@ -207,6 +236,23 @@
           </select>
           <p class="text-xs text-gray-400 mt-1">Selecting fills (or adds) a line below &mdash; you can still edit it.</p>
         </div>
+      <% } else if (servicePresetsList.length > 0) { %>
+        <div data-service-presets data-testid="invoice-new-service-presets"
+          class="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <label for="new-service-preset-picker" class="block text-sm font-medium text-amber-900 mb-1">
+            ✨ Suggested services <span class="text-amber-700 font-normal text-xs">(don&rsquo;t know what to charge? Start here)</span>
+          </label>
+          <select id="new-service-preset-picker"
+            data-testid="invoice-new-service-presets-select"
+            x-model="pickedPreset" @change="fillFromServicePreset()"
+            class="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400">
+            <option value="">Pick a common service to pre-fill&hellip;</option>
+            <% servicePresetsList.forEach(function(it, idx) { %>
+              <option value="<%= idx %>"><%= it.description %> &middot; $<%= it.unit_price.toFixed(2) %></option>
+            <% }) %>
+          </select>
+          <p class="text-xs text-amber-800 mt-1">Picks fill the line below &mdash; edit the price, qty, or description to match your job.</p>
+        </div>
       <% } %>
 
       <!-- Header row -->
@@ -345,7 +391,7 @@
 </div>
 
 <script>
-function invoiceEditor(initialItems, initialRecentClients, initialClient, initialRecentItems) {
+function invoiceEditor(initialItems, initialRecentClients, initialClient, initialRecentItems, initialServicePresets) {
   const c = initialClient && typeof initialClient === 'object' ? initialClient : {};
   return {
     items: initialItems && initialItems.length > 0
@@ -357,8 +403,10 @@ function invoiceEditor(initialItems, initialRecentClients, initialClient, initia
     total: 0,
     recentClients: Array.isArray(initialRecentClients) ? initialRecentClients : [],
     recentItems: Array.isArray(initialRecentItems) ? initialRecentItems : [],
+    servicePresets: Array.isArray(initialServicePresets) ? initialServicePresets : [],
     picked: '',
     pickedItem: '',
+    pickedPreset: '',
     clientName: typeof c.name === 'string' ? c.name : '',
     clientEmail: typeof c.email === 'string' ? c.email : '',
     clientAddress: typeof c.address === 'string' ? c.address : '',
@@ -387,6 +435,34 @@ function invoiceEditor(initialItems, initialRecentClients, initialClient, initia
       this.pickedItem = '';
       if (Number.isNaN(idx) || idx < 0 || idx >= this.recentItems.length) return;
       const it = this.recentItems[idx];
+      if (!it || typeof it.description !== 'string') return;
+      const qty = Number(it.quantity);
+      const unit = Number(it.unit_price);
+      if (!Number.isFinite(qty) || qty <= 0) return;
+      if (!Number.isFinite(unit) || unit <= 0) return;
+      const filled = { description: it.description, quantity: qty, unit_price: unit };
+      const last = this.items[this.items.length - 1];
+      const lastEmpty = last
+        && (!last.description || String(last.description).trim() === '')
+        && (!Number(last.unit_price) || Number(last.unit_price) === 0);
+      if (lastEmpty) {
+        this.items.splice(this.items.length - 1, 1, filled);
+      } else {
+        this.items.push(filled);
+      }
+      this.recalculate();
+    },
+
+    // Quick-pick a suggested service preset (brand-new user — no recent items
+    // to pick from). Same fill semantics as fillFromRecentItem(): replace the
+    // last line if it's the empty starter row, else append a fresh line. The
+    // user is expected to edit the description/price/qty to match their
+    // actual job; the preset is a starting point, not a recommendation.
+    fillFromServicePreset() {
+      const idx = parseInt(this.pickedPreset, 10);
+      this.pickedPreset = '';
+      if (Number.isNaN(idx) || idx < 0 || idx >= this.servicePresets.length) return;
+      const it = this.servicePresets[idx];
       if (!it || typeof it.description !== 'string') return;
       const qty = Number(it.quantity);
       const unit = Number(it.unit_price);

@@ -23,6 +23,7 @@ const { triggerFirstSentCelebration } = require('../lib/first-sent-celebration')
 const { triggerPaidReceipt } = require('../lib/paid-receipt');
 const { buildShareSurfaceForInvoice } = require('../lib/share-link');
 const { normalizeClientPhone } = require('../lib/phone');
+const { SERVICE_PRESETS } = require('../lib/service-presets');
 
 const router = express.Router();
 const FREE_LIMIT = 3;
@@ -1510,6 +1511,7 @@ router.get('/new', requireAuth, async (req, res) => {
     invoiceNumber,
     recentClients,
     recentItems,
+    servicePresets: SERVICE_PRESETS,
     user,
     flash: null,
     noindex: true
@@ -1535,7 +1537,9 @@ router.post('/new', requireAuth, [
     ]);
     return res.render('invoice-form', {
       title: 'New Invoice',
-      invoice: null, invoiceNumber, recentClients, recentItems, user,
+      invoice: null, invoiceNumber, recentClients, recentItems,
+      servicePresets: SERVICE_PRESETS,
+      user,
       flash: { type: 'error', message: errors.array()[0].msg },
       submitted: {
         business_name: req.body.business_name || '',
@@ -1661,7 +1665,9 @@ router.post('/new', requireAuth, [
       loadRecentItems(req.session.user.id)
     ]);
     res.render('invoice-form', {
-      title: 'New Invoice', invoice: null, invoiceNumber, recentClients, recentItems, user,
+      title: 'New Invoice', invoice: null, invoiceNumber, recentClients, recentItems,
+      servicePresets: SERVICE_PRESETS,
+      user,
       flash: { type: 'error', message: 'Failed to save invoice. Please try again.' },
       submitted: {
         business_name: req.body.business_name || '',
