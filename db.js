@@ -212,17 +212,18 @@ const db = {
 
   async updateInvoice(id, userId, data) {
     const {
-      client_name, client_email, client_address,
+      client_name, client_email, client_address, client_phone,
       items, subtotal, tax_rate, tax_amount, total, notes, due_date, issued_date, status
     } = data;
     const { rows } = await pool.query(
       `UPDATE invoices SET
-        client_name=$3, client_email=$4, client_address=$5,
+        client_name=$3, client_email=$4, client_address=$5, client_phone=$15,
         items=$6, subtotal=$7, tax_rate=$8, tax_amount=$9, total=$10,
         notes=$11, due_date=$12, issued_date=$13, status=$14, updated_at=NOW()
        WHERE id=$1 AND user_id=$2 RETURNING *`,
       [id, userId, client_name, client_email, client_address,
-       JSON.stringify(items), subtotal, tax_rate, tax_amount, total, notes, due_date, issued_date, status]
+       JSON.stringify(items), subtotal, tax_rate, tax_amount, total, notes, due_date, issued_date, status,
+       client_phone || null]
     );
     return rows[0] || null;
   },

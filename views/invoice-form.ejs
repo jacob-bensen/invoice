@@ -31,7 +31,8 @@
   const initialClient = {
     name: invoice ? (invoice.client_name || '') : '',
     email: invoice && invoice.client_email ? invoice.client_email : '',
-    address: invoice && invoice.client_address ? invoice.client_address : ''
+    address: invoice && invoice.client_address ? invoice.client_address : '',
+    phone: invoice && invoice.client_phone ? invoice.client_phone : ''
   };
   // Inline business_name + payment_instructions capture, mirroring
   // /invoices/quick. A user who lands on the advanced form because they need
@@ -168,6 +169,16 @@
             <input type="email" name="client_email" x-model="clientEmail"
               placeholder="client@example.com"
               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+              Client Phone <span class="text-gray-400 font-normal text-xs">(optional — pre-fills SMS &amp; WhatsApp share)</span>
+            </label>
+            <input type="tel" inputmode="tel" name="client_phone" x-model="clientPhone"
+              data-testid="invoice-new-client-phone-input"
+              placeholder="+1 555 123 4567"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+            <p class="text-xs text-gray-400 mt-1">Include the country code (<code class="bg-gray-100 px-1 rounded">+1</code> for US/Canada) so WhatsApp can route the message.</p>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Client Address</label>
@@ -351,6 +362,7 @@ function invoiceEditor(initialItems, initialRecentClients, initialClient, initia
     clientName: typeof c.name === 'string' ? c.name : '',
     clientEmail: typeof c.email === 'string' ? c.email : '',
     clientAddress: typeof c.address === 'string' ? c.address : '',
+    clientPhone: typeof c.phone === 'string' ? c.phone : '',
 
     init() { this.recalculate(); },
 
@@ -362,6 +374,7 @@ function invoiceEditor(initialItems, initialRecentClients, initialClient, initia
       this.clientName = c.client_name || '';
       this.clientEmail = c.client_email || '';
       this.clientAddress = c.client_address || '';
+      this.clientPhone = c.client_phone || '';
     },
 
     // Quick-pick a previously-billed line item. If the LAST line is empty
