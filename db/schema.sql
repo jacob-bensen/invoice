@@ -602,3 +602,16 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS default_invoice_notes TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS venmo_handle VARCHAR(64);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS cashapp_handle VARCHAR(64);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS paypal_me_handle VARCHAR(64);
+
+-- Zelle handle (Milestone 4 — first invoice sent → first payment
+-- received). Unlike Venmo / Cash App / PayPal, Zelle has no public
+-- profile URLs and no deep-link standard — it lives entirely inside
+-- bank apps. We store the freelancer's registered Zelle handle (an
+-- email OR a US phone number) so the public /i/<token> page can render
+-- a tap-to-copy handle plus an "open your bank app" hint, collapsing
+-- the "ask the freelancer for their Zelle info → wait for reply → re-
+-- type into bank app" friction into a single copy-and-paste. 254-char
+-- cap matches the email envelope max (RFC 5321) and is far above any
+-- phone-shape input; normalization + email-or-phone validation lives
+-- in lib/payment-handles.js#normalizeZelleHandle.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS zelle_handle VARCHAR(254);

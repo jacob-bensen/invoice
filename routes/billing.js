@@ -11,7 +11,8 @@ const { creditReferrerForSubscription } = require('../lib/referral');
 const {
   normalizeVenmoHandle,
   normalizeCashappHandle,
-  normalizePaypalHandle
+  normalizePaypalHandle,
+  normalizeZelleHandle
 } = require('../lib/payment-handles');
 
 const router = express.Router();
@@ -526,6 +527,16 @@ router.post('/settings', requireAuth, async (req, res) => {
       req.session.flash = { type: 'error', message: paypalResult.message };
       return res.redirect('/billing/settings');
     }
+    const zelleResult = readHandle(req.body.zelle_handle, normalizeZelleHandle, 'Zelle');
+    if (!zelleResult.ok) {
+      // Zelle handles can be email or phone; the generic readHandle()
+      // message is unhelpfully vague here, so we override with a hint.
+      req.session.flash = {
+        type: 'error',
+        message: "Zelle handle isn't valid — enter the email address or phone number you've registered with your bank's Zelle service."
+      };
+      return res.redirect('/billing/settings');
+    }
     const updated = await db.updateUser(req.session.user.id, {
       name: req.body.name,
       business_name: req.body.business_name || null,
@@ -538,7 +549,8 @@ router.post('/settings', requireAuth, async (req, res) => {
       default_invoice_notes: defaultNotes,
       venmo_handle: venmoResult.value,
       cashapp_handle: cashappResult.value,
-      paypal_me_handle: paypalResult.value
+      paypal_me_handle: paypalResult.value,
+      zelle_handle: zelleResult.value
     });
     if (!updated) return res.redirect('/auth/login');
     req.session.user = { ...req.session.user, name: updated.name };

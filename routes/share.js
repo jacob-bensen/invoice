@@ -146,6 +146,7 @@ router.get('/i/:token', async (req, res) => {
     venmo: invoice.owner_venmo_handle,
     cashapp: invoice.owner_cashapp_handle,
     paypal: invoice.owner_paypal_me_handle,
+    zelle: invoice.owner_zelle_handle,
     amount: invoice.total,
     invoiceNumber: invoice.invoice_number
   });
