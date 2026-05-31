@@ -1816,12 +1816,25 @@ router.post('/:id/edit', requireAuth, async (req, res) => {
   }
 });
 
+// `return_to` lets a caller (e.g. the per-row Mark-paid button on the
+// dashboard table) keep the freelancer on the dashboard after the flip
+// instead of bouncing them into /invoices/:id. Hard-whitelisted against
+// /invoices (the dashboard) and /invoices/<positive-int> (a single
+// invoice page) as defence-in-depth against open-redirect tampering;
+// anything else (incl. /admin, http(s)://…, //evil, javascript:) falls
+// back to the legacy /invoices/:id redirect.
+const STATUS_RETURN_TO_RE = /^\/invoices(?:\/[1-9][0-9]*)?$/;
+
 router.post('/:id/status', requireAuth, async (req, res) => {
+  const rawReturnTo = (req.body && typeof req.body.return_to === 'string')
+    ? req.body.return_to.trim() : '';
+  const safeReturnTo = STATUS_RETURN_TO_RE.test(rawReturnTo)
+    ? rawReturnTo : `/invoices/${req.params.id}`;
   try {
     const newStatus = req.body.status;
     if (!ALLOWED_INVOICE_STATUSES.includes(newStatus)) {
       req.session.flash = { type: 'error', message: 'Invalid invoice status.' };
-      return res.redirect(`/invoices/${req.params.id}`);
+      return res.redirect(safeReturnTo);
     }
     const updated = await db.updateInvoiceStatus(req.params.id, req.session.user.id, newStatus);
 
@@ -1881,10 +1894,10 @@ router.post('/:id/status', requireAuth, async (req, res) => {
     }
 
     req.session.flash = { type: 'success', message: `Invoice marked as ${newStatus}.` };
-    res.redirect(`/invoices/${req.params.id}`);
+    res.redirect(safeReturnTo);
   } catch (err) {
     console.error('Status update error:', err);
-    res.redirect(`/invoices/${req.params.id}`);
+    res.redirect(safeReturnTo);
   }
 });
 

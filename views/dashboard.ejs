@@ -1439,6 +1439,47 @@
                   // of them straight from the table view.
                   const tableIntents = (locals.tableFollowUpIntents && tableFollowUpIntents[String(inv.id)]) || null;
                 %>
+                <%
+                  // Per-row inline "Mark paid" affordance (Milestone 4 — sent →
+                  // paid). Surfaces on every non-seed sent/overdue row. The
+                  // existing single-banner prompt stack (recentView /
+                  // clientViewedFollowup / sentNotViewed / overdue / paymentClaim)
+                  // only ever exposes the OLDEST qualifying row's mark-paid;
+                  // this closes the long-tail gap so a freelancer with 3+ open
+                  // unpaid invoices can mark each one paid in one tap straight
+                  // from the table view. Highest leverage when the row also
+                  // carries a payment-claim badge ("Client reports paid via
+                  // Venmo") — the freelancer's typical next action is "verify
+                  // against the deposit, then confirm". Each flip fires the
+                  // paid-receipt email to the client, the first-paid
+                  // celebration, and (when configured) the outbound webhook —
+                  // the close-the-loop event for M4. `return_to=/invoices`
+                  // keeps the freelancer on the dashboard so they can chain
+                  // multiple mark-paids without bouncing through /:id each
+                  // time.
+                  const canMarkPaid = !inv.is_seed && (inv.status === 'sent' || inv.status === 'overdue');
+                %>
+                <% if (canMarkPaid) { %>
+                  <form
+                    action="/invoices/<%= inv.id %>/status"
+                    method="POST"
+                    class="inline-block mt-2 mr-2 print:hidden align-top"
+                    onclick="event.stopPropagation()"
+                    data-testid="table-mark-paid-form-<%= inv.id %>"
+                  >
+                    <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+                    <input type="hidden" name="status" value="paid">
+                    <input type="hidden" name="return_to" value="/invoices">
+                    <button
+                      type="submit"
+                      data-testid="table-mark-paid-<%= inv.id %>"
+                      class="inline-flex items-center gap-1 text-[11px] font-semibold text-green-800 bg-green-50 border border-green-200 px-2 py-0.5 rounded hover:bg-green-100 transition"
+                    >
+                      <span aria-hidden="true">&#10003;</span>
+                      <span>Mark paid</span>
+                    </button>
+                  </form>
+                <% } %>
                 <% if (tableIntents && !showClaim) { %>
                   <div
                     class="mt-2 print:hidden inline-block relative align-top"
