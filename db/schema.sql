@@ -615,3 +615,16 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS paypal_me_handle VARCHAR(64);
 -- phone-shape input; normalization + email-or-phone validation lives
 -- in lib/payment-handles.js#normalizeZelleHandle.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS zelle_handle VARCHAR(254);
+
+-- Per-user default currency (every Milestone — display propagates to the
+-- public /i/<token> share page totals + the PayPal.me tap-to-pay deep
+-- link's `/<amount><CCY>` suffix). Pre-this-column, every amount on the
+-- public client-facing page was hardcoded `$` + `toFixed(2)` and PayPal's
+-- universal-link assumed USD — so a freelancer outside the US either had
+-- to squeeze the currency code into their line-item description or
+-- accept that their client saw the wrong symbol. Eight ISO-4217 codes
+-- supported (USD/EUR/GBP/CAD/AUD/NZD/CHF/JPY); the canonical whitelist
+-- + symbol map lives in lib/currency.js + lib/html.js. CHAR(3) NOT NULL
+-- DEFAULT 'USD' so every existing row gets the historical default at
+-- migration time and the resolver never has to guard against NULL.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS default_currency CHAR(3) NOT NULL DEFAULT 'USD';

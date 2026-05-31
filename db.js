@@ -1992,6 +1992,7 @@ const db = {
          u.cashapp_handle  AS owner_cashapp_handle,
          u.paypal_me_handle AS owner_paypal_me_handle,
          u.zelle_handle    AS owner_zelle_handle,
+         u.default_currency AS owner_default_currency,
          u.plan            AS owner_plan
          FROM invoices i
          JOIN users u ON u.id = i.user_id

@@ -14,6 +14,7 @@ const {
   normalizePaypalHandle,
   normalizeZelleHandle
 } = require('../lib/payment-handles');
+const { normalizeCurrencyCode, DEFAULT_CURRENCY } = require('../lib/currency');
 
 const router = express.Router();
 
@@ -537,7 +538,28 @@ router.post('/settings', requireAuth, async (req, res) => {
       };
       return res.redirect('/billing/settings');
     }
-    const updated = await db.updateUser(req.session.user.id, {
+    // Default currency — whitelist-validated through lib/currency. Missing
+    // / empty key keeps the existing stored value (so the settings form
+    // doesn't have to re-submit every field on every save). An unknown
+    // code rejects with a flash rather than silently falling back, so a
+    // future select-tampering attempt is loud, not silent.
+    let defaultCurrency;
+    if (Object.prototype.hasOwnProperty.call(req.body, 'default_currency')) {
+      const raw = req.body.default_currency;
+      const normalized = normalizeCurrencyCode(raw);
+      const rawTrim = typeof raw === 'string' ? raw.trim() : '';
+      if (!rawTrim) {
+        // Empty submission keeps the column NOT NULL default — never
+        // writes NULL into a NOT NULL column.
+        defaultCurrency = DEFAULT_CURRENCY;
+      } else if (!normalized) {
+        req.session.flash = { type: 'error', message: 'That currency isn’t supported yet.' };
+        return res.redirect('/billing/settings');
+      } else {
+        defaultCurrency = normalized;
+      }
+    }
+    const updateFields = {
       name: req.body.name,
       business_name: req.body.business_name || null,
       business_address: req.body.business_address || null,
@@ -551,7 +573,9 @@ router.post('/settings', requireAuth, async (req, res) => {
       cashapp_handle: cashappResult.value,
       paypal_me_handle: paypalResult.value,
       zelle_handle: zelleResult.value
-    });
+    };
+    if (defaultCurrency) updateFields.default_currency = defaultCurrency;
+    const updated = await db.updateUser(req.session.user.id, updateFields);
     if (!updated) return res.redirect('/auth/login');
     req.session.user = { ...req.session.user, name: updated.name };
     req.session.flash = { type: 'success', message: 'Settings saved.' };

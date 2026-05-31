@@ -21,6 +21,7 @@ const { triggerFirstSentCelebration } = require('../lib/first-sent-celebration')
 const { buildInvoiceIcs, buildIcsFilename } = require('../lib/calendar');
 const { buildPublicInvoiceOg, PUBLIC_INVOICE_OG_DEFAULT_DESCRIPTION } = require('../lib/public-invoice-og');
 const { buildPayLinks } = require('../lib/payment-handles');
+const { resolveInvoiceCurrency, formatMoney, SUPPORTED_CURRENCIES } = require('../lib/currency');
 
 const router = express.Router();
 
@@ -142,13 +143,19 @@ router.get('/i/:token', async (req, res) => {
   // template helper) keeps the contract explicit. Each value is either a
   // ready-to-use universal link or null; the template renders one button
   // per non-null URL.
+  // Currency precedence: per-invoice `currency` override > owner's stored
+  // default_currency > 'USD'. The single resolved code drives both the
+  // PayPal.me deep-link suffix AND the view-side money formatter so they
+  // never disagree on what the client sees.
+  const invoiceCurrency = resolveInvoiceCurrency(invoice);
   const tapToPayLinks = buildPayLinks({
     venmo: invoice.owner_venmo_handle,
     cashapp: invoice.owner_cashapp_handle,
     paypal: invoice.owner_paypal_me_handle,
     zelle: invoice.owner_zelle_handle,
     amount: invoice.total,
-    invoiceNumber: invoice.invoice_number
+    invoiceNumber: invoice.invoice_number,
+    currency: invoiceCurrency
   });
   res.render('invoice-public', {
     title: `Invoice ${invoice.invoice_number} — DecentInvoice`,
@@ -158,6 +165,9 @@ router.get('/i/:token', async (req, res) => {
     paymentClaimNoteMax: PAYMENT_CLAIM_NOTE_MAX,
     justClaimed: claimed,
     tapToPayLinks,
+    invoiceCurrency,
+    formatMoney,
+    supportedCurrencies: SUPPORTED_CURRENCIES,
     ogTitle: ogFields.title || `Invoice ${invoice.invoice_number} — DecentInvoice`,
     ogDescription: ogFields.description || PUBLIC_INVOICE_OG_DEFAULT_DESCRIPTION,
     ogPath: `/i/${token.trim()}`,
