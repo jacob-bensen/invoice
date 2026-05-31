@@ -61,6 +61,22 @@
 </head>
 <body>
 
+<%
+  // Currency-aware formatter for the printed money cells. The route threads
+  // `formatMoney` (lib/currency) + `currency` (resolved ISO-4217 code) as
+  // render locals. Legacy callers (tests, ad-hoc fixtures) that don't
+  // thread them must still render a valid printable PDF — fall back to the
+  // historical `$X.XX` shape via a small inline shim.
+  const _printFmt = (typeof formatMoney === 'function')
+    ? formatMoney
+    : function (amount) {
+        const n = Number(amount);
+        const safe = Number.isFinite(n) ? n : 0;
+        return '$' + safe.toFixed(2);
+      };
+  const _printCcy = (typeof currency === 'string' && currency) ? currency : 'USD';
+%>
+
 <div class="print-actions">
   <a href="/invoices/<%= invoice.id %>" class="back">← Back to invoice</a>
   <button onclick="window.print()">🖨️ Print / Save as PDF</button>
@@ -128,8 +144,8 @@
         <tr>
           <td><%= item.description %></td>
           <td><%= item.quantity %></td>
-          <td>$<%= parseFloat(item.unit_price).toFixed(2) %></td>
-          <td>$<%= (item.quantity * item.unit_price).toFixed(2) %></td>
+          <td><%= _printFmt(item.unit_price, _printCcy) %></td>
+          <td><%= _printFmt(item.quantity * item.unit_price, _printCcy) %></td>
         </tr>
       <% }) %>
     </tbody>
@@ -140,17 +156,17 @@
     <div class="totals-inner">
       <div class="totals-row">
         <span>Subtotal</span>
-        <span>$<%= parseFloat(invoice.subtotal).toFixed(2) %></span>
+        <span data-testid="invoice-print-subtotal"><%= _printFmt(invoice.subtotal, _printCcy) %></span>
       </div>
       <% if (parseFloat(invoice.tax_rate) > 0) { %>
         <div class="totals-row">
           <span>Tax (<%= invoice.tax_rate %>%)</span>
-          <span>$<%= parseFloat(invoice.tax_amount).toFixed(2) %></span>
+          <span data-testid="invoice-print-tax"><%= _printFmt(invoice.tax_amount, _printCcy) %></span>
         </div>
       <% } %>
       <div class="totals-total">
         <span>Total</span>
-        <span>$<%= parseFloat(invoice.total).toFixed(2) %></span>
+        <span data-testid="invoice-print-total"><%= _printFmt(invoice.total, _printCcy) %></span>
       </div>
     </div>
   </div>

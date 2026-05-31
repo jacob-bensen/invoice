@@ -94,8 +94,16 @@
     ? submittedNew.business_name : '';
   const initialPaymentInstructionsNew = typeof submittedNew.payment_instructions === 'string'
     ? submittedNew.payment_instructions : '';
+  // Currency symbol drives every money render on this form (recent-items +
+  // service-presets option labels, the Alpine live line-total / subtotal /
+  // tax / total x-text expressions). Threaded via the `currencySymbol`
+  // render local from `routes/invoices.js`; falls back to '$' so a partial
+  // deploy (route updated before view, or a test calling the view without
+  // the local) renders sanely rather than throwing.
+  const currencySymbolForm = (typeof locals.currencySymbol === 'string' && locals.currencySymbol)
+    ? locals.currencySymbol : '$';
 %>
-<div class="max-w-4xl mx-auto px-4 py-10" x-data="invoiceEditor(<%= JSON.stringify(invoice ? invoice.items : []) %>, <%= JSON.stringify(recentClientsList) %>, <%= JSON.stringify(initialClient) %>, <%= JSON.stringify(invoice ? [] : recentItemsListNew) %>, <%= JSON.stringify(servicePresetsList) %>)">
+<div class="max-w-4xl mx-auto px-4 py-10" x-data="invoiceEditor(<%= JSON.stringify(invoice ? invoice.items : []) %>, <%= JSON.stringify(recentClientsList) %>, <%= JSON.stringify(initialClient) %>, <%= JSON.stringify(invoice ? [] : recentItemsListNew) %>, <%= JSON.stringify(servicePresetsList) %>, <%= JSON.stringify(currencySymbolForm) %>)">
   <div class="flex items-center gap-3 mb-8">
     <a href="/invoices" class="text-gray-400 hover:text-gray-600 text-sm">← Invoices</a>
     <span class="text-gray-300">/</span>
@@ -231,7 +239,7 @@
             class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500">
             <option value="">Quick-pick a past item&hellip;</option>
             <% recentItemsListNew.forEach(function(it, idx) { %>
-              <option value="<%= idx %>"><%= it.description %> &middot; qty <%= it.quantity %> &times; $<%= it.unit_price.toFixed(2) %></option>
+              <option value="<%= idx %>"><%= it.description %> &middot; qty <%= it.quantity %> &times; <%= currencySymbolForm %><%= it.unit_price.toFixed(2) %></option>
             <% }) %>
           </select>
           <p class="text-xs text-gray-400 mt-1">Selecting fills (or adds) a line below &mdash; you can still edit it.</p>
@@ -248,7 +256,7 @@
             class="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400">
             <option value="">Pick a common service to pre-fill&hellip;</option>
             <% servicePresetsList.forEach(function(it, idx) { %>
-              <option value="<%= idx %>"><%= it.description %> &middot; $<%= it.unit_price.toFixed(2) %></option>
+              <option value="<%= idx %>"><%= it.description %> &middot; <%= currencySymbolForm %><%= it.unit_price.toFixed(2) %></option>
             <% }) %>
           </select>
           <p class="text-xs text-amber-800 mt-1">Picks fill the line below &mdash; edit the price, qty, or description to match your job.</p>
@@ -279,7 +287,7 @@
               @input="recalculate()"
               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-brand-500">
           </div>
-          <div class="col-span-1 text-right text-sm font-medium text-gray-700" x-text="'$' + (item.quantity * item.unit_price).toFixed(2)"></div>
+          <div class="col-span-1 text-right text-sm font-medium text-gray-700" x-text="currencySymbol + (item.quantity * item.unit_price).toFixed(2)"></div>
           <div class="col-span-1 text-right">
             <button type="button" @click="removeItem(i)" class="text-red-400 hover:text-red-600 text-lg leading-none" x-show="items.length > 1">×</button>
           </div>
@@ -296,7 +304,7 @@
         <div class="flex flex-col items-end gap-2 text-sm">
           <div class="flex justify-between w-64">
             <span class="text-gray-500">Subtotal</span>
-            <span class="font-medium" x-text="'$' + subtotal.toFixed(2)"></span>
+            <span class="font-medium" x-text="currencySymbol + subtotal.toFixed(2)"></span>
           </div>
           <div class="flex items-center justify-between w-64">
             <div class="flex items-center gap-2">
@@ -306,11 +314,11 @@
                 class="w-14 border border-gray-300 rounded px-2 py-1 text-xs text-center focus:outline-none focus:ring-2 focus:ring-brand-500">
               <span class="text-gray-400 text-xs">%</span>
             </div>
-            <span class="font-medium" x-text="'$' + taxAmount.toFixed(2)"></span>
+            <span class="font-medium" x-text="currencySymbol + taxAmount.toFixed(2)"></span>
           </div>
           <div class="flex justify-between w-64 border-t border-gray-200 pt-2">
             <span class="font-semibold text-gray-700">Total</span>
-            <span class="font-bold text-lg text-gray-900" x-text="'$' + total.toFixed(2)"></span>
+            <span class="font-bold text-lg text-gray-900" x-text="currencySymbol + total.toFixed(2)"></span>
           </div>
         </div>
       </div>
@@ -391,7 +399,7 @@
 </div>
 
 <script>
-function invoiceEditor(initialItems, initialRecentClients, initialClient, initialRecentItems, initialServicePresets) {
+function invoiceEditor(initialItems, initialRecentClients, initialClient, initialRecentItems, initialServicePresets, initialCurrencySymbol) {
   const c = initialClient && typeof initialClient === 'object' ? initialClient : {};
   return {
     items: initialItems && initialItems.length > 0
@@ -401,6 +409,12 @@ function invoiceEditor(initialItems, initialRecentClients, initialClient, initia
     subtotal: 0,
     taxAmount: 0,
     total: 0,
+    // The owner's saved default_currency symbol drives the live totals
+    // (line-item amounts, subtotal, tax, total). Falls back to '$' when the
+    // arg is missing so a partial deploy or test stub never strands the
+    // form with bare `undefined` prefixes.
+    currencySymbol: (typeof initialCurrencySymbol === 'string' && initialCurrencySymbol)
+      ? initialCurrencySymbol : '$',
     recentClients: Array.isArray(initialRecentClients) ? initialRecentClients : [],
     recentItems: Array.isArray(initialRecentItems) ? initialRecentItems : [],
     servicePresets: Array.isArray(initialServicePresets) ? initialServicePresets : [],

@@ -24,6 +24,7 @@ const { triggerPaidReceipt } = require('../lib/paid-receipt');
 const { buildShareSurfaceForInvoice } = require('../lib/share-link');
 const { normalizeClientPhone } = require('../lib/phone');
 const { SERVICE_PRESETS } = require('../lib/service-presets');
+const { resolveInvoiceCurrency, getCurrencySymbol, formatMoney } = require('../lib/currency');
 
 const router = express.Router();
 const FREE_LIMIT = 3;
@@ -1168,6 +1169,8 @@ router.get('/quick', requireAuth, async (req, res) => {
   // the new user sees a personal welcome above the form. Any other entry
   // path (nav, /invoices > "New", magic-login from welcome email) hits
   // this route without the query and skips the banner.
+  const currency = resolveInvoiceCurrency(null, user);
+  const currencySymbol = getCurrencySymbol(currency);
   res.render('invoice-quick', {
     title: 'Quick invoice',
     user,
@@ -1176,6 +1179,8 @@ router.get('/quick', requireAuth, async (req, res) => {
     pendingRestored: !!pending,
     recentClients,
     recentItems,
+    currency,
+    currencySymbol,
     welcome: req.query && req.query.welcome === '1',
     noindex: true
   });
@@ -1227,6 +1232,8 @@ router.post('/quick', requireAuth, [
 
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
+    const currency = resolveInvoiceCurrency(null, user);
+    const currencySymbol = getCurrencySymbol(currency);
     return res.render('invoice-quick', {
       title: 'Quick invoice',
       user,
@@ -1240,6 +1247,8 @@ router.post('/quick', requireAuth, [
         payment_instructions: req.body.payment_instructions || '',
         business_name: req.body.business_name || ''
       },
+      currency,
+      currencySymbol,
       noindex: true
     });
   }
@@ -1477,6 +1486,8 @@ router.post('/quick', requireAuth, [
     return res.redirect(`/invoices/${invoice.id}`);
   } catch (err) {
     console.error('Quick invoice create error:', err && err.message);
+    const currency = resolveInvoiceCurrency(null, user);
+    const currencySymbol = getCurrencySymbol(currency);
     return res.render('invoice-quick', {
       title: 'Quick invoice',
       user,
@@ -1489,6 +1500,8 @@ router.post('/quick', requireAuth, [
         payment_instructions: req.body.payment_instructions || '',
         business_name: req.body.business_name || ''
       },
+      currency,
+      currencySymbol,
       noindex: true
     });
   }
@@ -1505,6 +1518,8 @@ router.get('/new', requireAuth, async (req, res) => {
     loadRecentClients(req.session.user.id),
     loadRecentItems(req.session.user.id)
   ]);
+  const currency = resolveInvoiceCurrency(null, user);
+  const currencySymbol = getCurrencySymbol(currency);
   res.render('invoice-form', {
     title: 'New Invoice',
     invoice: null,
@@ -1514,6 +1529,8 @@ router.get('/new', requireAuth, async (req, res) => {
     servicePresets: SERVICE_PRESETS,
     user,
     flash: null,
+    currency,
+    currencySymbol,
     noindex: true
   });
 });
@@ -1535,6 +1552,8 @@ router.post('/new', requireAuth, [
       loadRecentClients(req.session.user.id),
       loadRecentItems(req.session.user.id)
     ]);
+    const currency = resolveInvoiceCurrency(null, user);
+    const currencySymbol = getCurrencySymbol(currency);
     return res.render('invoice-form', {
       title: 'New Invoice',
       invoice: null, invoiceNumber, recentClients, recentItems,
@@ -1545,6 +1564,8 @@ router.post('/new', requireAuth, [
         business_name: req.body.business_name || '',
         payment_instructions: req.body.payment_instructions || ''
       },
+      currency,
+      currencySymbol,
       noindex: true
     });
   }
@@ -1664,6 +1685,8 @@ router.post('/new', requireAuth, [
       loadRecentClients(req.session.user.id),
       loadRecentItems(req.session.user.id)
     ]);
+    const currency = resolveInvoiceCurrency(null, user);
+    const currencySymbol = getCurrencySymbol(currency);
     res.render('invoice-form', {
       title: 'New Invoice', invoice: null, invoiceNumber, recentClients, recentItems,
       servicePresets: SERVICE_PRESETS,
@@ -1673,6 +1696,8 @@ router.post('/new', requireAuth, [
         business_name: req.body.business_name || '',
         payment_instructions: req.body.payment_instructions || ''
       },
+      currency,
+      currencySymbol,
       noindex: true
     });
   }
@@ -1706,6 +1731,8 @@ router.get('/:id', requireAuth, async (req, res) => {
       console.error('Share-link prefetch failed:', err && err.message);
     }
 
+    const currency = resolveInvoiceCurrency(invoice, user);
+    const currencySymbol = getCurrencySymbol(currency);
     res.render('invoice-view', {
       title: `Invoice ${invoice.invoice_number}`,
       invoice,
@@ -1713,6 +1740,9 @@ router.get('/:id', requireAuth, async (req, res) => {
       flash,
       paymentMethods,
       prefetchedShare,
+      currency,
+      currencySymbol,
+      formatMoney,
       noindex: true
     });
   } catch (err) {
@@ -1726,7 +1756,14 @@ router.get('/:id/print', requireAuth, async (req, res) => {
     const invoice = await db.getInvoiceById(req.params.id, req.session.user.id);
     if (!invoice) return res.redirect('/dashboard');
     const user = await db.getUserById(req.session.user.id);
-    res.render('invoice-print', { title: `Invoice ${invoice.invoice_number}`, invoice, user, noindex: true });
+    const currency = resolveInvoiceCurrency(invoice, user);
+    const currencySymbol = getCurrencySymbol(currency);
+    res.render('invoice-print', {
+      title: `Invoice ${invoice.invoice_number}`,
+      invoice, user,
+      currency, currencySymbol, formatMoney,
+      noindex: true
+    });
   } catch (err) {
     console.error(err);
     res.redirect('/dashboard');
@@ -1779,9 +1816,13 @@ router.get('/:id/edit', requireAuth, async (req, res) => {
       db.getUserById(req.session.user.id),
       loadRecentClients(req.session.user.id)
     ]);
+    const currency = resolveInvoiceCurrency(invoice, user);
+    const currencySymbol = getCurrencySymbol(currency);
     res.render('invoice-form', {
       title: 'Edit Invoice', invoice, invoiceNumber: invoice.invoice_number,
-      recentClients, user, flash: null, noindex: true
+      recentClients, user, flash: null,
+      currency, currencySymbol,
+      noindex: true
     });
   } catch (err) {
     res.redirect('/dashboard');
