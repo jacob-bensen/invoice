@@ -26,6 +26,15 @@
     const _td = parseInt(user.default_payment_terms_days, 10);
     if (Number.isFinite(_td) && _td >= 1 && _td <= 365) selectedPaymentTermsDays = _td;
   }
+  // Default tax rate (percentage, 0-100, up to 2 decimals). 0 → "no
+  // default" — the historical behaviour the GET /invoices/new form has
+  // always rendered. The rendered <input> uses `step="0.01"` so a
+  // freelancer in a 8.875% sales-tax jurisdiction can store exactly that.
+  let selectedTaxRate = 0;
+  if (user && user.default_tax_rate != null) {
+    const _trd = parseFloat(user.default_tax_rate);
+    if (Number.isFinite(_trd) && _trd >= 0 && _trd <= 100) selectedTaxRate = _trd;
+  }
 %>
 
 <div class="max-w-2xl mx-auto px-4 py-10">
@@ -158,6 +167,17 @@
           <span class="text-sm text-gray-500">days</span>
         </div>
         <p class="text-xs text-gray-500 mt-1">Sets the due-date offset on every new invoice. Common: 7 (weekly), 14 (Net 14), 15 (mid-month), 30 (Net 30, default), 45, 60.</p>
+      </div>
+      <div>
+        <label for="default_tax_rate" class="block text-sm font-medium text-gray-700 mb-1">Default tax rate</label>
+        <div class="flex items-center gap-2">
+          <input id="default_tax_rate" type="number" name="default_tax_rate"
+            min="0" max="100" step="0.01" value="<%= selectedTaxRate %>"
+            data-testid="settings-default-tax-rate"
+            class="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+          <span class="text-sm text-gray-500">%</span>
+        </div>
+        <p class="text-xs text-gray-500 mt-1">Pre-fills the Tax % on every new invoice. Use <code class="bg-gray-100 rounded px-1">0</code> if you don&rsquo;t charge tax. Common: 7.25% (US sales tax — CA), 8.875% (NYC), 19% (DE VAT), 20% (UK/FR VAT), 21% (NL/ES VAT), 25% (NO/SE/DK VAT).</p>
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">Default invoice notes <span class="text-gray-400 font-normal">(optional)</span></label>

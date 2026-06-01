@@ -317,16 +317,33 @@
             <span class="text-gray-500">Subtotal</span>
             <span class="font-medium" x-text="currencySymbol + subtotal.toFixed(2)"></span>
           </div>
+          <%
+            // Per-user default tax rate. Bounded 0-100 (two decimals) at the
+            // settings route; this inline guard mirrors the resolver in
+            // routes/invoices.js so a legacy render (test fixture, ad-hoc EJS
+            // call) without a user falls back to 0 — the historical default.
+            var _taxDefault = 0;
+            if (locals.user && user.default_tax_rate != null) {
+              var _trd = parseFloat(user.default_tax_rate);
+              if (Number.isFinite(_trd) && _trd >= 0 && _trd <= 100) _taxDefault = _trd;
+            }
+          %>
           <div class="flex items-center justify-between w-64">
             <div class="flex items-center gap-2">
               <span class="text-gray-500">Tax</span>
               <input type="number" x-model.number="taxRate" min="0" max="100" step="0.1"
                 @input="recalculate()" placeholder="0"
+                data-testid="invoice-form-tax-rate"
                 class="w-14 border border-gray-300 rounded px-2 py-1 text-xs text-center focus:outline-none focus:ring-2 focus:ring-brand-500">
               <span class="text-gray-400 text-xs">%</span>
             </div>
             <span class="font-medium" x-text="currencySymbol + taxAmount.toFixed(2)"></span>
           </div>
+          <% if (!invoice && _taxDefault > 0) { %>
+            <p class="text-[11px] text-gray-400 w-64 text-right -mt-1" data-testid="invoice-form-tax-default-hint">
+              Defaulting to your saved <%= _taxDefault %>% rate — <a href="/billing/settings" class="underline hover:text-gray-600">change in settings</a>.
+            </p>
+          <% } %>
           <div class="flex justify-between w-64 border-t border-gray-200 pt-2">
             <span class="font-semibold text-gray-700">Total</span>
             <span class="font-bold text-lg text-gray-900" x-text="currencySymbol + total.toFixed(2)"></span>
@@ -416,7 +433,7 @@ function invoiceEditor(initialItems, initialRecentClients, initialClient, initia
     items: initialItems && initialItems.length > 0
       ? initialItems.map(i => ({ description: i.description, quantity: Number(i.quantity), unit_price: Number(i.unit_price) }))
       : [{ description: '', quantity: 1, unit_price: 0 }],
-    taxRate: <%= invoice ? Number(invoice.tax_rate) : 0 %>,
+    taxRate: <%= invoice ? Number(invoice.tax_rate) : _taxDefault %>,
     subtotal: 0,
     taxAmount: 0,
     total: 0,

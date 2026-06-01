@@ -640,3 +640,17 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS default_currency CHAR(3) NOT NULL DEF
 -- row picks up the historical default at migration time and the resolver
 -- never has to guard against NULL. Bounded 1-365 at the route layer.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS default_payment_terms_days INTEGER NOT NULL DEFAULT 30;
+
+-- Per-user default tax-rate percentage (Milestone 2 — first dashboard
+-- re-entry → first real invoice created). The /invoices/new form's tax
+-- input previously defaulted to 0% on every render; freelancers who
+-- routinely charge VAT (19% DE, 20% UK/FR, 21% NL/ES, 25% NO/SE/DK),
+-- GST/HST (5/13/15% CA, 10% AU), or US state sales tax (8.875% NYC,
+-- 7.25% CA, etc.) had to hand-edit the same 0 → their rate on every
+-- new invoice — a high-frequency keystroke + a silent under-invoicing
+-- risk every time it's missed. NUMERIC(5,2) supports any rate the
+-- settings route validates (bounded 0-100, two decimals) and 0 means
+-- "no default" (the historical behaviour). NOT NULL DEFAULT 0 so every
+-- existing row picks up the no-tax default at migration time and the
+-- resolver never has to guard against NULL.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS default_tax_rate NUMERIC(5,2) NOT NULL DEFAULT 0;

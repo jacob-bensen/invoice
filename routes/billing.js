@@ -586,6 +586,32 @@ router.post('/settings', requireAuth, async (req, res) => {
         defaultPaymentTermsDays = n;
       }
     }
+    // Per-user default tax-rate percentage (0-100, up to 2 decimals). Drives
+    // the pre-filled Tax % on the GET /invoices/new form so a VAT / GST /
+    // sales-tax freelancer doesn't re-type the same percentage on every
+    // invoice. Missing/empty key keeps the existing stored value (settings
+    // form doesn't have to re-submit every field on every save). Empty
+    // submission resets to 0 (NOT NULL default) — never writes NULL into a
+    // NOT NULL column. Out-of-range / malformed input rejects with a flash
+    // and zero db.updateUser calls so other fields are preserved.
+    let defaultTaxRate;
+    if (Object.prototype.hasOwnProperty.call(req.body, 'default_tax_rate')) {
+      const raw = req.body.default_tax_rate;
+      const rawTrim = (raw == null ? '' : String(raw).trim());
+      if (rawTrim.length === 0) {
+        defaultTaxRate = 0;
+      } else if (!/^[0-9]+(\.[0-9]{1,2})?$/.test(rawTrim)) {
+        req.session.flash = { type: 'error', message: 'Default tax rate must be a percentage from 0 to 100 (up to 2 decimal places).' };
+        return res.redirect('/billing/settings');
+      } else {
+        const n = parseFloat(rawTrim);
+        if (!Number.isFinite(n) || n < 0 || n > 100) {
+          req.session.flash = { type: 'error', message: 'Default tax rate must be between 0 and 100.' };
+          return res.redirect('/billing/settings');
+        }
+        defaultTaxRate = n;
+      }
+    }
     const updateFields = {
       name: req.body.name,
       business_name: req.body.business_name || null,
@@ -603,6 +629,7 @@ router.post('/settings', requireAuth, async (req, res) => {
     };
     if (defaultCurrency) updateFields.default_currency = defaultCurrency;
     if (defaultPaymentTermsDays != null) updateFields.default_payment_terms_days = defaultPaymentTermsDays;
+    if (defaultTaxRate != null) updateFields.default_tax_rate = defaultTaxRate;
     const updated = await db.updateUser(req.session.user.id, updateFields);
     if (!updated) return res.redirect('/auth/login');
     req.session.user = { ...req.session.user, name: updated.name };

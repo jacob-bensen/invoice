@@ -142,6 +142,24 @@ function resolvePaymentTermsDays(user) {
   return Math.floor(n);
 }
 
+/*
+ * Resolves the user's per-user `default_tax_rate` to a percentage in
+ * [0, 100] for pre-filling the Tax % input on the GET /invoices/new
+ * form (Milestone 2 — first dashboard re-entry → first real invoice
+ * created). VAT / GST / sales-tax freelancers set this once in
+ * Settings instead of retyping the same rate on every invoice. Out-
+ * of-range or non-finite values silently fall back to 0 — the
+ * historical default — so a corrupt DB row or legacy render without
+ * a user can never produce an invoice with a negative or > 100% tax.
+ */
+function resolveDefaultTaxRate(user) {
+  if (!user) return 0;
+  const raw = user.default_tax_rate;
+  const n = (typeof raw === 'number') ? raw : parseFloat(raw);
+  if (!Number.isFinite(n) || n < 0 || n > 100) return 0;
+  return n;
+}
+
 function buildInvoiceLimitProgress(user) {
   if (!user || user.plan !== 'free') return null;
   const used = Math.max(0, parseInt(user.invoice_count, 10) || 0);

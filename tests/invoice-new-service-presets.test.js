@@ -338,7 +338,7 @@ async function testViewHostilePresetDescriptionEscaped() {
 
 function extractInvoiceEditorFactory() {
   const html = fs.readFileSync(path.join(__dirname, '..', 'views', 'invoice-form.ejs'), 'utf8');
-  const cleaned = html.replace(/<%=\s*invoice\s*\?\s*Number\(invoice\.tax_rate\)\s*:\s*0\s*%>/g, '0');
+  const cleaned = html.replace(/<%=\s*invoice\s*\?\s*Number\(invoice\.tax_rate\)\s*:\s*[^%]+%>/g, '0');
   const fnStart = cleaned.indexOf('function invoiceEditor');
   assert.ok(fnStart >= 0, 'invoiceEditor factory must be extractable');
   let depth = 0;

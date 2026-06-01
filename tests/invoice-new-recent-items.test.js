@@ -427,9 +427,10 @@ async function testViewHostileDescriptionEscaped() {
 
 function extractInvoiceEditorFactory() {
   const html = fs.readFileSync(path.join(__dirname, '..', 'views', 'invoice-form.ejs'), 'utf8');
-  // Replace the EJS `<%= invoice ? Number(invoice.tax_rate) : 0 %>` with 0
-  // so the extracted source is plain JS.
-  const cleaned = html.replace(/<%=\s*invoice\s*\?\s*Number\(invoice\.tax_rate\)\s*:\s*0\s*%>/g, '0');
+  // Replace the EJS `<%= invoice ? Number(invoice.tax_rate) : _taxDefault %>`
+  // with 0 so the extracted source is plain JS. (Older form used `: 0` — the
+  // regex tolerates both shapes so a future revert doesn't silently break.)
+  const cleaned = html.replace(/<%=\s*invoice\s*\?\s*Number\(invoice\.tax_rate\)\s*:\s*[^%]+%>/g, '0');
   const fnStart = cleaned.indexOf('function invoiceEditor');
   assert.ok(fnStart >= 0, 'invoiceEditor factory must be extractable');
   let depth = 0;
