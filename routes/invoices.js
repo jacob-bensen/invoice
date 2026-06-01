@@ -114,6 +114,25 @@ router.get('/', requireAuth, async (req, res) => {
   }
 });
 
+/*
+ * Resolves the user's per-user `default_payment_terms_days` setting to a
+ * positive integer in [1, 365]. Three new-invoice surfaces previously
+ * hardcoded `30` (POST /quick, POST /:id/duplicate, GET /new form
+ * default); this helper is the single source of truth so a future
+ * column-rename or range-change happens in one place. Out-of-range or
+ * non-finite values silently fall back to 30 — the historical default —
+ * so a corrupt DB row, a future code path that loads the user with the
+ * column missing, or an EJS render with `null` user can never produce a
+ * 0-day or negative-day due_date.
+ */
+function resolvePaymentTermsDays(user) {
+  if (!user) return 30;
+  const raw = user.default_payment_terms_days;
+  const n = (typeof raw === 'number') ? raw : parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 1 || n > 365) return 30;
+  return Math.floor(n);
+}
+
 function buildInvoiceLimitProgress(user) {
   if (!user || user.plan !== 'free') return null;
   const used = Math.max(0, parseInt(user.invoice_count, 10) || 0);
@@ -1258,7 +1277,8 @@ router.post('/quick', requireAuth, [
     const description = String(req.body.description).trim();
     const today = new Date();
     const issued_date = today.toISOString().split('T')[0];
-    const due_date = new Date(today.getTime() + 30 * 86400000).toISOString().split('T')[0];
+    const paymentTermsDays = resolvePaymentTermsDays(user);
+    const due_date = new Date(today.getTime() + paymentTermsDays * 86400000).toISOString().split('T')[0];
     const invoice_number = await db.getNextInvoiceNumber(req.session.user.id);
 
     const client_email = req.body.client_email ? String(req.body.client_email).trim() : null;
@@ -2296,7 +2316,8 @@ router.post('/:id/duplicate', requireAuth, async (req, res) => {
     const invoice_number = await db.getNextInvoiceNumber(req.session.user.id);
     const today = new Date();
     const issued_date = today.toISOString().split('T')[0];
-    const due_date = new Date(today.getTime() + 30 * 86400000).toISOString().split('T')[0];
+    const paymentTermsDays = resolvePaymentTermsDays(user);
+    const due_date = new Date(today.getTime() + paymentTermsDays * 86400000).toISOString().split('T')[0];
 
     const created = await db.duplicateInvoice(source.id, req.session.user.id, {
       invoice_number, issued_date, due_date

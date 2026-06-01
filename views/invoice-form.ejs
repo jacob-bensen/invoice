@@ -158,10 +158,21 @@
                 value="<%= invoice ? invoice.issued_date.toISOString().split('T')[0] : new Date().toISOString().split('T')[0] %>"
                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
             </div>
+            <%
+              // Per-user default payment-terms window. Bounded 1-365 at the
+              // settings route; this inline guard mirrors the resolver in
+              // routes/invoices.js so a legacy render (test fixture, ad-hoc
+              // EJS call) without a user falls back to the historical 30.
+              var _termsDays = 30;
+              if (locals.user && user.default_payment_terms_days != null) {
+                var _td = parseInt(user.default_payment_terms_days, 10);
+                if (Number.isFinite(_td) && _td >= 1 && _td <= 365) _termsDays = _td;
+              }
+            %>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Due Date <span class="text-gray-400 font-normal text-xs">(defaults to 30 days)</span></label>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Due Date <span class="text-gray-400 font-normal text-xs">(defaults to <%= _termsDays %> days)</span></label>
               <input type="date" name="due_date"
-                value="<%= invoice && invoice.due_date ? invoice.due_date.toISOString().split('T')[0] : new Date(Date.now() + 30*86400000).toISOString().split('T')[0] %>"
+                value="<%= invoice && invoice.due_date ? invoice.due_date.toISOString().split('T')[0] : new Date(Date.now() + _termsDays*86400000).toISOString().split('T')[0] %>"
                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
             </div>
           </div>

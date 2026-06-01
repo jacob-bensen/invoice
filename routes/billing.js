@@ -559,6 +559,33 @@ router.post('/settings', requireAuth, async (req, res) => {
         defaultCurrency = normalized;
       }
     }
+    // Per-user default payment-terms window in days (1-365). Drives the
+    // due_date offset on POST /invoices/quick, POST /invoices/:id/duplicate,
+    // and the GET /invoices/new form default. Missing/empty key keeps the
+    // existing stored value (settings form doesn't have to re-submit every
+    // field on every save). Out-of-range (zero, negative, fractional,
+    // non-numeric, > 365) rejects with a flash and zero db.updateUser calls
+    // so the user's other fields are preserved.
+    let defaultPaymentTermsDays;
+    if (Object.prototype.hasOwnProperty.call(req.body, 'default_payment_terms_days')) {
+      const raw = req.body.default_payment_terms_days;
+      const rawTrim = (raw == null ? '' : String(raw).trim());
+      if (rawTrim.length === 0) {
+        // Empty submission resets to the column's NOT NULL default of 30 —
+        // never writes NULL into a NOT NULL column.
+        defaultPaymentTermsDays = 30;
+      } else if (!/^[0-9]+$/.test(rawTrim)) {
+        req.session.flash = { type: 'error', message: 'Default payment terms must be a whole number of days.' };
+        return res.redirect('/billing/settings');
+      } else {
+        const n = parseInt(rawTrim, 10);
+        if (!Number.isFinite(n) || n < 1 || n > 365) {
+          req.session.flash = { type: 'error', message: 'Default payment terms must be between 1 and 365 days.' };
+          return res.redirect('/billing/settings');
+        }
+        defaultPaymentTermsDays = n;
+      }
+    }
     const updateFields = {
       name: req.body.name,
       business_name: req.body.business_name || null,
@@ -575,6 +602,7 @@ router.post('/settings', requireAuth, async (req, res) => {
       zelle_handle: zelleResult.value
     };
     if (defaultCurrency) updateFields.default_currency = defaultCurrency;
+    if (defaultPaymentTermsDays != null) updateFields.default_payment_terms_days = defaultPaymentTermsDays;
     const updated = await db.updateUser(req.session.user.id, updateFields);
     if (!updated) return res.redirect('/auth/login');
     req.session.user = { ...req.session.user, name: updated.name };

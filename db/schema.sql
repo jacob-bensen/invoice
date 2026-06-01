@@ -628,3 +628,15 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS zelle_handle VARCHAR(254);
 -- DEFAULT 'USD' so every existing row gets the historical default at
 -- migration time and the resolver never has to guard against NULL.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS default_currency CHAR(3) NOT NULL DEFAULT 'USD';
+
+-- Per-user default payment-terms window in days (Milestones 3 + 4). Until
+-- now every new-invoice surface hard-coded a 30-day due-date offset (POST
+-- /invoices/quick, POST /invoices/:id/duplicate, GET /invoices/new form
+-- default). Freelancers who bill Net 7 / Net 14 / Net 15 / Net 45 / Net 60
+-- had to hand-edit the due_date on every invoice — and an unedited 30-day
+-- due_date silently miscalibrates the overdue cron (which fires off the
+-- column the freelancer never noticed was wrong). Per-user default
+-- collapses both surfaces. INTEGER NOT NULL DEFAULT 30 so every existing
+-- row picks up the historical default at migration time and the resolver
+-- never has to guard against NULL. Bounded 1-365 at the route layer.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS default_payment_terms_days INTEGER NOT NULL DEFAULT 30;
