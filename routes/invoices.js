@@ -92,7 +92,16 @@ router.get('/', requireAuth, async (req, res) => {
     const repeatClientPrompt = buildRepeatClientPrompt(invoices);
     const paymentInstructionsPrompt = buildPaymentInstructionsPrompt(user, invoices);
     const tableFollowUpIntents = buildTableFollowUpIntents(invoices);
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, paymentClaimPrompt, recentViewPrompt, clientViewedFollowupPrompt, sentNotViewedPrompt, overduePrompt, firstRealInvoicePrompt, freshDraftPrompt, repeatClientPrompt, paymentInstructionsPrompt, pendingQuickInvoice, tableFollowUpIntents, noindex: true });
+    // Resolve the owner's default currency symbol so every money cell on the
+    // dashboard (all-time totals, the recent-revenue card, every prompt's
+    // total, the invoice table Amount column, the pending-quick-invoice
+    // amount, the Alpine formatMoney for the toggle re-render) renders in
+    // the freelancer's chosen currency rather than a hardcoded $. Falls back
+    // to '$' on a missing user (defence-in-depth — the legacy zero-state
+    // hero still renders correctly).
+    const currency = (user && user.default_currency) ? user.default_currency : 'USD';
+    const currencySymbol = getCurrencySymbol(currency);
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, paymentClaimPrompt, recentViewPrompt, clientViewedFollowupPrompt, sentNotViewedPrompt, overduePrompt, firstRealInvoicePrompt, freshDraftPrompt, repeatClientPrompt, paymentInstructionsPrompt, pendingQuickInvoice, tableFollowUpIntents, currency, currencySymbol, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
@@ -1132,8 +1141,13 @@ router.get('/api/recent-revenue', requireAuth, async (req, res) => {
     const unpaidCount = stats && typeof stats === 'object'
       ? parseInt(stats.unpaidCount, 10) || 0
       : 0;
+    // Thread the owner's currency symbol into the toggle response so the
+    // Alpine factory's formatMoney() re-renders totalPaid in the right
+    // symbol after a window switch (matches the SSR dashboard render).
+    const ownerCurrency = (user && user.default_currency) ? user.default_currency : 'USD';
+    const currencySymbol = getCurrencySymbol(ownerCurrency);
     res.set('Cache-Control', 'no-store');
-    res.json({ days, card, unpaidCount });
+    res.json({ days, card, unpaidCount, currencySymbol });
   } catch (err) {
     console.error('Recent revenue API error:', err && err.message);
     res.status(500).json({ days, card: null, error: 'lookup_failed' });

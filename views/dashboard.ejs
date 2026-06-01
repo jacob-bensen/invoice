@@ -1,6 +1,16 @@
 <%- include('partials/head') %>
 <%- include('partials/nav') %>
 
+<%
+  // Resolve the owner's currency symbol once — every money cell on this view
+  // (all-time totals, recent-revenue card, every prompt's total, the invoice
+  // table Amount column, the pending-quick-invoice amount, the Alpine
+  // formatMoney for the toggle re-render) reads through this local instead
+  // of hardcoding '$'. Legacy callers (404 error path, ad-hoc tests) that
+  // don't thread the local fall back to '$' so this view never throws on
+  // missing locals.
+  const sym = (typeof locals.currencySymbol === 'string' && locals.currencySymbol) ? locals.currencySymbol : '$';
+%>
 <div class="max-w-5xl mx-auto px-4 py-10">
   <% if (locals.onboarding && onboarding && !onboarding.allDone) { %>
     <div
@@ -211,9 +221,9 @@
         </p>
         <p class="text-brand-700 mt-0.5">
           <% if (pendingQuickInvoice.description) { %>
-            <span data-testid="pending-quick-invoice-description"><%= pendingQuickInvoice.description %></span><% if (pendingQuickInvoice.amount) { %> &middot; $<span data-testid="pending-quick-invoice-amount"><%= pendingQuickInvoice.amount %></span><% } %>
+            <span data-testid="pending-quick-invoice-description"><%= pendingQuickInvoice.description %></span><% if (pendingQuickInvoice.amount) { %> &middot; <%= sym %><span data-testid="pending-quick-invoice-amount"><%= pendingQuickInvoice.amount %></span><% } %>
           <% } else if (pendingQuickInvoice.amount) { %>
-            $<span data-testid="pending-quick-invoice-amount"><%= pendingQuickInvoice.amount %></span>
+            <%= sym %><span data-testid="pending-quick-invoice-amount"><%= pendingQuickInvoice.amount %></span>
           <% } else { %>
             You started filling in an invoice but didn&rsquo;t finish &mdash; one click to resume.
           <% } %>
@@ -283,7 +293,7 @@
         </p>
         <p class="text-emerald-800 mt-0.5">
           <span data-testid="fresh-draft-invoice-number"><%= freshDraftPrompt.invoiceNumber %></span>
-          ($<span data-testid="fresh-draft-total"><%= freshDraftPrompt.total.toFixed(2) %></span>)
+          (<%= sym %><span data-testid="fresh-draft-total"><%= freshDraftPrompt.total.toFixed(2) %></span>)
           is sitting as a draft. Your client can't see it until you share the link.
         </p>
         <div class="mt-3 flex flex-wrap gap-2">
@@ -405,7 +415,7 @@
           <span data-testid="stale-draft-invoice-number"><%= staleDraftPrompt.invoiceNumber %></span>
           for
           <strong data-testid="stale-draft-client-name"><%= staleDraftPrompt.clientName %></strong>
-          ($<span data-testid="stale-draft-total"><%= staleDraftPrompt.total.toFixed(2) %></span>)
+          (<%= sym %><span data-testid="stale-draft-total"><%= staleDraftPrompt.total.toFixed(2) %></span>)
           has been a draft for <%= staleDraftPrompt.hoursOld %>+ hours.
         </p>
         <div class="mt-3 flex flex-wrap gap-2">
@@ -508,7 +518,7 @@
         </p>
         <p class="text-emerald-800 mt-0.5">
           <span data-testid="payment-claim-invoice-number"><%= paymentClaimPrompt.invoiceNumber %></span>
-          ($<span data-testid="payment-claim-total"><%= paymentClaimPrompt.total.toFixed(2) %></span>)
+          (<%= sym %><span data-testid="payment-claim-total"><%= paymentClaimPrompt.total.toFixed(2) %></span>)
           via
           <strong data-testid="payment-claim-method-label"><%= paymentClaimPrompt.methodLabel %></strong><% if (paymentClaimPrompt.reference) { %>
             &middot; ref: <span data-testid="payment-claim-reference"><%= paymentClaimPrompt.reference %></span><% } %>.
@@ -578,7 +588,7 @@
         </p>
         <p class="text-fuchsia-800 mt-0.5">
           <span data-testid="recent-view-invoice-number"><%= recentViewPrompt.invoiceNumber %></span>
-          ($<span data-testid="recent-view-total"><%= recentViewPrompt.total.toFixed(2) %></span>)
+          (<%= sym %><span data-testid="recent-view-total"><%= recentViewPrompt.total.toFixed(2) %></span>)
           was opened <span data-testid="recent-view-minutes-ago"><%= liveAgo %></span><% if (recentViewPrompt.viewCount > 1) { %>
             &middot; opened <span data-testid="recent-view-view-count"><%= recentViewPrompt.viewCount %></span> times total
           <% } %>.
@@ -668,7 +678,7 @@
         </p>
         <p class="text-emerald-800 mt-0.5">
           <span data-testid="client-viewed-followup-invoice-number"><%= clientViewedFollowupPrompt.invoiceNumber %></span>
-          ($<span data-testid="client-viewed-followup-total"><%= clientViewedFollowupPrompt.total.toFixed(2) %></span>)
+          (<%= sym %><span data-testid="client-viewed-followup-total"><%= clientViewedFollowupPrompt.total.toFixed(2) %></span>)
           was viewed <span data-testid="client-viewed-followup-days-ago"><%= clientViewedFollowupPrompt.daysAgo %></span>
           day<% if (clientViewedFollowupPrompt.daysAgo !== 1) { %>s<% } %> ago<% if (clientViewedFollowupPrompt.viewCount > 1) { %>
             &middot; opened <span data-testid="client-viewed-followup-view-count"><%= clientViewedFollowupPrompt.viewCount %></span> times
@@ -758,7 +768,7 @@
         </p>
         <p class="text-orange-800 mt-0.5">
           <span data-testid="sent-not-viewed-invoice-number"><%= sentNotViewedPrompt.invoiceNumber %></span>
-          ($<span data-testid="sent-not-viewed-total"><%= sentNotViewedPrompt.total.toFixed(2) %></span>)
+          (<%= sym %><span data-testid="sent-not-viewed-total"><%= sentNotViewedPrompt.total.toFixed(2) %></span>)
           was sent <span data-testid="sent-not-viewed-days-ago"><%= sentNotViewedPrompt.daysAgo %></span>
           day<% if (sentNotViewedPrompt.daysAgo !== 1) { %>s<% } %> ago with zero opens.
         </p>
@@ -846,7 +856,7 @@
         </p>
         <p class="text-red-800 mt-0.5">
           <span data-testid="overdue-invoice-number"><%= overduePrompt.invoiceNumber %></span>
-          ($<span data-testid="overdue-total"><%= overduePrompt.total.toFixed(2) %></span>)
+          (<%= sym %><span data-testid="overdue-total"><%= overduePrompt.total.toFixed(2) %></span>)
           is <span data-testid="overdue-days-past-due"><%= overduePrompt.daysPastDue %></span>
           day<% if (overduePrompt.daysPastDue !== 1) { %>s<% } %> past due.
         </p>
@@ -951,7 +961,7 @@
         </p>
         <p class="text-emerald-800 mt-0.5">
           <span data-testid="repeat-client-invoice-number"><%= repeatClientPrompt.invoiceNumber %></span>
-          ($<span data-testid="repeat-client-total"><%= repeatClientPrompt.total.toFixed(2) %></span>)
+          (<%= sym %><span data-testid="repeat-client-total"><%= repeatClientPrompt.total.toFixed(2) %></span>)
           was paid
           <% if (repeatClientPrompt.daysAgo === 0) { %>
             <span data-testid="repeat-client-days-ago">today</span>.
@@ -1105,7 +1115,7 @@
     %>
     <% if (locals.recentRevenue && recentRevenue) { %>
       <div
-        x-data='recentRevenueCard(<%- JSON.stringify({ days: recentRevenue.days, totalPaid: recentRevenue.totalPaid, invoiceCount: recentRevenue.invoiceCount, clientCount: recentRevenue.clientCount, unpaidCount: recentRevenue.unpaidCount }).replace(/</g, "\\u003c") %>)'
+        x-data='recentRevenueCard(<%- JSON.stringify({ days: recentRevenue.days, totalPaid: recentRevenue.totalPaid, invoiceCount: recentRevenue.invoiceCount, clientCount: recentRevenue.clientCount, unpaidCount: recentRevenue.unpaidCount, currencySymbol: sym }).replace(/</g, "\\u003c") %>)'
         data-testid="recent-revenue"
         :data-days="days"
         data-days="<%= recentRevenue.days %>"
@@ -1144,7 +1154,7 @@
           <div class="bg-white rounded-xl border border-emerald-100 p-4">
             <p class="text-xs font-medium text-emerald-700 uppercase tracking-wide mb-1">Revenue</p>
             <p class="text-xl font-bold text-emerald-700" data-testid="recent-revenue-total" x-text="formatMoney(totalPaid)">
-              $<%= recentRevenue.totalPaid.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) %>
+              <%= sym %><%= recentRevenue.totalPaid.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) %>
             </p>
           </div>
           <div class="bg-white rounded-xl border border-emerald-100 p-4">
@@ -1228,6 +1238,13 @@
             // (status IN ('sent','overdue')) so the "send follow-ups"
             // prompt reflects every invoice that could use a nudge.
             unpaidCount: Number(initial.unpaidCount) || 0,
+            // currencySymbol drives formatMoney(totalPaid) so the
+            // toggle re-render renders the owner's chosen symbol
+            // (EUR €, GBP £, JPY ¥, etc.) rather than a hardcoded $.
+            // Defaults to '$' if the SSR payload omits it (legacy
+            // call sites or a partial deploy where the route hasn't
+            // shipped the field yet).
+            currencySymbol: (typeof initial.currencySymbol === 'string' && initial.currencySymbol) ? initial.currencySymbol : '$',
             loading: false,
             errored: false,
             init() {
@@ -1243,7 +1260,7 @@
             },
             formatMoney(n) {
               const v = Number(n) || 0;
-              return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              return this.currencySymbol + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             },
             async select(window, opts) {
               if (window === this.days || this.loading) return;
@@ -1278,6 +1295,12 @@
                   // card === null means no paid invoices in the window;
                   // the unpaidCount field is still useful so the CTA
                   // can fire. Read from the top-level response if present.
+                  // currencySymbol may also be top-level — refresh it so
+                  // a window switch reflects any owner-currency change
+                  // (extremely rare, but cheap correctness).
+                  if (typeof data.currencySymbol === 'string' && data.currencySymbol) {
+                    this.currencySymbol = data.currencySymbol;
+                  }
                   if (typeof data.unpaidCount === 'number') {
                     this.unpaidCount = data.unpaidCount;
                   }
@@ -1301,15 +1324,15 @@
     <div class="grid grid-cols-3 gap-4 mb-8">
       <div class="bg-white rounded-xl border border-gray-200 p-5">
         <p class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Total Invoiced</p>
-        <p class="text-2xl font-bold text-gray-900">$<%= total.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) %></p>
+        <p class="text-2xl font-bold text-gray-900" data-testid="alltime-total-invoiced"><%= sym %><%= total.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) %></p>
       </div>
       <div class="bg-white rounded-xl border border-gray-200 p-5">
         <p class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Collected</p>
-        <p class="text-2xl font-bold text-green-600">$<%= paid.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) %></p>
+        <p class="text-2xl font-bold text-green-600" data-testid="alltime-collected"><%= sym %><%= paid.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) %></p>
       </div>
       <div class="bg-white rounded-xl border border-gray-200 p-5">
         <p class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Outstanding</p>
-        <p class="text-2xl font-bold text-orange-500">$<%= outstanding.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) %></p>
+        <p class="text-2xl font-bold text-orange-500" data-testid="alltime-outstanding"><%= sym %><%= outstanding.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) %></p>
       </div>
     </div>
 
@@ -1378,7 +1401,7 @@
               </td>
               <td class="px-6 py-4 text-gray-700"><%= inv.client_name %></td>
               <td class="px-6 py-4 text-gray-500"><%= new Date(inv.issued_date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) %></td>
-              <td class="px-6 py-4 text-right font-semibold text-gray-900">$<%= parseFloat(inv.total).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) %></td>
+              <td class="px-6 py-4 text-right font-semibold text-gray-900" data-testid="invoice-row-amount-<%= inv.id %>"><%= sym %><%= parseFloat(inv.total).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) %></td>
               <td class="px-6 py-4">
                 <%
                   const statusColors = {
