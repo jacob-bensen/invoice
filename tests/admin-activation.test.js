@@ -762,6 +762,258 @@ async function testRouteEmptyDailyShowsHintNotTable() {
     'source card must NOT render on zero-cohort window');
 }
 
+// ---------- CSV export tests ------------------------------------------------
+
+async function testCsvEscape() {
+  clearReq('../lib/activation-funnel');
+  const { csvEscape } = require('../lib/activation-funnel');
+  // Plain ASCII passes through unchanged.
+  assert.strictEqual(csvEscape('google'), 'google',
+    'plain alphanumerics never need quoting');
+  assert.strictEqual(csvEscape(42), '42', 'finite numbers stringify');
+  assert.strictEqual(csvEscape(0), '0', 'zero must render (not empty)');
+  assert.strictEqual(csvEscape(0.3333), '0.3333');
+  // Empty + nullish render as the empty cell.
+  assert.strictEqual(csvEscape(''), '');
+  assert.strictEqual(csvEscape(null), '');
+  assert.strictEqual(csvEscape(undefined), '');
+  // Non-finite numbers do NOT leak NaN/Infinity into the file.
+  assert.strictEqual(csvEscape(NaN), '');
+  assert.strictEqual(csvEscape(Infinity), '');
+  // RFC 4180 quoting: comma, quote, CR, LF all force the quote-wrap.
+  assert.strictEqual(csvEscape('hello, world'), '"hello, world"',
+    'commas must force quote-wrapping or the row splits');
+  assert.strictEqual(csvEscape('he said "hi"'), '"he said ""hi"""',
+    'embedded double-quotes must be doubled');
+  assert.strictEqual(csvEscape('line1\nline2'), '"line1\nline2"');
+  assert.strictEqual(csvEscape('line1\r\nline2'), '"line1\r\nline2"');
+  // Booleans render as their lowercase string (defence-in-depth: future
+  // boolean stage flags would otherwise stringify as a localised string).
+  assert.strictEqual(csvEscape(true), 'true');
+  assert.strictEqual(csvEscape(false), 'false');
+}
+
+async function testBuildReportCsvShape() {
+  clearReq('../lib/activation-funnel');
+  const { buildReportCsv } = require('../lib/activation-funnel');
+  const report = {
+    range: { from: '2026-05-01', to: '2026-05-10', days: 10 },
+    cohortSize: 100,
+    stages: [
+      { key: 'signed_up',    label: 'Signed up',                  milestone: 'cohort',      count: 100, conversionFromPrev: null, conversionFromCohort: null },
+      { key: 'welcomed',     label: 'Welcome email sent',         milestone: 'Milestone 1', count: 80,  conversionFromPrev: 0.8,  conversionFromCohort: 0.8  },
+      { key: 'returned',     label: 'Returned to app',            milestone: 'Milestone 1', count: 60,  conversionFromPrev: 0.75, conversionFromCohort: 0.6  },
+      { key: 'created_real', label: 'Created a real invoice',     milestone: 'Milestone 2', count: 40,  conversionFromPrev: 2/3,  conversionFromCohort: 0.4  },
+      { key: 'sent_one',     label: 'Sent at least one invoice',  milestone: 'Milestone 3', count: 30,  conversionFromPrev: 0.75, conversionFromCohort: 0.3  },
+      { key: 'got_paid',     label: 'Received first payment',     milestone: 'Milestone 4', count: 10,  conversionFromPrev: 1/3,  conversionFromCohort: 0.1  }
+    ],
+    daily: [
+      { day: '2026-05-10', signed_up: 30, welcomed: 22, returned: 18, created_real: 12, sent_one: 9, got_paid: 3, sentRate: 9 / 30 },
+      { day: '2026-05-09', signed_up: 20, welcomed: 18, returned: 12, created_real: 8,  sent_one: 6, got_paid: 2, sentRate: 6 / 20 }
+    ],
+    bySource: [
+      { source: 'google',  signed_up: 18, welcomed: 14, returned: 11, created_real: 7, sent_one: 5, got_paid: 2, sentRate: 5 / 18 },
+      { source: 'direct',  signed_up: 12, welcomed: 10, returned: 7,  created_real: 4, sent_one: 2, got_paid: 1, sentRate: 2 / 12 },
+      { source: 'appsumo', signed_up: 0,  welcomed: 0,  returned: 0,  created_real: 0, sent_one: 0, got_paid: 0, sentRate: null }
+    ],
+    generatedAt: '2026-05-16T12:34:56.000Z'
+  };
+  const csv = buildReportCsv(report);
+
+  // RFC 4180: every line ends in CRLF + trailing CRLF.
+  assert.ok(csv.endsWith('\r\n'),
+    'CSV payload must end with CRLF so Excel reads the last line cleanly');
+  const lines = csv.split('\r\n');
+  // Cohort header.
+  assert.strictEqual(lines[0], '# DecentInvoice activation funnel');
+  assert.strictEqual(lines[1], 'window_from,window_to,window_days,cohort_size,generated_at');
+  assert.strictEqual(lines[2], '2026-05-01,2026-05-10,10,100,2026-05-16T12:34:56.000Z',
+    'cohort header row must carry the window + size + timestamp');
+  assert.strictEqual(lines[3], '', 'blank line separates sections so each block parses as its own table');
+  // Stages section.
+  assert.strictEqual(lines[4], '# Stages');
+  assert.strictEqual(lines[5],
+    'stage_key,stage_label,milestone,users,conversion_from_prev,conversion_from_cohort');
+  // signed_up has null ratios — render as empty cells, not '—', so a
+  // spreadsheet parses the column as a number.
+  assert.strictEqual(lines[6], 'signed_up,Signed up,cohort,100,,',
+    'first stage carries empty ratio cells (not em-dash) so spreadsheets treat the column as numeric');
+  // welcomed renders 0.8000 ratios.
+  assert.strictEqual(lines[7], 'welcomed,Welcome email sent,Milestone 1,80,0.8000,0.8000');
+  // returned matches new stage.
+  assert.strictEqual(lines[8], 'returned,Returned to app,Milestone 1,60,0.7500,0.6000');
+  // Spot-check the last stage too.
+  const gotPaidLine = lines.find(l => l.startsWith('got_paid,'));
+  assert.ok(gotPaidLine, 'got_paid row must appear');
+  assert.ok(/^got_paid,Received first payment,Milestone 4,10,0\.3333,0\.1000$/.test(gotPaidLine),
+    'got_paid row must carry truncated 4-dp ratios');
+
+  // Daily section.
+  const dailyHeaderIdx = lines.indexOf('# Daily signup cohorts');
+  assert.ok(dailyHeaderIdx > 0, 'daily section header must appear');
+  assert.strictEqual(lines[dailyHeaderIdx + 1],
+    'day,signed_up,welcomed,returned,created_real,sent_one,got_paid,sent_rate');
+  // Newest day first — same as the HTML report ordering.
+  assert.strictEqual(lines[dailyHeaderIdx + 2], '2026-05-10,30,22,18,12,9,3,0.3000');
+  assert.strictEqual(lines[dailyHeaderIdx + 3], '2026-05-09,20,18,12,8,6,2,0.3000');
+
+  // By-source section, including the zero-cohort source whose null sentRate
+  // must render as an empty cell.
+  const sourceHeaderIdx = lines.indexOf('# By signup source');
+  assert.ok(sourceHeaderIdx > 0, 'source section header must appear');
+  assert.strictEqual(lines[sourceHeaderIdx + 1],
+    'source,signed_up,welcomed,returned,created_real,sent_one,got_paid,sent_rate');
+  const appsumoLine = lines.find(l => l.startsWith('appsumo,'));
+  assert.ok(appsumoLine, 'appsumo row must appear');
+  assert.strictEqual(appsumoLine, 'appsumo,0,0,0,0,0,0,',
+    'zero-signup source row → empty sentRate cell (last column blank, 8 cells / 7 commas)');
+}
+
+async function testBuildReportCsvRejectsErrorReport() {
+  clearReq('../lib/activation-funnel');
+  const { buildReportCsv } = require('../lib/activation-funnel');
+  assert.throws(() => buildReportCsv(null), /requires a successful report/);
+  assert.throws(() => buildReportCsv({}), /requires a successful report/);
+  assert.throws(() => buildReportCsv({ error: 'invalid_from' }), /requires a successful report/,
+    'must not silently render an empty CSV when the underlying report is an error');
+}
+
+async function testBuildReportCsvEscapesHostileFields() {
+  clearReq('../lib/activation-funnel');
+  const { buildReportCsv } = require('../lib/activation-funnel');
+  // A source name with a comma + a stage label with embedded quotes must
+  // both round-trip through RFC 4180 quoting without breaking column count.
+  const csv = buildReportCsv({
+    range: { from: '2026-05-01', to: '2026-05-10', days: 10 },
+    cohortSize: 3,
+    stages: [
+      { key: 'signed_up', label: 'Signed "up"', milestone: 'cohort', count: 3, conversionFromPrev: null, conversionFromCohort: null }
+    ],
+    daily: [],
+    bySource: [
+      { source: 'plausible, utm', signed_up: 3, welcomed: 2, returned: 1, created_real: 1, sent_one: 1, got_paid: 0, sentRate: 1/3 }
+    ],
+    generatedAt: '2026-05-16T12:34:56.000Z'
+  });
+  assert.ok(csv.includes('signed_up,"Signed ""up""",cohort,3,,'),
+    'embedded double-quotes in stage label must be doubled per RFC 4180');
+  assert.ok(csv.includes('"plausible, utm",3,2,1,1,1,0,0.3333'),
+    'comma in source name must force the cell to be quote-wrapped');
+}
+
+async function testCsvRoute200ForOperator() {
+  resetDbStub();
+  process.env.OPERATOR_EMAIL = 'op@x.com';
+  const app = buildApp({ id: 1, email: 'op@x.com' });
+  const res = await request(app, 'GET', '/admin/activation.csv?from=2026-04-01&to=2026-04-30');
+  assert.strictEqual(res.status, 200);
+  assert.ok(/text\/csv/.test(res.headers['content-type']),
+    'CSV route must respond with text/csv (Content-Type)');
+  assert.ok(/charset=utf-8/i.test(res.headers['content-type']),
+    'CSV route must declare UTF-8 charset so non-ASCII source names render');
+  assert.ok(/attachment/.test(res.headers['content-disposition'] || ''),
+    'CSV must serve as an attachment so the browser downloads it');
+  assert.ok(/filename="decentinvoice-activation-2026-04-01_2026-04-30\.csv"/.test(
+    res.headers['content-disposition'] || ''),
+    'CSV filename must carry the window dates for at-a-glance filing');
+  assert.ok(/^# DecentInvoice activation funnel\r\n/.test(res.body),
+    'body must lead with the cohort header');
+  // Same three SQL queries as the HTML/JSON paths (drift-guard).
+  assert.strictEqual(queryCalls.length, 3,
+    'CSV path must issue exactly three SQL queries — aggregate + per-day + per-source');
+  // Stages section must contain the cohort size + a known stage row.
+  assert.ok(/window_from,window_to,window_days,cohort_size,generated_at/.test(res.body),
+    'cohort header row must appear');
+  assert.ok(/2026-04-01,2026-04-30,30,12,/.test(res.body),
+    'cohort row must surface the seeded cohortSize=12 + window');
+  assert.ok(/# Stages\r\nstage_key,stage_label,milestone,users,conversion_from_prev,conversion_from_cohort\r\n/.test(res.body),
+    'stages section header + column header row must appear');
+  assert.ok(/returned,Returned to app,Milestone 1,7,/.test(res.body),
+    'returned stage row must render with the seeded count=7');
+  // Daily + source sections.
+  assert.ok(/# Daily signup cohorts/.test(res.body),
+    'daily section must appear');
+  assert.ok(/2026-05-15,7,6,5,3,2,1,/.test(res.body),
+    'newest daily row must render with the seeded counts');
+  assert.ok(/# By signup source/.test(res.body),
+    'by-source section must appear');
+  assert.ok(/google,6,5,4,3,2,1,/.test(res.body),
+    'google source row must render');
+  // No-cache header so an intermediate proxy can't serve a stale CSV.
+  const cacheControl = res.headers['cache-control'] || '';
+  assert.ok(/no-store/.test(cacheControl),
+    'CSV must carry no-store so a proxy never serves a stale trend snapshot');
+}
+
+async function testCsvRoute404WithoutSession() {
+  resetDbStub();
+  process.env.OPERATOR_EMAIL = 'op@x.com';
+  const app = buildApp();  // no preloaded user
+  const res = await request(app, 'GET', '/admin/activation.csv');
+  assert.strictEqual(res.status, 404,
+    'no session → 404 (the operator surface stays invisible on CSV too)');
+  assert.strictEqual(queryCalls.length, 0, 'no SQL on a closed gate');
+}
+
+async function testCsvRoute404WhenOperatorEmailUnset() {
+  resetDbStub();
+  delete process.env.OPERATOR_EMAIL;
+  const app = buildApp({ id: 1, email: 'op@x.com' });
+  const res = await request(app, 'GET', '/admin/activation.csv');
+  assert.strictEqual(res.status, 404,
+    'OPERATOR_EMAIL unset → CSV route also 404s');
+  assert.strictEqual(queryCalls.length, 0);
+}
+
+async function testCsvRoute404OnSessionEmailMismatch() {
+  resetDbStub();
+  process.env.OPERATOR_EMAIL = 'op@x.com';
+  const app = buildApp({ id: 1, email: 'someone-else@x.com' });
+  const res = await request(app, 'GET', '/admin/activation.csv');
+  assert.strictEqual(res.status, 404, 'mismatched session email → 404 on CSV too');
+  assert.strictEqual(queryCalls.length, 0, 'must short-circuit before SQL on a closed gate');
+}
+
+async function testCsvRoute400OnInvalidDate() {
+  resetDbStub();
+  process.env.OPERATOR_EMAIL = 'op@x.com';
+  const app = buildApp({ id: 1, email: 'op@x.com' });
+  const res = await request(app, 'GET', '/admin/activation.csv?from=garbage');
+  assert.strictEqual(res.status, 400,
+    'invalid date input must surface as 400 (not 500, not an empty CSV)');
+  assert.ok(/invalid_from/.test(res.body),
+    'error body must name the validation reason');
+  assert.strictEqual(queryCalls.length, 0,
+    'malformed input must short-circuit before any SQL');
+}
+
+async function testCsvRoute500OnSqlThrow() {
+  resetDbStub();
+  nextError = new Error('connection terminated');
+  process.env.OPERATOR_EMAIL = 'op@x.com';
+  const app = buildApp({ id: 1, email: 'op@x.com' });
+  const res = await request(app, 'GET', '/admin/activation.csv');
+  assert.strictEqual(res.status, 500,
+    'SQL throw on the CSV path must surface as 500');
+  assert.ok(/report_failed/.test(res.body),
+    'error body must name the failure mode');
+}
+
+async function testHtmlReportSurfacesCsvLink() {
+  resetDbStub();
+  process.env.OPERATOR_EMAIL = 'op@x.com';
+  const app = buildApp({ id: 1, email: 'op@x.com' });
+  const res = await request(app, 'GET', '/admin/activation?from=2026-04-01&to=2026-04-30');
+  assert.strictEqual(res.status, 200);
+  assert.ok(/data-testid="admin-activation-csv-link"/.test(res.body),
+    'HTML report must expose the CSV download link via its testid hook');
+  // EJS <%= %> HTML-escapes the `&` between query params, so the rendered
+  // href reads `&amp;` rather than `&`. Either form is a valid URL once
+  // parsed; the assertion locks in whatever the EJS template emits.
+  assert.ok(/href="\/admin\/activation\.csv\?from=2026-04-01&amp;to=2026-04-30"/.test(res.body),
+    'CSV link must forward the operator-chosen date window to the download URL');
+}
+
 async function testRobotsTxtBlocksAdminPath() {
   // server.js renders robots.txt inline; load it through a minimal app build.
   const serverModulePath = require.resolve('../server.js');
@@ -808,6 +1060,17 @@ async function run() {
     ['route 500 surfaces SQL throw (HTML)', testRoute500OnSqlThrow],
     ['route 500 surfaces SQL throw (JSON)', testJsonRoute500OnSqlThrow],
     ['route empty daily window renders hint, not an empty table', testRouteEmptyDailyShowsHintNotTable],
+    ['csvEscape RFC 4180 quoting + nullish + non-finite numbers', testCsvEscape],
+    ['buildReportCsv renders cohort header + 3 sections with CRLF rows', testBuildReportCsvShape],
+    ['buildReportCsv rejects error/null reports (no silent empty CSV)', testBuildReportCsvRejectsErrorReport],
+    ['buildReportCsv escapes commas + embedded quotes per RFC 4180', testBuildReportCsvEscapesHostileFields],
+    ['CSV route 200 for operator + headers + body sections', testCsvRoute200ForOperator],
+    ['CSV route 404 without session', testCsvRoute404WithoutSession],
+    ['CSV route 404 when OPERATOR_EMAIL unset', testCsvRoute404WhenOperatorEmailUnset],
+    ['CSV route 404 on session email mismatch', testCsvRoute404OnSessionEmailMismatch],
+    ['CSV route 400 on invalid date input', testCsvRoute400OnInvalidDate],
+    ['CSV route 500 on SQL throw', testCsvRoute500OnSqlThrow],
+    ['HTML report surfaces the CSV download link with the window forwarded', testHtmlReportSurfacesCsvLink],
     ['robots.txt disallows /admin/', testRobotsTxtBlocksAdminPath]
   ];
 

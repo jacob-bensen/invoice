@@ -25,11 +25,19 @@
     <button type="submit" class="bg-brand-600 text-white font-semibold px-4 py-2 rounded-lg text-sm hover:bg-brand-700 transition">
       Refresh
     </button>
-    <a href="/admin/activation.json<%= report ? '?from=' + report.range.from + '&to=' + report.range.to : '' %>"
-       class="text-xs text-gray-500 underline hover:text-gray-700 ml-auto"
-       data-testid="admin-activation-json-link">
-      View as JSON
-    </a>
+    <div class="ml-auto flex items-center gap-4">
+      <a href="/admin/activation.json<%= report ? '?from=' + report.range.from + '&to=' + report.range.to : '' %>"
+         class="text-xs text-gray-500 underline hover:text-gray-700"
+         data-testid="admin-activation-json-link">
+        View as JSON
+      </a>
+      <a href="/admin/activation.csv<%= report ? '?from=' + report.range.from + '&to=' + report.range.to : '' %>"
+         class="text-xs text-gray-500 underline hover:text-gray-700"
+         data-testid="admin-activation-csv-link"
+         download>
+        Download CSV
+      </a>
+    </div>
   </form>
 
   <% if (error) { %>
