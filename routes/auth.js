@@ -16,6 +16,7 @@ const {
   safeNextPath
 } = require('../lib/magic-login');
 const { stampLastLogin } = require('../lib/last-login');
+const { currencyFromAcceptLanguage } = require('../lib/locale-currency');
 
 const router = express.Router();
 
@@ -64,7 +65,10 @@ router.post('/register', redirectIfAuth, authLimiter, [
     }
 
     const password_hash = await bcrypt.hash(req.body.password, 12);
-    const user = await db.createUser({ email: req.body.email, password_hash, name: req.body.name });
+    const default_currency = currencyFromAcceptLanguage(req.headers['accept-language']);
+    const user = await db.createUser({
+      email: req.body.email, password_hash, name: req.body.name, default_currency
+    });
 
     await applyPostSignupSideEffects(req, user);
 
@@ -191,7 +195,8 @@ router.post('/register/magic', redirectIfAuth, authLimiter, [
       // later via /auth/forgot if they want one.
       const random = crypto.randomBytes(32).toString('hex');
       const password_hash = await bcrypt.hash(random, 12);
-      const user = await db.createUser({ email, password_hash, name });
+      const default_currency = currencyFromAcceptLanguage(req.headers['accept-language']);
+      const user = await db.createUser({ email, password_hash, name, default_currency });
 
       await applyPostSignupSideEffects(req, user);
 

@@ -20,7 +20,20 @@ const db = {
     return rows[0] || null;
   },
 
-  async createUser({ email, password_hash, name }) {
+  async createUser({ email, password_hash, name, default_currency }) {
+    // Optional `default_currency` lets the auth route pass a browser-locale-
+    // derived currency code (lib/locale-currency.currencyFromAcceptLanguage)
+    // so non-US signups land on the correct money symbol from invoice #1.
+    // Omitting it preserves the DB column default of 'USD' — every existing
+    // caller (and every test stub that destructures only the three legacy
+    // fields) keeps its historical behaviour.
+    if (typeof default_currency === 'string' && default_currency.trim()) {
+      const { rows } = await pool.query(
+        'INSERT INTO users (email, password_hash, name, default_currency) VALUES ($1, $2, $3, $4) RETURNING *',
+        [email, password_hash, name, default_currency.trim().toUpperCase()]
+      );
+      return rows[0];
+    }
     const { rows } = await pool.query(
       'INSERT INTO users (email, password_hash, name) VALUES ($1, $2, $3) RETURNING *',
       [email, password_hash, name]
