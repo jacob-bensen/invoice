@@ -422,12 +422,19 @@ test('view: factory state object includes unpaidCount as an initial reactive fie
 
 test('view: deep-link target sits ON the table wrapper (not inside the table) for accurate scroll', () => {
   const html = renderDashboard({});
-  // Capture the wrapper opening tag — it must have id="invoices-table".
-  // The id MUST be on the wrapper (not <table>) so the rounded border + padding
-  // are part of the scroll target and the user lands at the visual top of the
-  // card, not at the first <tr>.
-  const wrapper = html.match(/<div\s+id="invoices-table"\s+[^>]*>\s*<table/);
-  assert.ok(wrapper, 'id="invoices-table" must be on the <div> wrapper that immediately precedes <table>');
+  // The id MUST be on the WRAPPER <div>, not on <table>, so the rounded
+  // border + padding (and any header row above the table itself, e.g. the
+  // bulk-select bar) are part of the scroll target and the user lands at
+  // the visual top of the card, not at the first <tr>.
+  const wrapper = html.match(/<div\s+id="invoices-table"[^>]*>/);
+  assert.ok(wrapper, 'id="invoices-table" must live on a <div>');
+  // And the id must NOT sneak onto the <table> itself (the drift this guards).
+  assert.doesNotMatch(html, /<table\s+id="invoices-table"/,
+    'id="invoices-table" must never migrate to the <table> element');
+  // The wrapper div must contain a <table> after it (elsewhere may follow).
+  const wrapperIdx = html.indexOf('id="invoices-table"');
+  const tableAfter = html.indexOf('<table', wrapperIdx);
+  assert.ok(tableAfter !== -1, 'the wrapper div must actually contain a <table>');
 });
 
 // ---- Run ----------------------------------------------------------------

@@ -2163,6 +2163,138 @@ router.post('/:id/share-intent', requireAuth, async (req, res) => {
 });
 
 /*
+ * Bulk share-intent — the freelancer selects N draft rows on the dashboard
+ * and fires one channel across the whole selection in a single gesture.
+ * Milestone 3 (created → sent, the funnel's biggest drop-off). The per-row
+ * "Send now" cluster already handles one draft at a time; bulk collapses N
+ * clicks (open cluster → pick channel → confirm × N) into one click.
+ *
+ * Contract:
+ *   Body: { ids: [id, id, ...], intent: 'copy'|'whatsapp'|'sms'|'email'|... }
+ *   Ids are capped at BULK_SHARE_INTENT_MAX so a tampered request can't
+ *   spray-flip the freelancer's whole history. Every id passes the same
+ *   ownership + draft-only + has-public-token gates as the per-row route
+ *   before its atomic flip; non-qualifying ids come back with an `error`
+ *   in the results row so the UI can render a partial-success state
+ *   ("copied 3 of 4 — one draft was already sent"). One first-sent
+ *   celebration is fired for the whole batch (idempotent at the SQL layer
+ *   so re-firing on a subsequent call is harmless).
+ *
+ * Response: { ok, count, flipped_count, results: [{id, ok, flipped, status, url, error?}] }
+ */
+const BULK_SHARE_INTENT_MAX = 25;
+router.post('/bulk-share-intent', requireAuth, async (req, res) => {
+  try {
+    const intent = (req.body && typeof req.body.intent === 'string')
+      ? req.body.intent.trim().toLowerCase() : '';
+    if (!SHARE_INTENT_KINDS.has(intent)) {
+      return res.status(400).json({ error: 'invalid_intent' });
+    }
+    const rawIds = (req.body && Array.isArray(req.body.ids)) ? req.body.ids : null;
+    if (!rawIds || rawIds.length === 0) {
+      return res.status(400).json({ error: 'no_ids' });
+    }
+    if (rawIds.length > BULK_SHARE_INTENT_MAX) {
+      return res.status(400).json({ error: 'too_many_ids', limit: BULK_SHARE_INTENT_MAX });
+    }
+    const seen = new Set();
+    const ids = [];
+    for (const raw of rawIds) {
+      const n = Number(raw);
+      if (!Number.isInteger(n) || n <= 0) continue;
+      const key = String(n);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      ids.push(n);
+    }
+    if (ids.length === 0) {
+      return res.status(400).json({ error: 'no_valid_ids' });
+    }
+
+    const results = [];
+    let flippedCount = 0;
+    let firstCelebrationInvoice = null;
+    for (const id of ids) {
+      let invoice = null;
+      try {
+        invoice = await db.getInvoiceById(id, req.session.user.id);
+      } catch (e) {
+        results.push({ id, ok: false, error: 'lookup_failed' });
+        continue;
+      }
+      if (!invoice) {
+        results.push({ id, ok: false, error: 'not_found' });
+        continue;
+      }
+      if (invoice.is_seed) {
+        results.push({ id, ok: false, error: 'is_seed' });
+        continue;
+      }
+      if (invoice.status !== 'draft') {
+        results.push({ id, ok: false, error: 'not_draft', status: invoice.status });
+        continue;
+      }
+      if (!invoice.public_token) {
+        results.push({ id, ok: false, error: 'no_public_token' });
+        continue;
+      }
+      const surface = buildShareSurfaceForInvoice(invoice);
+      const url = (surface && surface.url) ? surface.url : '';
+      if (!url) {
+        results.push({ id, ok: false, error: 'no_share_url' });
+        continue;
+      }
+      let row = null;
+      try {
+        row = await db.markInvoiceSentFromShareIntent(invoice.id, req.session.user.id);
+      } catch (e) {
+        results.push({ id, ok: false, error: 'update_failed' });
+        continue;
+      }
+      if (!row) {
+        results.push({ id, ok: false, error: 'update_failed' });
+        continue;
+      }
+      const flipped = invoice.status === 'draft' && row.status === 'sent';
+      if (flipped) {
+        flippedCount += 1;
+        if (!firstCelebrationInvoice) firstCelebrationInvoice = invoice;
+      }
+      results.push({
+        id,
+        ok: true,
+        flipped,
+        status: row.status,
+        url,
+        invoice_number: invoice.invoice_number || '',
+        client_name: invoice.client_name || '',
+        total: Number(invoice.total) || 0
+      });
+    }
+
+    if (firstCelebrationInvoice) {
+      // Idempotent at the SQL layer — fires the celebration once for the
+      // whole batch. If any of the freelancer's earlier sends already
+      // triggered it, the DB no-ops.
+      triggerFirstSentCelebration(db, req.session.user.id, firstCelebrationInvoice)
+        .catch(e => console.error('First-sent celebration error (bulk):', e && e.message));
+    }
+
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      count: results.length,
+      flipped_count: flippedCount,
+      intent,
+      results
+    });
+  } catch (err) {
+    console.error('Bulk share-intent error:', err && err.message);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
+/*
  * One-tap server-side "Send by email" for Pro/Agency users on /invoices/:id
  * (Milestone 3 — first invoice created → first invoice sent). The existing
  * share-intent buttons all hand off to a native app (WhatsApp / Messages /
