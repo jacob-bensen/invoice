@@ -1503,6 +1503,105 @@
                     </button>
                   </form>
                 <% } %>
+                <%
+                  // Per-row "Send now" cluster for DRAFT rows (Milestone 3 —
+                  // created → sent, the funnel's biggest drop-off). The
+                  // freshDraft / staleDraft banners each surface exactly ONE
+                  // draft; a freelancer holding three unsent drafts could
+                  // only reach one of them in a tap. This gives every
+                  // qualifying draft row the same one-tap send surface, so
+                  // they can clear the whole backlog without bouncing
+                  // through /invoices/:id for each one. Every channel fires
+                  // POST /share-intent, which atomically flips draft → sent
+                  // and triggers the first-sent celebration.
+                  const sendIntents = (locals.tableSendIntents && tableSendIntents[String(inv.id)]) || null;
+                %>
+                <% if (sendIntents) { %>
+                  <div
+                    class="mt-2 print:hidden inline-block relative align-top"
+                    x-data="{ open: false, emailSending: false, emailSent: false, emailError: '', emailSendDirect() { try { this.emailSending = true; this.emailError = ''; fetch('/invoices/<%= inv.id %>/email-client', { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Accept': 'application/json' } }).then(r => r.json().then(d => ({ ok: r.ok, data: d }))).then(res => { if (res.ok && res.data && res.data.ok) { this.emailSending = false; this.emailSent = true; setTimeout(() => { try { window.location.reload(); } catch (e) {} }, 1200); } else { this.emailSending = false; this.emailError = (res.data && res.data.error) || 'send_failed'; } }).catch(() => { this.emailSending = false; this.emailError = 'network_error'; }); } catch (e) { this.emailSending = false; this.emailError = 'js_error'; } } }"
+                    @click.outside="open = false"
+                    @keydown.escape.window="open = false"
+                    onclick="event.stopPropagation()"
+                    data-testid="table-send-<%= inv.id %>"
+                  >
+                    <button
+                      type="button"
+                      data-testid="table-send-toggle-<%= inv.id %>"
+                      @click.stop="open = !open"
+                      :aria-expanded="open ? 'true' : 'false'"
+                      aria-haspopup="true"
+                      class="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded hover:bg-emerald-100 transition"
+                    >
+                      <span aria-hidden="true">&#128228;</span>
+                      <span>Send now</span>
+                      <span aria-hidden="true" x-text="open ? '▴' : '▾'">▾</span>
+                    </button>
+                    <div
+                      x-show="open"
+                      x-cloak
+                      x-transition.opacity
+                      data-testid="table-send-popover-<%= inv.id %>"
+                      class="absolute z-20 left-0 mt-1 bg-white border border-emerald-200 rounded-lg shadow-lg p-2 flex flex-wrap gap-1.5 min-w-[180px]"
+                      onclick="event.stopPropagation()"
+                    >
+                      <% if (sendIntents.directEmail) { %>
+                        <button
+                          type="button"
+                          data-testid="table-send-direct-email-<%= inv.id %>"
+                          x-bind:disabled="emailSending || emailSent"
+                          @click="emailSendDirect()"
+                          class="inline-flex items-center gap-1 w-full bg-emerald-600 text-white font-semibold px-2 py-1 rounded hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed transition text-[11px]"
+                        >
+                          <span aria-hidden="true">&#128231;</span>
+                          <span x-show="!emailSending && !emailSent">Email it now</span>
+                          <span x-show="emailSending" x-cloak>Sending&hellip;</span>
+                          <span x-show="emailSent" x-cloak>&check; Sent</span>
+                        </button>
+                        <p x-show="emailError" x-cloak x-text="emailError === 'no_client_email' ? 'Add a client email first.' : emailError === 'not_configured' ? 'Email delivery is not configured — use another channel.' : 'Could not send — try another channel.'"
+                          data-testid="table-send-direct-email-error-<%= inv.id %>"
+                          class="text-red-600 text-[11px] w-full"></p>
+                      <% } %>
+                      <a
+                        href="<%= sendIntents.shareIntents.whatsapp %>"
+                        target="_blank"
+                        rel="noopener"
+                        data-testid="table-send-whatsapp-<%= inv.id %>"
+                        onclick="try { fetch('/invoices/<%= inv.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'whatsapp' }) }).catch(function(){}); } catch (e) {}"
+                        class="inline-flex items-center gap-1 bg-white border border-emerald-300 text-emerald-800 font-semibold px-2 py-1 rounded hover:bg-green-50 hover:border-green-400 transition text-[11px]"
+                      >
+                        <span aria-hidden="true">&#128172;</span><span>WhatsApp</span>
+                      </a>
+                      <a
+                        href="<%= sendIntents.shareIntents.sms %>"
+                        data-testid="table-send-sms-<%= inv.id %>"
+                        onclick="try { fetch('/invoices/<%= inv.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'sms' }) }).catch(function(){}); } catch (e) {}"
+                        class="inline-flex items-center gap-1 bg-white border border-emerald-300 text-emerald-800 font-semibold px-2 py-1 rounded hover:bg-blue-50 hover:border-blue-400 transition text-[11px]"
+                      >
+                        <span aria-hidden="true">&#128241;</span><span>SMS</span>
+                      </a>
+                      <% if (sendIntents.shareIntents.mailto && !sendIntents.directEmail) { %>
+                        <a
+                          href="<%= sendIntents.shareIntents.mailto %>"
+                          data-testid="table-send-email-<%= inv.id %>"
+                          onclick="try { fetch('/invoices/<%= inv.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'email' }) }).catch(function(){}); } catch (e) {}"
+                          class="inline-flex items-center gap-1 bg-white border border-emerald-300 text-emerald-800 font-semibold px-2 py-1 rounded hover:bg-indigo-50 hover:border-indigo-400 transition text-[11px]"
+                        >
+                          <span aria-hidden="true">&#9993;&#65039;</span><span>Email</span>
+                        </a>
+                      <% } %>
+                      <button
+                        type="button"
+                        data-testid="table-send-copy-<%= inv.id %>"
+                        data-share-url="<%= sendIntents.url %>"
+                        onclick="(function(btn){ try { var u = btn.getAttribute('data-share-url') || ''; fetch('/invoices/<%= inv.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'copy' }) }).catch(function(){}); if (u && typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') { navigator.clipboard.writeText(u).then(function(){ var prev = btn.innerHTML; btn.innerHTML = '<span>Copied!</span>'; setTimeout(function(){ btn.innerHTML = prev; }, 2000); }).catch(function(){}); } } catch (e) {} })(this)"
+                        class="inline-flex items-center gap-1 bg-white border border-emerald-300 text-emerald-800 font-semibold px-2 py-1 rounded hover:bg-emerald-100 transition text-[11px]"
+                      >
+                        <span aria-hidden="true">&#128279;</span><span>Copy link</span>
+                      </button>
+                    </div>
+                  </div>
+                <% } %>
                 <% if (tableIntents && !showClaim) { %>
                   <div
                     class="mt-2 print:hidden inline-block relative align-top"

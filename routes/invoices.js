@@ -92,6 +92,7 @@ router.get('/', requireAuth, async (req, res) => {
     const repeatClientPrompt = buildRepeatClientPrompt(invoices);
     const paymentInstructionsPrompt = buildPaymentInstructionsPrompt(user, invoices);
     const tableFollowUpIntents = buildTableFollowUpIntents(invoices);
+    const tableSendIntents = buildTableSendIntents(invoices, user);
     // Resolve the owner's default currency symbol so every money cell on the
     // dashboard (all-time totals, the recent-revenue card, every prompt's
     // total, the invoice table Amount column, the pending-quick-invoice
@@ -101,7 +102,7 @@ router.get('/', requireAuth, async (req, res) => {
     // hero still renders correctly).
     const currency = (user && user.default_currency) ? user.default_currency : 'USD';
     const currencySymbol = getCurrencySymbol(currency);
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, paymentClaimPrompt, recentViewPrompt, clientViewedFollowupPrompt, sentNotViewedPrompt, overduePrompt, firstRealInvoicePrompt, freshDraftPrompt, repeatClientPrompt, paymentInstructionsPrompt, pendingQuickInvoice, tableFollowUpIntents, currency, currencySymbol, noindex: true });
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, paymentClaimPrompt, recentViewPrompt, clientViewedFollowupPrompt, sentNotViewedPrompt, overduePrompt, firstRealInvoicePrompt, freshDraftPrompt, repeatClientPrompt, paymentInstructionsPrompt, pendingQuickInvoice, tableFollowUpIntents, tableSendIntents, currency, currencySymbol, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
@@ -118,7 +119,7 @@ router.get('/', requireAuth, async (req, res) => {
       freshDraftPrompt: null,
       repeatClientPrompt: null,
       paymentInstructionsPrompt: null,
-      pendingQuickInvoice: null, tableFollowUpIntents: {}, noindex: true
+      pendingQuickInvoice: null, tableFollowUpIntents: {}, tableSendIntents: {}, noindex: true
     });
   }
 });
@@ -984,6 +985,48 @@ function buildTableFollowUpIntents(invoices, opts) {
     result[String(inv.id)] = {
       url: surface.url,
       followUpIntents: Object.assign({}, surface.followUpIntents, { url: surface.url })
+    };
+  }
+  return result;
+}
+
+/*
+ * Per-row send cluster for DRAFT rows on the dashboard invoices table
+ * (Milestone 3 — first invoice created → first invoice sent, named in
+ * PLAN.md as the funnel's biggest single drop-off).
+ *
+ * Counterpart to buildTableFollowUpIntents: that helper covers sent/overdue
+ * rows, this one covers drafts. The existing draft banners (freshDraftPrompt
+ * / staleDraftPrompt) each surface exactly ONE draft — the newest fresh one
+ * or the oldest stale one — so a freelancer sitting on three unsent drafts
+ * can only reach one of them in a tap and has to navigate into
+ * /invoices/:id for the rest. This map lets the table render the same
+ * one-tap send surface on every qualifying draft row.
+ *
+ * A row qualifies when it is a real (non-seed) draft carrying a valid
+ * public_token. `shareIntents` (not followUpIntents) is the right body copy:
+ * the draft has never been sent, so the message reads "here's invoice X",
+ * not "just checking in". `directEmail` / `clientEmail` come from the same
+ * buildDraftDirectEmail gate the draft banners use, so Pro/Agency rows with
+ * a client email get the server-side send button and everyone else gets the
+ * mailto: fallback.
+ */
+function buildTableSendIntents(invoices, user) {
+  if (!Array.isArray(invoices)) return {};
+  const result = {};
+  for (const inv of invoices) {
+    if (!inv || inv.id == null) continue;
+    if (inv.is_seed) continue;
+    if (inv.status !== 'draft') continue;
+    if (!inv.public_token) continue;
+    const surface = buildShareSurfaceForInvoice(inv);
+    if (!surface || !surface.shareIntents || !surface.url) continue;
+    const { directEmail, clientEmail } = buildDraftDirectEmail(user, inv);
+    result[String(inv.id)] = {
+      url: surface.url,
+      shareIntents: Object.assign({}, surface.shareIntents, { url: surface.url }),
+      directEmail,
+      clientEmail
     };
   }
   return result;
@@ -2435,6 +2478,7 @@ module.exports.FRESH_DRAFT_MAX_AGE_HOURS = FRESH_DRAFT_MAX_AGE_HOURS;
 module.exports.buildRepeatClientPrompt = buildRepeatClientPrompt;
 module.exports.buildPaymentInstructionsPrompt = buildPaymentInstructionsPrompt;
 module.exports.buildTableFollowUpIntents = buildTableFollowUpIntents;
+module.exports.buildTableSendIntents = buildTableSendIntents;
 module.exports.buildPendingQuickInvoiceBanner = buildPendingQuickInvoiceBanner;
 module.exports.readPendingQuickInvoice = readPendingQuickInvoice;
 module.exports.normalizePendingQuickInvoiceInput = normalizePendingQuickInvoiceInput;
