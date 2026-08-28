@@ -1487,6 +1487,44 @@ router.post('/quick', requireAuth, [
       return res.redirect(`/invoices/${invoice.id}`);
     }
 
+    // Combined create+open-Email path (free/business tier): mirrors
+    // create_and_sms + create_and_whatsapp exactly except the redirect
+    // target is the mailto: deep link. The email-first freelancer cohort
+    // (accountants, lawyers, consultants, US remote services) bills over
+    // email; the SMS + WhatsApp shortcuts leave them with no one-tap send
+    // path so they save-as-draft, bounce to /:id, and click mailto from
+    // the draft-send-banner. Server-side gate: client_email must be
+    // present so the mailto: recipient slot is actually populated — an
+    // empty mailto: with no recipient defeats the purpose. Plan-agnostic
+    // (Pro users keep their server-side create_and_email; a forged Pro
+    // payload here just falls back to the SMS-shape mailto behaviour,
+    // which is a benign no-op).
+    if (req.body.action === 'create_and_mailto') {
+      const mailtoSurface = invoice.public_token && client_email
+        ? buildShareSurfaceForInvoice(invoice)
+        : null;
+      const mailtoUrl = mailtoSurface && mailtoSurface.shareIntents && mailtoSurface.shareIntents.mailto;
+      if (mailtoUrl) {
+        try {
+          await db.markInvoiceSentFromShareIntent(invoice.id, req.session.user.id);
+        } catch (e) {
+          console.error('Quick invoice mailto share-flip failed:', e && e.message);
+        }
+        triggerFirstSentCelebration(db, req.session.user.id, invoice)
+          .catch(e => console.error('First-sent celebration error:', e && e.message));
+        req.session.flash = {
+          type: 'success',
+          message: `Invoice ${invoice.invoice_number} marked as sent — your email app has the message ready to send to ${client_email}.`
+        };
+        return res.redirect(mailtoUrl);
+      }
+      req.session.flash = {
+        type: 'error',
+        message: 'Invoice created — tap Email below to share the link.'
+      };
+      return res.redirect(`/invoices/${invoice.id}`);
+    }
+
     // Combined create+send path: the freelancer ticked "Create & email to
     // client" on the form, which collapses the create → land on /:id →
     // click "Send by email" two-step into a single action. Gated on
