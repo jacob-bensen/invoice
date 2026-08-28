@@ -1404,6 +1404,20 @@
           <span x-show="busy" x-cloak>Working&hellip;</span>
           <span x-show="copied" x-cloak>&check; Copied — reloading&hellip;</span>
         </button>
+        <% if (isProUser) { %>
+          <button
+            type="button"
+            data-testid="bulk-draft-send-email"
+            x-bind:disabled="busy"
+            @click="emailAllClients()"
+            class="inline-flex items-center gap-1 bg-blue-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed transition"
+          >
+            <span aria-hidden="true">&#9993;&#65039;</span>
+            <span x-show="!busy && !emailed">Email <span x-text="selectedIds.length"></span> client<span x-show="selectedIds.length !== 1" x-cloak>s</span> now</span>
+            <span x-show="busy" x-cloak>Sending&hellip;</span>
+            <span x-show="emailed" x-cloak>&check; Sent — reloading&hellip;</span>
+          </button>
+        <% } %>
         <button
           type="button"
           data-testid="bulk-draft-send-clear"
@@ -1828,6 +1842,7 @@
         selectedIds: [],
         busy: false,
         copied: false,
+        emailed: false,
         errorMessage: '',
         csrfToken: csrfToken || '',
         isSelected(id) {
@@ -1844,6 +1859,7 @@
           this.selectedIds = [];
           this.errorMessage = '';
           this.copied = false;
+          this.emailed = false;
         },
         buildClipboardText(results) {
           var lines = [];
@@ -1905,6 +1921,56 @@
                   try { window.location.reload(); } catch (e) { self.busy = false; self.copied = false; }
                 }, 900);
               });
+            }).catch(function () {
+              self.busy = false;
+              self.errorMessage = 'Network error — please try again.';
+            });
+          } catch (e) {
+            self.busy = false;
+            self.errorMessage = 'Something went wrong — please try again.';
+          }
+        },
+        emailAllClients() {
+          if (this.busy || this.selectedIds.length === 0) return;
+          this.busy = true;
+          this.errorMessage = '';
+          this.emailed = false;
+          var self = this;
+          var payload = { ids: this.selectedIds.slice() };
+          try {
+            fetch('/invoices/bulk-email-clients', {
+              method: 'POST',
+              headers: {
+                'X-CSRF-Token': self.csrfToken,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+              },
+              body: JSON.stringify(payload)
+            }).then(function (r) {
+              return r.json().then(function (data) { return { ok: r.ok, data: data }; });
+            }).then(function (res) {
+              if (!res.ok || !res.data || !res.data.ok) {
+                self.busy = false;
+                self.errorMessage = 'Email failed — try one at a time.';
+                return;
+              }
+              var results = (res.data && Array.isArray(res.data.results)) ? res.data.results : [];
+              var sent = res.data.sent_count || 0;
+              var missing = 0;
+              for (var i = 0; i < results.length; i++) {
+                if (results[i] && !results[i].ok && results[i].error === 'no_client_email') missing++;
+              }
+              if (sent === 0) {
+                self.busy = false;
+                self.errorMessage = missing > 0
+                  ? 'None sent — add a client email to each draft first.'
+                  : 'Could not send — try one at a time.';
+                return;
+              }
+              self.emailed = true;
+              setTimeout(function () {
+                try { window.location.reload(); } catch (e) { self.busy = false; self.emailed = false; }
+              }, 900);
             }).catch(function () {
               self.busy = false;
               self.errorMessage = 'Network error — please try again.';

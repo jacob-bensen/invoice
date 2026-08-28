@@ -3,6 +3,13 @@
 ---
 
 ## 2026-08-28
+Shipped: Pro/Agency "Email N clients now" button in the dashboard bulk-select bar wired to a new POST /invoices/bulk-email-clients (ids capped at 25, per-id ownership + draft-only + client_email gate, sendInvoiceEmail via Resend then atomic markInvoiceSentFromShareIntent flip per row, one first-sent celebration for the whole batch, per-id partial-success results with send_count/flipped_count); Alpine emailAllClients() method + emailed flag on the existing bulkDraftSelector factory; 22 new assertions in tests/bulk-email-clients.test.js across the route (auth 401, plan_locked 402 for free, validation, happy path, agency parity, celebration fires exactly once, cross-tenant not_found, seed/non-draft/no-email exclusion, dupe collapse, per-id send_failed with no state flip, throwing sender caught per-id, idempotent-on-sent) and the view (Pro+Agency button rendering, free-tier hidden, factory method surface, POST payload contract).
+Advances: Milestone 3 (first invoice created → first invoice sent).
+Master action: none.
+
+---
+
+## 2026-08-28
 Shipped: bulk-select bar on the dashboard invoices table with a "Copy N links & mark sent" action wired to a new POST /invoices/bulk-share-intent (ids capped at 25, per-id ownership + draft-only + has-public-token gate, atomic markInvoiceSentFromShareIntent flip per row, one first-sent celebration for the whole batch); Alpine bulkDraftSelector factory + per-draft-row checkbox that stops-click over the row navigation; 20 new assertions in tests/bulk-share-intent.test.js across the route (validation, happy path, cross-tenant per-id 404, seed / non-draft / no-token exclusion, dupe collapse, celebration fires once) and the view (wrapper scope, checkbox rendering matrix, x-show gate on selectedIds.length, Copy/Clear wiring, factory method surface); recent-revenue-quiet-window-cta regex regression updated for the new bar-above-table layout.
 Advances: Milestone 3 (first invoice created → first invoice sent).
 Master action: none.

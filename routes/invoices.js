@@ -2295,6 +2295,142 @@ router.post('/bulk-share-intent', requireAuth, async (req, res) => {
 });
 
 /*
+ * Bulk server-side "Email now" — Pro/Agency freelancers select N draft rows
+ * on the dashboard and fire one real Resend delivery + one atomic draft→sent
+ * flip per selected id in a single click. The single-row analogue is
+ * POST /invoices/:id/email-client; this is the batched form for the same
+ * bulk-select bar as /invoices/bulk-share-intent (which only copies the
+ * share URLs and marks sent). Same eligibility gates as the per-row route
+ * are applied per id, so non-qualifying rows return an `error` string
+ * instead of mutating state or leaking cross-tenant data.
+ *
+ * Plan gate: Pro or Agency (free returns 402 as defence-in-depth — the
+ * dashboard view already hides the button for free users). Idempotent on
+ * already-sent invoices (still re-sends the email, no double-flip). One
+ * first-sent celebration for the whole batch (idempotent at the SQL layer).
+ *
+ * Response: { ok, count, sent_count, flipped_count,
+ *             results: [{id, ok, flipped, status, sent_to, message_id, error?}] }
+ */
+const BULK_EMAIL_CLIENTS_MAX = 25;
+router.post('/bulk-email-clients', requireAuth, async (req, res) => {
+  try {
+    const user = await db.getUserById(req.session.user.id);
+    if (!user) return res.status(401).json({ error: 'unauthorized' });
+    if (user.plan !== 'pro' && user.plan !== 'agency') {
+      return res.status(402).json({ error: 'plan_locked' });
+    }
+    const rawIds = (req.body && Array.isArray(req.body.ids)) ? req.body.ids : null;
+    if (!rawIds || rawIds.length === 0) {
+      return res.status(400).json({ error: 'no_ids' });
+    }
+    if (rawIds.length > BULK_EMAIL_CLIENTS_MAX) {
+      return res.status(400).json({ error: 'too_many_ids', limit: BULK_EMAIL_CLIENTS_MAX });
+    }
+    const seen = new Set();
+    const ids = [];
+    for (const raw of rawIds) {
+      const n = Number(raw);
+      if (!Number.isInteger(n) || n <= 0) continue;
+      const key = String(n);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      ids.push(n);
+    }
+    if (ids.length === 0) {
+      return res.status(400).json({ error: 'no_valid_ids' });
+    }
+
+    const results = [];
+    let sentCount = 0;
+    let flippedCount = 0;
+    let firstCelebrationInvoice = null;
+    for (const id of ids) {
+      let invoice = null;
+      try {
+        invoice = await db.getInvoiceById(id, req.session.user.id);
+      } catch (e) {
+        results.push({ id, ok: false, error: 'lookup_failed' });
+        continue;
+      }
+      if (!invoice) {
+        results.push({ id, ok: false, error: 'not_found' });
+        continue;
+      }
+      if (invoice.is_seed) {
+        results.push({ id, ok: false, error: 'is_seed' });
+        continue;
+      }
+      if (invoice.status !== 'draft') {
+        results.push({ id, ok: false, error: 'not_draft', status: invoice.status });
+        continue;
+      }
+      if (!invoice.client_email) {
+        results.push({ id, ok: false, error: 'no_client_email' });
+        continue;
+      }
+
+      let sendResult = null;
+      try {
+        sendResult = await sendInvoiceEmail(invoice, user);
+      } catch (e) {
+        console.error('Bulk email send throw:', e && e.message);
+        results.push({ id, ok: false, error: 'send_failed' });
+        continue;
+      }
+      if (!sendResult || sendResult.ok !== true) {
+        const reason = (sendResult && sendResult.reason) || 'send_failed';
+        results.push({ id, ok: false, error: reason });
+        continue;
+      }
+      sentCount += 1;
+
+      let row = null;
+      try {
+        row = await db.markInvoiceSentFromShareIntent(invoice.id, req.session.user.id);
+      } catch (e) {
+        console.error('Bulk email status flip failed:', e && e.message);
+      }
+      const newStatus = (row && row.status) || invoice.status;
+      const flipped = invoice.status === 'draft' && newStatus === 'sent';
+      if (flipped) {
+        flippedCount += 1;
+        if (!firstCelebrationInvoice) firstCelebrationInvoice = invoice;
+      }
+      results.push({
+        id,
+        ok: true,
+        flipped,
+        status: newStatus,
+        sent_to: invoice.client_email,
+        message_id: (sendResult && sendResult.id) || null,
+        invoice_number: invoice.invoice_number || '',
+        client_name: invoice.client_name || '',
+        total: Number(invoice.total) || 0
+      });
+    }
+
+    if (firstCelebrationInvoice) {
+      // Idempotent at the SQL layer — fires exactly once per whole batch.
+      triggerFirstSentCelebration(db, req.session.user.id, firstCelebrationInvoice)
+        .catch(e => console.error('First-sent celebration error (bulk email):', e && e.message));
+    }
+
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      count: results.length,
+      sent_count: sentCount,
+      flipped_count: flippedCount,
+      results
+    });
+  } catch (err) {
+    console.error('Bulk email-clients error:', err && err.message);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
+/*
  * One-tap server-side "Send by email" for Pro/Agency users on /invoices/:id
  * (Milestone 3 — first invoice created → first invoice sent). The existing
  * share-intent buttons all hand off to a native app (WhatsApp / Messages /
@@ -2624,3 +2760,4 @@ module.exports.onboardingDismissHandler = onboardingDismissHandler;
 module.exports.ALLOWED_INVOICE_STATUSES = ALLOWED_INVOICE_STATUSES;
 module.exports.FREE_LIMIT = FREE_LIMIT;
 module.exports.RECENT_REVENUE_WINDOWS = RECENT_REVENUE_WINDOWS;
+module.exports.BULK_EMAIL_CLIENTS_MAX = BULK_EMAIL_CLIENTS_MAX;
