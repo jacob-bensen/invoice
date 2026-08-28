@@ -654,3 +654,24 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS default_payment_terms_days INTEGER NO
 -- existing row picks up the no-tax default at migration time and the
 -- resolver never has to guard against NULL.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS default_tax_rate NUMERIC(5,2) NOT NULL DEFAULT 0;
+
+-- Per-user invoice-number customization (Milestone 3 — first invoice
+-- created → first invoice sent). The historical getNextInvoiceNumber
+-- helper hardcoded "INV-YYYY-<pad(count,4)>", which forced every
+-- freelancer to either accept the generic SaaS prefix or hand-edit
+-- their invoice_number on every render. NULL prefix falls back to the
+-- historical "INV-YYYY-" (year re-resolved on every call so freelancers
+-- who never customise still get a fresh year each Jan 1). Bounded to
+-- 20 chars at the settings route (short enough that the invoice-number
+-- column, VARCHAR(50), always has room for the pad-4 sequence tail).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS invoice_number_prefix VARCHAR(20);
+
+-- Per-user starting number for the invoice sequence. Sequence is
+-- (COUNT(invoices) + start), so bumping start to 100 makes a first-run
+-- freelancer's very first invoice read "INV-2026-0100" instead of
+-- "INV-2026-0001" — a legitimacy signal at exactly the surface where
+-- it matters most (invoice #1 → payment #1). NOT NULL DEFAULT 1
+-- preserves the historical behaviour for every existing account at
+-- migration time and the resolver never has to guard against NULL —
+-- only against schema-drift / direct-write corruption on the app side.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS invoice_number_start INTEGER NOT NULL DEFAULT 1;

@@ -35,6 +35,24 @@
     const _trd = parseFloat(user.default_tax_rate);
     if (Number.isFinite(_trd) && _trd >= 0 && _trd <= 100) selectedTaxRate = _trd;
   }
+  // Invoice number prefix — NULL / empty ⇒ shown as empty input, and
+  // the server-side resolver falls back to the historical INV-YYYY- on
+  // the next getNextInvoiceNumber call. Defence-in-depth on rendering:
+  // a corrupt DB row (non-string / too long) collapses to empty rather
+  // than projecting the hostile value.
+  let selectedInvoicePrefix = '';
+  if (user && typeof user.invoice_number_prefix === 'string') {
+    const _p = user.invoice_number_prefix.trim();
+    if (_p.length > 0 && _p.length <= 20) selectedInvoicePrefix = _p;
+  }
+  // Invoice number start — schema DEFAULT 1. Defence-in-depth: an
+  // out-of-range corrupt row falls back to 1 in the rendered input.
+  let selectedInvoiceStart = 1;
+  if (user && user.invoice_number_start != null) {
+    const _sn = parseInt(user.invoice_number_start, 10);
+    if (Number.isFinite(_sn) && _sn >= 1 && _sn <= 999999) selectedInvoiceStart = _sn;
+  }
+  const _invoicePrefixDefault = `INV-${new Date().getFullYear()}-`;
 %>
 
 <div class="max-w-2xl mx-auto px-4 py-10">
@@ -178,6 +196,25 @@
           <span class="text-sm text-gray-500">%</span>
         </div>
         <p class="text-xs text-gray-500 mt-1">Pre-fills the Tax % on every new invoice. Use <code class="bg-gray-100 rounded px-1">0</code> if you don&rsquo;t charge tax. Common: 7.25% (US sales tax — CA), 8.875% (NYC), 19% (DE VAT), 20% (UK/FR VAT), 21% (NL/ES VAT), 25% (NO/SE/DK VAT).</p>
+      </div>
+      <div>
+        <label for="invoice_number_prefix" class="block text-sm font-medium text-gray-700 mb-1">Invoice number prefix <span class="text-gray-400 font-normal">(optional)</span></label>
+        <input id="invoice_number_prefix" type="text" name="invoice_number_prefix"
+          maxlength="20" value="<%= selectedInvoicePrefix %>"
+          placeholder="<%= _invoicePrefixDefault %>"
+          data-testid="settings-invoice-number-prefix"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono">
+        <p class="text-xs text-gray-500 mt-1">Prepended to every new invoice number. Leave blank for the default (<code class="bg-gray-100 rounded px-1"><%= _invoicePrefixDefault %></code>). Common: <code class="bg-gray-100 rounded px-1">ACME-</code>, <code class="bg-gray-100 rounded px-1">ACME-<%= new Date().getFullYear() %>-</code>, <code class="bg-gray-100 rounded px-1"><%= new Date().getFullYear() %>-</code>. Up to 20 characters.</p>
+      </div>
+      <div>
+        <label for="invoice_number_start" class="block text-sm font-medium text-gray-700 mb-1">Starting invoice number</label>
+        <div class="flex items-center gap-2">
+          <input id="invoice_number_start" type="number" name="invoice_number_start"
+            min="1" max="999999" step="1" value="<%= selectedInvoiceStart %>"
+            data-testid="settings-invoice-number-start"
+            class="w-32 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+        </div>
+        <p class="text-xs text-gray-500 mt-1">Your first invoice will be numbered <code class="bg-gray-100 rounded px-1"><%= selectedInvoicePrefix || _invoicePrefixDefault %><%= String(selectedInvoiceStart).padStart(4, '0') %></code>. Bump this to <code class="bg-gray-100 rounded px-1">100</code> or <code class="bg-gray-100 rounded px-1">1000</code> so your first invoice doesn&rsquo;t announce itself as your first — useful when moving from another invoicing tool.</p>
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">Default invoice notes <span class="text-gray-400 font-normal">(optional)</span></label>

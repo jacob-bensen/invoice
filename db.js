@@ -1,6 +1,7 @@
 require('dotenv').config();
 const crypto = require('crypto');
 const { Pool } = require('pg');
+const { formatInvoiceNumber } = require('./lib/invoice-number');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -1713,14 +1714,32 @@ const db = {
     return parseInt(rows[0] && rows[0].count, 10) || 0;
   },
 
+  /*
+   * Builds the next invoice-number string for a user. Reads the account's
+   * customized prefix + start-at (nullable / defaulted columns on users)
+   * plus the current invoice count in one round-trip and delegates the
+   * formatting to lib/invoice-number.formatInvoiceNumber so every code
+   * path — this helper and the settings route's validators — shares one
+   * source of truth for the resulting string shape. NULL / corrupt
+   * values fall back to the historical "INV-YYYY-<pad(count+1,4)>"
+   * default silently rather than throwing.
+   */
   async getNextInvoiceNumber(userId) {
     const { rows } = await pool.query(
-      'SELECT COUNT(*) as count FROM invoices WHERE user_id=$1',
+      `SELECT
+          (SELECT COUNT(*)::int FROM invoices WHERE user_id = $1) AS invoice_count,
+          u.invoice_number_prefix AS prefix,
+          u.invoice_number_start  AS start_at
+         FROM users u
+        WHERE u.id = $1`,
       [userId]
     );
-    const count = parseInt(rows[0].count, 10) + 1;
-    const year = new Date().getFullYear();
-    return `INV-${year}-${String(count).padStart(4, '0')}`;
+    const row = rows[0] || {};
+    return formatInvoiceNumber({
+      existingCount: row.invoice_count,
+      prefix: row.prefix,
+      startAt: row.start_at
+    });
   },
 
   /*

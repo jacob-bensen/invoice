@@ -15,6 +15,13 @@ const {
   normalizeZelleHandle
 } = require('../lib/payment-handles');
 const { normalizeCurrencyCode, DEFAULT_CURRENCY } = require('../lib/currency');
+const {
+  sanitizePrefix: sanitizeInvoicePrefix,
+  sanitizeStart: sanitizeInvoiceStart,
+  PREFIX_MAX_LEN: INVOICE_PREFIX_MAX_LEN,
+  START_MIN: INVOICE_START_MIN,
+  START_MAX: INVOICE_START_MAX
+} = require('../lib/invoice-number');
 
 const router = express.Router();
 
@@ -612,6 +619,64 @@ router.post('/settings', requireAuth, async (req, res) => {
         defaultTaxRate = n;
       }
     }
+    // Per-user invoice-number prefix (Milestone 3). NULL / empty ⇒
+    // stored as NULL, which db.getNextInvoiceNumber resolves to the
+    // historical "INV-YYYY-" default. The sanitizer enforces the
+    // 20-char cap + control-char reject; if a non-empty input fails
+    // sanitation we reject with a flash and zero db.updateUser calls
+    // so the user's other fields are preserved (matches the pattern
+    // used by every other guarded field on this route).
+    let invoicePrefix;
+    if (Object.prototype.hasOwnProperty.call(req.body, 'invoice_number_prefix')) {
+      const raw = req.body.invoice_number_prefix;
+      const trimmed = (raw == null ? '' : String(raw).trim());
+      if (trimmed.length === 0) {
+        invoicePrefix = null;
+      } else if (trimmed.length > INVOICE_PREFIX_MAX_LEN) {
+        req.session.flash = {
+          type: 'error',
+          message: `Invoice number prefix must be ${INVOICE_PREFIX_MAX_LEN} characters or less.`
+        };
+        return res.redirect('/billing/settings');
+      } else {
+        const cleaned = sanitizeInvoicePrefix(trimmed);
+        if (!cleaned) {
+          req.session.flash = {
+            type: 'error',
+            message: 'Invoice number prefix contains invalid characters — try letters, digits, and simple punctuation only.'
+          };
+          return res.redirect('/billing/settings');
+        }
+        invoicePrefix = cleaned;
+      }
+    }
+    // Per-user invoice-number start (Milestone 3). Empty ⇒ reset to
+    // the schema's NOT NULL DEFAULT 1 (never writes NULL). Out-of-range
+    // / non-digit inputs reject with a flash and zero db.updateUser calls.
+    let invoiceStart;
+    if (Object.prototype.hasOwnProperty.call(req.body, 'invoice_number_start')) {
+      const raw = req.body.invoice_number_start;
+      const rawTrim = (raw == null ? '' : String(raw).trim());
+      if (rawTrim.length === 0) {
+        invoiceStart = INVOICE_START_MIN;
+      } else if (!/^[0-9]+$/.test(rawTrim)) {
+        req.session.flash = {
+          type: 'error',
+          message: 'Starting invoice number must be a whole number.'
+        };
+        return res.redirect('/billing/settings');
+      } else {
+        const cleaned = sanitizeInvoiceStart(rawTrim);
+        if (cleaned == null) {
+          req.session.flash = {
+            type: 'error',
+            message: `Starting invoice number must be between ${INVOICE_START_MIN} and ${INVOICE_START_MAX}.`
+          };
+          return res.redirect('/billing/settings');
+        }
+        invoiceStart = cleaned;
+      }
+    }
     const updateFields = {
       name: req.body.name,
       business_name: req.body.business_name || null,
@@ -630,6 +695,8 @@ router.post('/settings', requireAuth, async (req, res) => {
     if (defaultCurrency) updateFields.default_currency = defaultCurrency;
     if (defaultPaymentTermsDays != null) updateFields.default_payment_terms_days = defaultPaymentTermsDays;
     if (defaultTaxRate != null) updateFields.default_tax_rate = defaultTaxRate;
+    if (invoicePrefix !== undefined) updateFields.invoice_number_prefix = invoicePrefix;
+    if (invoiceStart != null) updateFields.invoice_number_start = invoiceStart;
     const updated = await db.updateUser(req.session.user.id, updateFields);
     if (!updated) return res.redirect('/auth/login');
     req.session.user = { ...req.session.user, name: updated.name };
