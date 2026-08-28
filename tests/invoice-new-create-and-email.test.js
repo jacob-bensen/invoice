@@ -306,13 +306,15 @@ async function testViewHidesDualButtonsForFree() {
     user: { id: 1, plan: 'free', invoice_count: 0, name: 'Alice', email: 'a@x.com', business_name: 'Acme Studio' }
   });
   assert.ok(!html.includes('value="create_and_email"'),
-    'free user MUST NOT see the create+email button (server hard-rejects anyway)');
-  assert.ok(!html.includes('data-testid="invoice-new-submit-draft"'),
-    'free user sees the single primary button, not the dual-CTA pair');
+    'free user MUST NOT see the Pro-only create+email button (server hard-rejects anyway)');
   assert.ok(!html.includes('data-testid="invoice-new-email-hint"'),
     'free user does not see the Pro-only email hint copy');
-  assert.ok(html.includes('data-testid="invoice-new-submit"'),
-    'free user keeps the single primary submit button');
+  // Free users now see the one-tap share shortcuts row (mailto / SMS /
+  // WhatsApp) shipped in the free-tier /invoices/new activation ladder —
+  // separate from the Pro create_and_email dual-CTA. Coverage for the
+  // shortcuts row itself lives in tests/invoice-new-share-shortcuts.test.js.
+  assert.ok(!html.includes('data-testid="invoice-new-submit"'),
+    'free user with the shortcuts row must NOT see the fallback single-primary submit button');
 }
 
 async function testViewHidesDualButtonsForTrial() {

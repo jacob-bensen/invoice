@@ -89,6 +89,14 @@
   // and free/trial users keep the single primary button — free can't email
   // from the app and edit isn't the activation surface.
   const canEmailFromFormNew = !invoice && (planNameNew === 'pro' || planNameNew === 'agency');
+  // Free-tier one-tap share shortcuts (Milestone 3 — first invoice created
+  // → first invoice sent). Mirrors the /invoices/quick free-tier action row:
+  // instead of "Save as draft, then bounce to /:id and tap a share button",
+  // the freelancer picks WhatsApp / SMS / Email right on the form. Each
+  // submits an action=create_and_{whatsapp,sms,mailto} payload the POST /new
+  // route now handles by atomically flipping draft→sent and 302'ing to the
+  // pre-filled deep link. Edit-flow keeps the single "Save changes" button.
+  const canShareFromFormNew = !invoice && planNameNew === 'free';
   const submittedNew = (locals.submitted && typeof submitted === 'object') ? submitted : {};
   const initialBusinessNameNew = typeof submittedNew.business_name === 'string'
     ? submittedNew.business_name : '';
@@ -409,6 +417,36 @@
             <span x-show="!clientEmail || !clientEmail.trim()">Add client email to send &darr;</span>
             <span x-show="clientEmail && clientEmail.trim()" x-cloak>📧 Create &amp; email to client &rarr;</span>
           </button>
+        <% } else if (canShareFromFormNew) { %>
+          <button type="submit"
+            name="action" value="create_only"
+            data-testid="invoice-new-submit-draft"
+            class="text-brand-700 hover:text-brand-800 hover:underline text-sm font-medium px-4 py-3 text-center">
+            Save as draft
+          </button>
+          <button type="submit"
+            name="action" value="create_and_mailto"
+            data-testid="invoice-new-submit-mailto"
+            data-action="create_and_mailto"
+            x-show="clientEmail && clientEmail.trim()"
+            x-cloak
+            class="bg-brand-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-brand-700 transition">
+            &#128231; Create &amp; open Email &rarr;
+          </button>
+          <button type="submit"
+            name="action" value="create_and_sms"
+            data-testid="invoice-new-submit-sms"
+            data-action="create_and_sms"
+            class="bg-brand-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-brand-700 transition">
+            &#128172; Create &amp; open SMS &rarr;
+          </button>
+          <button type="submit"
+            name="action" value="create_and_whatsapp"
+            data-testid="invoice-new-submit-whatsapp"
+            data-action="create_and_whatsapp"
+            class="bg-brand-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-brand-700 transition">
+            &#128241; Create &amp; open WhatsApp &rarr;
+          </button>
         <% } else { %>
           <button type="submit"
             data-testid="invoice-new-submit"
@@ -421,6 +459,10 @@
     <% if (canEmailFromFormNew) { %>
       <p class="text-xs text-gray-400 pt-1 text-right" data-testid="invoice-new-email-hint">
         &ldquo;Email to client&rdquo; sends the invoice straight to their inbox and marks it as sent in one tap.
+      </p>
+    <% } else if (canShareFromFormNew) { %>
+      <p class="text-xs text-gray-400 pt-1 text-right" data-testid="invoice-new-share-hint">
+        &ldquo;Open Email&rdquo;, &ldquo;Open SMS&rdquo;, or &ldquo;Open WhatsApp&rdquo; marks this as sent and pre-fills the message with a tap-to-pay link &mdash; pick your app to deliver it.
       </p>
     <% } %>
   </form>

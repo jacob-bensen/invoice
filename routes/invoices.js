@@ -1728,8 +1728,12 @@ router.post('/new', requireAuth, [
     req.session.user.invoice_count = (req.session.user.invoice_count || 0) + 1;
     // Eager public-token mint (mirrors the /quick path): downstream surfaces
     // get share intents on the next dashboard render without a lazy round-trip.
+    // The token is attached to the just-created invoice object so the
+    // create_and_{whatsapp,sms,mailto} branches below can build a share
+    // surface without a second DB round-trip.
     try {
-      await db.getOrCreatePublicToken(invoice.id, req.session.user.id);
+      const _newToken = await db.getOrCreatePublicToken(invoice.id, req.session.user.id);
+      if (_newToken) invoice.public_token = _newToken;
     } catch (e) {
       console.error('New invoice public-token mint failed:', e && e.message);
     }
@@ -1768,6 +1772,102 @@ router.post('/new', requireAuth, [
           console.error('New invoice payment-instructions save failed:', e && e.message);
         }
       }
+    }
+
+    // One-tap share shortcuts (Milestone 3 — first invoice created → first
+    // invoice sent). Mirror the /invoices/quick create_and_{whatsapp,sms,
+    // mailto} branches to close the free-tier gap where the advanced form
+    // had no send lane at all: on POST /new a free user could only Save-as-
+    // draft, then bounce to /invoices/:id and click the share buttons from
+    // there. That extra round-trip is exactly the "biggest single drop-off"
+    // PLAN.md names on this milestone. Each branch: mint-guarded share URL
+    // → atomic draft→sent flip → first-sent celebration → 302 to the deep
+    // link so the freelancer lands in WhatsApp / Messages / Mail with the
+    // pre-filled body ready to send. Plan-agnostic (Pro/Agency keep their
+    // primary create_and_email lane; a forged Pro payload here just falls
+    // through to the SMS-shape share-flip, a benign no-op equivalent to
+    // tapping the same button on /share-intent).
+    if (req.body.action === 'create_and_whatsapp') {
+      const waSurface = invoice.public_token
+        ? buildShareSurfaceForInvoice(invoice)
+        : null;
+      const waUrl = waSurface && waSurface.shareIntents && waSurface.shareIntents.whatsapp;
+      if (waUrl) {
+        try {
+          await db.markInvoiceSentFromShareIntent(invoice.id, req.session.user.id);
+        } catch (e) {
+          console.error('New invoice WhatsApp share-flip failed:', e && e.message);
+        }
+        triggerFirstSentCelebration(db, req.session.user.id, invoice)
+          .catch(e => console.error('First-sent celebration error:', e && e.message));
+        req.session.flash = {
+          type: 'success',
+          message: `Invoice ${invoice.invoice_number} marked as sent — pick a WhatsApp contact to deliver the link.`
+        };
+        return res.redirect(waUrl);
+      }
+      req.session.flash = {
+        type: 'error',
+        message: 'Invoice created — tap WhatsApp below to share the link.'
+      };
+      return res.redirect(`/invoices/${invoice.id}`);
+    }
+
+    if (req.body.action === 'create_and_sms') {
+      const smsSurface = invoice.public_token
+        ? buildShareSurfaceForInvoice(invoice)
+        : null;
+      const smsUrl = smsSurface && smsSurface.shareIntents && smsSurface.shareIntents.sms;
+      if (smsUrl) {
+        try {
+          await db.markInvoiceSentFromShareIntent(invoice.id, req.session.user.id);
+        } catch (e) {
+          console.error('New invoice SMS share-flip failed:', e && e.message);
+        }
+        triggerFirstSentCelebration(db, req.session.user.id, invoice)
+          .catch(e => console.error('First-sent celebration error:', e && e.message));
+        req.session.flash = {
+          type: 'success',
+          message: `Invoice ${invoice.invoice_number} marked as sent — pick a contact in Messages to deliver the link.`
+        };
+        return res.redirect(smsUrl);
+      }
+      req.session.flash = {
+        type: 'error',
+        message: 'Invoice created — tap SMS below to share the link.'
+      };
+      return res.redirect(`/invoices/${invoice.id}`);
+    }
+
+    if (req.body.action === 'create_and_mailto') {
+      // Gate on client_email so the resulting mailto: has a recipient. An
+      // empty recipient defeats the shortcut and hides the atomic flip's
+      // intent (draft→sent with no actual delivery path). Missing email
+      // falls back to /:id with an error flash so the user can add one and
+      // retry — same shape as the /quick create_and_mailto branch.
+      const mailtoSurface = invoice.public_token && invoice.client_email
+        ? buildShareSurfaceForInvoice(invoice)
+        : null;
+      const mailtoUrl = mailtoSurface && mailtoSurface.shareIntents && mailtoSurface.shareIntents.mailto;
+      if (mailtoUrl) {
+        try {
+          await db.markInvoiceSentFromShareIntent(invoice.id, req.session.user.id);
+        } catch (e) {
+          console.error('New invoice mailto share-flip failed:', e && e.message);
+        }
+        triggerFirstSentCelebration(db, req.session.user.id, invoice)
+          .catch(e => console.error('First-sent celebration error:', e && e.message));
+        req.session.flash = {
+          type: 'success',
+          message: `Invoice ${invoice.invoice_number} marked as sent — your email app has the message ready to send to ${invoice.client_email}.`
+        };
+        return res.redirect(mailtoUrl);
+      }
+      req.session.flash = {
+        type: 'error',
+        message: 'Invoice created — tap Email below to share the link.'
+      };
+      return res.redirect(`/invoices/${invoice.id}`);
     }
 
     // Combined create+email path (Milestone 3 — first invoice created →
