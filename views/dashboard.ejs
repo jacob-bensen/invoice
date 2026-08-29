@@ -1606,6 +1606,52 @@
                   </form>
                 <% } %>
                 <%
+                  // Per-row "Duplicate" affordance on non-draft, non-seed rows.
+                  // Advances the 7-day activation window in PLAN.md's "Done
+                  // means": the freelancer's second-invoice-onward velocity for
+                  // a returning-client cohort compounds with every downstream
+                  // send/pay surface. The single repeatClientPrompt banner only
+                  // surfaces ONE target invoice at a time; this closes the gap
+                  // so a freelancer with three prior clients they want to
+                  // re-invoice can chain duplicates from the table without
+                  // opening each source invoice first. Draft rows already have
+                  // the per-row Send-now cluster (M3) — duplicating an unsent
+                  // draft is not the freelancer's next-action there. Seed row
+                  // is duplicated via the existing "Duplicate as draft" button
+                  // on /invoices/:id — its testid is stable and the seed's
+                  // firstRealInvoicePrompt already anchors the empty-state
+                  // path. Free-tier users at the 3/3 limit hide the button:
+                  // the underlying route bounces to /invoices?limit_hit=1,
+                  // and a button that guarantees a bounce is worse than no
+                  // button at all — the invoiceLimitProgress banner two rows
+                  // up already carries the upgrade CTA for that cohort.
+                  const atFreeLimit = user && user.plan === 'free'
+                    && locals.invoiceLimitProgress && invoiceLimitProgress.atLimit;
+                  const canDuplicate = !inv.is_seed
+                    && (inv.status === 'sent' || inv.status === 'paid' || inv.status === 'overdue')
+                    && !atFreeLimit;
+                %>
+                <% if (canDuplicate) { %>
+                  <form
+                    action="/invoices/<%= inv.id %>/duplicate"
+                    method="POST"
+                    class="inline-block mt-2 mr-2 print:hidden align-top"
+                    onclick="event.stopPropagation()"
+                    data-testid="table-duplicate-form-<%= inv.id %>"
+                  >
+                    <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+                    <button
+                      type="submit"
+                      data-testid="table-duplicate-<%= inv.id %>"
+                      title="Reuse this invoice for the same client or a similar job — starts a fresh draft with the items already filled in."
+                      class="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded hover:bg-indigo-100 transition"
+                    >
+                      <span aria-hidden="true">&#128464;</span>
+                      <span>Duplicate</span>
+                    </button>
+                  </form>
+                <% } %>
+                <%
                   // Per-row "Send now" cluster for DRAFT rows (Milestone 3 —
                   // created → sent, the funnel's biggest drop-off). The
                   // freshDraft / staleDraft banners each surface exactly ONE
