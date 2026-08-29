@@ -3034,6 +3034,15 @@ router.post('/:id/duplicate', requireAuth, async (req, res) => {
     const source = await db.getInvoiceById(req.params.id, req.session.user.id);
     if (!source) return res.redirect('/dashboard');
 
+    // Two-variant duplicate (Milestone 2 lever). `client_scope=new_client`
+    // clones the invoice's items/notes/tax/currency but blanks the client
+    // fields on the new draft so a freelancer duplicating a template (or
+    // the seed sample) for a DIFFERENT client doesn't have to erase the
+    // old client_name / client_email / client_address before typing the
+    // new one. Any other value falls back to the classic same-client
+    // duplicate — a strict whitelist so a URL-tampered value is safe.
+    const clearClient = !!(req.body && req.body.client_scope === 'new_client');
+
     const invoice_number = await db.getNextInvoiceNumber(req.session.user.id);
     const today = new Date();
     const issued_date = today.toISOString().split('T')[0];
@@ -3041,14 +3050,16 @@ router.post('/:id/duplicate', requireAuth, async (req, res) => {
     const due_date = new Date(today.getTime() + paymentTermsDays * 86400000).toISOString().split('T')[0];
 
     const created = await db.duplicateInvoice(source.id, req.session.user.id, {
-      invoice_number, issued_date, due_date
+      invoice_number, issued_date, due_date, clearClient
     });
     if (!created) return res.redirect('/dashboard');
 
     req.session.user.invoice_count = (req.session.user.invoice_count || 0) + 1;
     req.session.flash = {
       type: 'success',
-      message: 'Duplicated as a new draft — update the client and items, then mark it sent.'
+      message: clearClient
+        ? 'Duplicated with items and notes only — add your new client on the left, then send it.'
+        : 'Duplicated as a new draft — update the client and items, then mark it sent.'
     };
     return res.redirect(`/invoices/${created.id}/edit`);
   } catch (err) {

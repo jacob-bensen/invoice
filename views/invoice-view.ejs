@@ -109,6 +109,16 @@
         🗐 Duplicate<% if (invoice.is_seed) { %> as draft<% } %>
       </button>
     </form>
+    <form action="/invoices/<%= invoice.id %>/duplicate" method="POST" class="inline" data-testid="invoice-duplicate-new-client-form">
+      <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+      <input type="hidden" name="client_scope" value="new_client">
+      <button type="submit"
+        data-testid="invoice-duplicate-new-client-button"
+        class="border border-gray-300 text-gray-700 font-semibold px-5 py-2.5 rounded-lg hover:bg-gray-50 transition"
+        title="Reuse the items and notes for a different client — starts a fresh draft with the client fields blank so you don't have to erase the old client first.">
+        👤 Duplicate for a new client
+      </button>
+    </form>
     <% if (invoice.status !== 'paid') { %>
       <form action="/invoices/<%= invoice.id %>/status" method="POST" class="inline">
         <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">

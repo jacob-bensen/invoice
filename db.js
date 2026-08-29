@@ -185,9 +185,23 @@ const db = {
    * The invoice_count bump runs in the same transaction so a partial-failure
    * (insert succeeds, count update throws) doesn't strand the user with an
    * un-counted real invoice — both go through together or neither does.
+   *
+   * `clearClient: true` swaps the client_name/client_email/client_address
+   * projection for empty/NULL literals so the freelancer duplicating a
+   * template (or the seed sample) for a DIFFERENT client lands on /edit
+   * with the client fields blank and doesn't have to erase the old
+   * client's name / email / address before typing the new one. client_name
+   * is NOT NULL in the schema, so it becomes '' rather than NULL — the
+   * form's required-field validation will then force a real name at save
+   * time. The boolean is whitelisted here (strict `=== true`) so any
+   * URL-tampered/tainted upstream value coerces to the safe same-client
+   * default.
    */
-  async duplicateInvoice(sourceId, userId, { invoice_number, issued_date, due_date }) {
+  async duplicateInvoice(sourceId, userId, { invoice_number, issued_date, due_date, clearClient }) {
     if (!sourceId || !userId || !invoice_number) return null;
+    const clientProjection = clearClient === true
+      ? "'', NULL, NULL"
+      : 'client_name, client_email, client_address';
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -198,7 +212,7 @@ const db = {
            issued_date, due_date, status, is_seed
          )
          SELECT
-           user_id, $3, client_name, client_email, client_address,
+           user_id, $3, ${clientProjection},
            items, subtotal, tax_rate, tax_amount, total, notes,
            $4, $5, 'draft', false
          FROM invoices
