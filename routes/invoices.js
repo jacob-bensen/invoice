@@ -24,7 +24,9 @@ const { triggerPaidReceipt } = require('../lib/paid-receipt');
 const { buildShareSurfaceForInvoice } = require('../lib/share-link');
 const { normalizeClientPhone } = require('../lib/phone');
 const { SERVICE_PRESETS } = require('../lib/service-presets');
-const { resolveInvoiceCurrency, getCurrencySymbol, formatMoney } = require('../lib/currency');
+const { resolveInvoiceCurrency, getCurrencySymbol, formatMoney, SUPPORTED_CURRENCIES } = require('../lib/currency');
+const { buildPayLinks } = require('../lib/payment-handles');
+const { buildPublicInvoiceOg, PUBLIC_INVOICE_OG_DEFAULT_DESCRIPTION } = require('../lib/public-invoice-og');
 
 const router = express.Router();
 const FREE_LIMIT = 3;
@@ -2040,6 +2042,93 @@ router.get('/:id/preview-email', requireAuth, async (req, res) => {
     });
   } catch (err) {
     console.error('Email preview render failed:', err && err.message);
+    res.redirect(`/invoices/${req.params.id}`);
+  }
+});
+
+/*
+ * Preview the public share page (Milestone 3 — first invoice created → first
+ * invoice sent). Renders the same invoice-public view a client would see at
+ * /i/<token>, but authenticated as the owner and with two consequential side
+ * effects deliberately suppressed:
+ *
+ *   1. NO recordPublicInvoiceView. On a draft that helper atomically flips
+ *      status draft → sent, stamps sent_via_share_view_at, and (through the
+ *      dashboard flow) triggers the first-sent celebration + client-viewed
+ *      email — the /i/<token> owner-preview note calls this "acceptable" but
+ *      for an owner-initiated preview it is not: hitting Preview must not
+ *      irreversibly send the invoice. Skipping the stamp keeps the counters
+ *      honest.
+ *   2. NO first_viewed_at / view_count bump. The dashboard "👀 Viewed" badge
+ *      keys off view_count, so previewing an already-sent invoice must not
+ *      lie ("Your client opened this — they didn't, you did").
+ *
+ * The rendered payment-claim form is hard-disabled in the template when
+ * `preview` is truthy so the owner cannot accidentally POST a self-claim
+ * to their own invoice.
+ *
+ * Cross-tenant + unknown-id both fall through the getInvoiceById user-id
+ * gate to a 302 → /dashboard, matching the sibling /preview-email pattern.
+ */
+router.get('/:id/preview-public', requireAuth, async (req, res) => {
+  try {
+    const invoice = await db.getInvoiceById(req.params.id, req.session.user.id);
+    if (!invoice) return res.redirect('/dashboard');
+    const owner = await db.getUserById(req.session.user.id);
+    if (!owner) return res.redirect('/dashboard');
+    // The invoice-public view expects the joined owner_* fields the public
+    // /i/<token> loader (getInvoiceByPublicToken) projects. Hydrate them
+    // from the freshly-loaded owner row so ownership-scoped edits since
+    // last session (business_name, payment_instructions, tap-to-pay
+    // handles, default_currency, plan) reflect immediately in the preview.
+    invoice.owner_id = owner.id;
+    invoice.owner_name = owner.name;
+    invoice.owner_email = owner.email;
+    invoice.owner_reply_to_email = owner.reply_to_email;
+    invoice.owner_business_name = owner.business_name;
+    invoice.owner_business_address = owner.business_address;
+    invoice.owner_business_email = owner.business_email;
+    invoice.owner_business_phone = owner.business_phone;
+    invoice.owner_payment_instructions = owner.payment_instructions;
+    invoice.owner_venmo_handle = owner.venmo_handle;
+    invoice.owner_cashapp_handle = owner.cashapp_handle;
+    invoice.owner_paypal_me_handle = owner.paypal_me_handle;
+    invoice.owner_zelle_handle = owner.zelle_handle;
+    invoice.owner_default_currency = owner.default_currency;
+    invoice.owner_plan = owner.plan;
+
+    const invoiceCurrency = resolveInvoiceCurrency(invoice);
+    const tapToPayLinks = buildPayLinks({
+      venmo: invoice.owner_venmo_handle,
+      cashapp: invoice.owner_cashapp_handle,
+      paypal: invoice.owner_paypal_me_handle,
+      zelle: invoice.owner_zelle_handle,
+      amount: invoice.total,
+      invoiceNumber: invoice.invoice_number,
+      currency: invoiceCurrency
+    });
+    const ogFields = buildPublicInvoiceOg(invoice) || {};
+
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.render('invoice-public', {
+      title: `Preview — ${invoice.invoice_number}`,
+      invoice,
+      preview: true,
+      paymentClaimMethods: ['cash', 'check', 'venmo', 'zelle', 'bank_transfer', 'paypal', 'other'],
+      paymentClaimReferenceMax: 200,
+      paymentClaimNoteMax: 1000,
+      justClaimed: false,
+      tapToPayLinks,
+      invoiceCurrency,
+      formatMoney,
+      supportedCurrencies: SUPPORTED_CURRENCIES,
+      ogTitle: ogFields.title || `Invoice ${invoice.invoice_number} — DecentInvoice`,
+      ogDescription: ogFields.description || PUBLIC_INVOICE_OG_DEFAULT_DESCRIPTION,
+      ogPath: `/invoices/${invoice.id}/preview-public`,
+      noindex: true
+    });
+  } catch (err) {
+    console.error('Public preview render failed:', err && err.message);
     res.redirect(`/invoices/${req.params.id}`);
   }
 });
