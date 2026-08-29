@@ -280,7 +280,8 @@
       class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4 flex items-start gap-3 print:hidden"
       role="region"
       aria-label="You created an invoice — send it to your client"
-      x-data="{ emailSending: false, emailSent: false, emailError: '', emailSendDirect() { try { this.emailSending = true; this.emailError = ''; fetch('/invoices/<%= freshDraftPrompt.id %>/email-client', { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Accept': 'application/json' } }).then(r => r.json().then(d => ({ ok: r.ok, status: r.status, data: d }))).then(res => { if (res.ok && res.data && res.data.ok) { this.emailSending = false; this.emailSent = true; setTimeout(() => { try { window.location.reload(); } catch (e) {} }, 1200); } else { this.emailSending = false; this.emailError = (res.data && res.data.error) || 'send_failed'; } }).catch(() => { this.emailSending = false; this.emailError = 'network_error'; }); } catch (e) { this.emailSending = false; this.emailError = 'js_error'; } } }"
+      x-data="{ emailSending: false, emailSent: false, emailError: '', nativeShareSupported: false, emailSendDirect() { try { this.emailSending = true; this.emailError = ''; fetch('/invoices/<%= freshDraftPrompt.id %>/email-client', { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Accept': 'application/json' } }).then(r => r.json().then(d => ({ ok: r.ok, status: r.status, data: d }))).then(res => { if (res.ok && res.data && res.data.ok) { this.emailSending = false; this.emailSent = true; setTimeout(() => { try { window.location.reload(); } catch (e) {} }, 1200); } else { this.emailSending = false; this.emailError = (res.data && res.data.error) || 'send_failed'; } }).catch(() => { this.emailSending = false; this.emailError = 'network_error'; }); } catch (e) { this.emailSending = false; this.emailError = 'js_error'; } } }"
+      x-init="try { if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') { nativeShareSupported = true; } } catch (e) {}"
     >
       <div class="text-emerald-600 text-xl leading-none mt-0.5" aria-hidden="true">&#128640;</div>
       <div class="flex-1 text-sm">
@@ -389,6 +390,15 @@
               class="inline-flex items-center gap-1.5 bg-white border border-emerald-300 text-emerald-800 font-semibold px-3 py-1.5 rounded-lg hover:bg-emerald-100 transition text-xs">
               <span aria-hidden="true">&#128279;</span><span>Copy link</span>
             </button>
+            <button type="button"
+              data-share="native"
+              data-testid="fresh-draft-share-native"
+              x-show="nativeShareSupported"
+              x-cloak
+              @click="try { fetch('/invoices/<%= freshDraftPrompt.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'native' }) }).catch(function(){}); navigator.share({ title: <%= JSON.stringify(freshDraftPrompt.shareIntents.subject || '') %>, text: <%= JSON.stringify(freshDraftPrompt.shareIntents.body || '') %>, url: <%= JSON.stringify(freshDraftPrompt.shareIntents.url || '') %> }).catch(function(){}); } catch (e) {}"
+              class="inline-flex items-center gap-1.5 bg-white border border-emerald-300 text-emerald-800 font-semibold px-3 py-1.5 rounded-lg hover:bg-emerald-100 transition text-xs">
+              <span aria-hidden="true">&#128241;</span><span>More apps&hellip;</span>
+            </button>
           </div>
         <% } %>
       </div>
@@ -404,7 +414,8 @@
       class="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 flex items-start gap-3 print:hidden"
       role="region"
       aria-label="Draft invoice waiting to be sent"
-      x-data="{ emailSending: false, emailSent: false, emailError: '', emailSendDirect() { try { this.emailSending = true; this.emailError = ''; fetch('/invoices/<%= staleDraftPrompt.id %>/email-client', { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Accept': 'application/json' } }).then(r => r.json().then(d => ({ ok: r.ok, status: r.status, data: d }))).then(res => { if (res.ok && res.data && res.data.ok) { this.emailSending = false; this.emailSent = true; setTimeout(() => { try { window.location.reload(); } catch (e) {} }, 1200); } else { this.emailSending = false; this.emailError = (res.data && res.data.error) || 'send_failed'; } }).catch(() => { this.emailSending = false; this.emailError = 'network_error'; }); } catch (e) { this.emailSending = false; this.emailError = 'js_error'; } } }"
+      x-data="{ emailSending: false, emailSent: false, emailError: '', nativeShareSupported: false, emailSendDirect() { try { this.emailSending = true; this.emailError = ''; fetch('/invoices/<%= staleDraftPrompt.id %>/email-client', { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Accept': 'application/json' } }).then(r => r.json().then(d => ({ ok: r.ok, status: r.status, data: d }))).then(res => { if (res.ok && res.data && res.data.ok) { this.emailSending = false; this.emailSent = true; setTimeout(() => { try { window.location.reload(); } catch (e) {} }, 1200); } else { this.emailSending = false; this.emailError = (res.data && res.data.error) || 'send_failed'; } }).catch(() => { this.emailSending = false; this.emailError = 'network_error'; }); } catch (e) { this.emailSending = false; this.emailError = 'js_error'; } } }"
+      x-init="try { if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') { nativeShareSupported = true; } } catch (e) {}"
     >
       <div class="text-amber-500 text-xl leading-none mt-0.5" aria-hidden="true">&#128228;</div>
       <div class="flex-1 text-sm">
@@ -490,6 +501,15 @@
               onclick="(function(btn){ try { var u = btn.getAttribute('data-share-url') || ''; fetch('/invoices/<%= staleDraftPrompt.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'copy' }) }).catch(function(){}); if (u && typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') { navigator.clipboard.writeText(u).then(function(){ var prev = btn.innerHTML; btn.innerHTML = '<span>Copied!</span>'; setTimeout(function(){ btn.innerHTML = prev; }, 2000); }).catch(function(){}); } } catch (e) {} })(this)"
               class="inline-flex items-center gap-1.5 bg-white border border-amber-300 text-amber-800 font-semibold px-3 py-1.5 rounded-lg hover:bg-amber-100 transition text-xs">
               <span aria-hidden="true">&#128279;</span><span>Copy link</span>
+            </button>
+            <button type="button"
+              data-share="native"
+              data-testid="stale-draft-share-native"
+              x-show="nativeShareSupported"
+              x-cloak
+              @click="try { fetch('/invoices/<%= staleDraftPrompt.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'native' }) }).catch(function(){}); navigator.share({ title: <%= JSON.stringify(staleDraftPrompt.shareIntents.subject || '') %>, text: <%= JSON.stringify(staleDraftPrompt.shareIntents.body || '') %>, url: <%= JSON.stringify(staleDraftPrompt.shareIntents.url || '') %> }).catch(function(){}); } catch (e) {}"
+              class="inline-flex items-center gap-1.5 bg-white border border-amber-300 text-amber-800 font-semibold px-3 py-1.5 rounded-lg hover:bg-amber-100 transition text-xs">
+              <span aria-hidden="true">&#128241;</span><span>More apps&hellip;</span>
             </button>
           </div>
         <% } %>
@@ -1601,7 +1621,8 @@
                 <% if (sendIntents) { %>
                   <div
                     class="mt-2 print:hidden inline-block relative align-top"
-                    x-data="{ open: false, emailSending: false, emailSent: false, emailError: '', emailSendDirect() { try { this.emailSending = true; this.emailError = ''; fetch('/invoices/<%= inv.id %>/email-client', { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Accept': 'application/json' } }).then(r => r.json().then(d => ({ ok: r.ok, data: d }))).then(res => { if (res.ok && res.data && res.data.ok) { this.emailSending = false; this.emailSent = true; setTimeout(() => { try { window.location.reload(); } catch (e) {} }, 1200); } else { this.emailSending = false; this.emailError = (res.data && res.data.error) || 'send_failed'; } }).catch(() => { this.emailSending = false; this.emailError = 'network_error'; }); } catch (e) { this.emailSending = false; this.emailError = 'js_error'; } } }"
+                    x-data="{ open: false, emailSending: false, emailSent: false, emailError: '', nativeShareSupported: false, emailSendDirect() { try { this.emailSending = true; this.emailError = ''; fetch('/invoices/<%= inv.id %>/email-client', { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Accept': 'application/json' } }).then(r => r.json().then(d => ({ ok: r.ok, data: d }))).then(res => { if (res.ok && res.data && res.data.ok) { this.emailSending = false; this.emailSent = true; setTimeout(() => { try { window.location.reload(); } catch (e) {} }, 1200); } else { this.emailSending = false; this.emailError = (res.data && res.data.error) || 'send_failed'; } }).catch(() => { this.emailSending = false; this.emailError = 'network_error'; }); } catch (e) { this.emailSending = false; this.emailError = 'js_error'; } } }"
+                    x-init="try { if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') { nativeShareSupported = true; } } catch (e) {}"
                     @click.outside="open = false"
                     @keydown.escape.window="open = false"
                     onclick="event.stopPropagation()"
@@ -1680,6 +1701,16 @@
                         class="inline-flex items-center gap-1 bg-white border border-emerald-300 text-emerald-800 font-semibold px-2 py-1 rounded hover:bg-emerald-100 transition text-[11px]"
                       >
                         <span aria-hidden="true">&#128279;</span><span>Copy link</span>
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="table-send-native-<%= inv.id %>"
+                        x-show="nativeShareSupported"
+                        x-cloak
+                        @click="try { fetch('/invoices/<%= inv.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'native' }) }).catch(function(){}); navigator.share({ title: <%= JSON.stringify(sendIntents.shareIntents.subject || '') %>, text: <%= JSON.stringify(sendIntents.shareIntents.body || '') %>, url: <%= JSON.stringify(sendIntents.url || '') %> }).catch(function(){}); } catch (e) {}"
+                        class="inline-flex items-center gap-1 bg-white border border-emerald-300 text-emerald-800 font-semibold px-2 py-1 rounded hover:bg-emerald-100 transition text-[11px]"
+                      >
+                        <span aria-hidden="true">&#128241;</span><span>More apps&hellip;</span>
                       </button>
                     </div>
                   </div>

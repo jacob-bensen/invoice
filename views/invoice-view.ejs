@@ -157,7 +157,8 @@
       class="mb-6 rounded-2xl border border-brand-200 bg-brand-50 px-5 py-5 print:hidden"
       role="region"
       aria-label="Send this invoice to your client"
-      x-data="{ emailSending: false, emailSent: false, emailError: '', emailSendTo(addr) { try { this.emailSending = true; this.emailError = ''; fetch('/invoices/<%= invoice.id %>/email-client', { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Accept': 'application/json' } }).then(r => r.json().then(d => ({ ok: r.ok, status: r.status, data: d }))).then(res => { if (res.ok && res.data && res.data.ok) { this.emailSending = false; this.emailSent = true; setTimeout(() => { try { window.location.reload(); } catch (e) {} }, 1200); } else { this.emailSending = false; this.emailError = (res.data && res.data.error) || 'send_failed'; } }).catch(() => { this.emailSending = false; this.emailError = 'network_error'; }); } catch (e) { this.emailSending = false; this.emailError = 'js_error'; } } }"
+      x-data="{ emailSending: false, emailSent: false, emailError: '', nativeShareSupported: false, emailSendTo(addr) { try { this.emailSending = true; this.emailError = ''; fetch('/invoices/<%= invoice.id %>/email-client', { method: 'POST', headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Accept': 'application/json' } }).then(r => r.json().then(d => ({ ok: r.ok, status: r.status, data: d }))).then(res => { if (res.ok && res.data && res.data.ok) { this.emailSending = false; this.emailSent = true; setTimeout(() => { try { window.location.reload(); } catch (e) {} }, 1200); } else { this.emailSending = false; this.emailError = (res.data && res.data.error) || 'send_failed'; } }).catch(() => { this.emailSending = false; this.emailError = 'network_error'; }); } catch (e) { this.emailSending = false; this.emailError = 'js_error'; } } }"
+      x-init="try { if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') { nativeShareSupported = true; } } catch (e) {}"
     >
       <p class="text-base font-semibold text-gray-800">
         📤 Ready to send<% if (_bannerClient) { %> to <%= _bannerClient %><% } %>?
@@ -216,6 +217,15 @@
             <span aria-hidden="true">🔗</span><span>Copy link</span>
           </button>
         <% } %>
+        <button type="button"
+          data-share="native"
+          data-testid="draft-send-banner-native"
+          x-show="nativeShareSupported"
+          x-cloak
+          @click="try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'native' }) }).catch(function(){}); navigator.share({ title: <%= JSON.stringify(_bannerIntents.subject || '') %>, text: <%= JSON.stringify(_bannerIntents.body || '') %>, url: <%= JSON.stringify(_bannerShareUrl || '') %> }).catch(function(){}); } catch (e) {}"
+          class="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-gray-100 transition text-sm">
+          <span aria-hidden="true">📱</span><span>More apps&hellip;</span>
+        </button>
       </div>
       <% if (user && user.email) { %>
         <div class="mt-4 pt-3 border-t border-brand-100"
