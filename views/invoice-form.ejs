@@ -95,8 +95,22 @@
   // the freelancer picks WhatsApp / SMS / Email right on the form. Each
   // submits an action=create_and_{whatsapp,sms,mailto} payload the POST /new
   // route now handles by atomically flipping draft→sent and 302'ing to the
-  // pre-filled deep link. Edit-flow keeps the single "Save changes" button.
+  // pre-filled deep link.
   const canShareFromFormNew = !invoice && planNameNew === 'free';
+  // Edit-path one-tap send shortcuts (Milestone 3 — first invoice created →
+  // first invoice sent). A user editing a still-draft invoice used to have
+  // only "Save changes" → land on /:id → tap a send button from the draft-
+  // send banner, adding one round-trip at the point of maximum abandon on
+  // a stale-draft return path. These gates mirror canEmail/canShareFromFormNew
+  // but scope to invoices already saved as draft. Pro/Agency get an
+  // "Update & email to client" button (server-side Resend send + atomic
+  // draft→sent flip). Free gets three sibling "Update & open …" buttons
+  // (mailto: / SMS / WhatsApp deep links + atomic flip). Non-draft edits
+  // (sent / paid / overdue) keep the single "Save changes" button — sending
+  // an already-sent invoice is a different flow (resend / follow-up).
+  const isDraftEdit = !!(invoice && invoice.status === 'draft');
+  const canEmailFromFormEdit = isDraftEdit && (planNameNew === 'pro' || planNameNew === 'agency');
+  const canShareFromFormEdit = isDraftEdit && planNameNew === 'free';
   const submittedNew = (locals.submitted && typeof submitted === 'object') ? submitted : {};
   const initialBusinessNameNew = typeof submittedNew.business_name === 'string'
     ? submittedNew.business_name : '';
@@ -447,6 +461,55 @@
             class="bg-brand-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-brand-700 transition">
             &#128241; Create &amp; open WhatsApp &rarr;
           </button>
+        <% } else if (canEmailFromFormEdit) { %>
+          <button type="submit"
+            name="action" value="update_only"
+            data-testid="invoice-edit-submit-draft"
+            class="text-brand-700 hover:text-brand-800 hover:underline text-sm font-medium px-4 py-3 text-center">
+            Save changes
+          </button>
+          <button type="submit"
+            name="action" value="update_and_email"
+            data-testid="invoice-edit-submit-email"
+            data-action="update_and_email"
+            :disabled="!clientEmail || !clientEmail.trim()"
+            :class="!clientEmail || !clientEmail.trim()
+              ? 'bg-brand-300 text-white cursor-not-allowed'
+              : 'bg-brand-600 text-white hover:bg-brand-700'"
+            class="font-semibold px-6 py-3 rounded-xl transition">
+            <span x-show="!clientEmail || !clientEmail.trim()">Add client email to send &darr;</span>
+            <span x-show="clientEmail && clientEmail.trim()" x-cloak>📧 Update &amp; email to client &rarr;</span>
+          </button>
+        <% } else if (canShareFromFormEdit) { %>
+          <button type="submit"
+            name="action" value="update_only"
+            data-testid="invoice-edit-submit-draft"
+            class="text-brand-700 hover:text-brand-800 hover:underline text-sm font-medium px-4 py-3 text-center">
+            Save changes
+          </button>
+          <button type="submit"
+            name="action" value="update_and_mailto"
+            data-testid="invoice-edit-submit-mailto"
+            data-action="update_and_mailto"
+            x-show="clientEmail && clientEmail.trim()"
+            x-cloak
+            class="bg-brand-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-brand-700 transition">
+            &#128231; Update &amp; open Email &rarr;
+          </button>
+          <button type="submit"
+            name="action" value="update_and_sms"
+            data-testid="invoice-edit-submit-sms"
+            data-action="update_and_sms"
+            class="bg-brand-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-brand-700 transition">
+            &#128172; Update &amp; open SMS &rarr;
+          </button>
+          <button type="submit"
+            name="action" value="update_and_whatsapp"
+            data-testid="invoice-edit-submit-whatsapp"
+            data-action="update_and_whatsapp"
+            class="bg-brand-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-brand-700 transition">
+            &#128241; Update &amp; open WhatsApp &rarr;
+          </button>
         <% } else { %>
           <button type="submit"
             data-testid="invoice-new-submit"
@@ -463,6 +526,14 @@
     <% } else if (canShareFromFormNew) { %>
       <p class="text-xs text-gray-400 pt-1 text-right" data-testid="invoice-new-share-hint">
         &ldquo;Open Email&rdquo;, &ldquo;Open SMS&rdquo;, or &ldquo;Open WhatsApp&rdquo; marks this as sent and pre-fills the message with a tap-to-pay link &mdash; pick your app to deliver it.
+      </p>
+    <% } else if (canEmailFromFormEdit) { %>
+      <p class="text-xs text-gray-400 pt-1 text-right" data-testid="invoice-edit-email-hint">
+        &ldquo;Update &amp; email to client&rdquo; saves your changes, emails the invoice, and marks it as sent in one tap.
+      </p>
+    <% } else if (canShareFromFormEdit) { %>
+      <p class="text-xs text-gray-400 pt-1 text-right" data-testid="invoice-edit-share-hint">
+        &ldquo;Update &amp; open Email/SMS/WhatsApp&rdquo; saves your changes, marks the invoice as sent, and pre-fills a share message with a tap-to-pay link.
       </p>
     <% } %>
   </form>

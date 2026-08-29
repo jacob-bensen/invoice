@@ -2067,16 +2067,38 @@ router.get('/:id/edit', requireAuth, async (req, res) => {
 
 router.post('/:id/edit', requireAuth, async (req, res) => {
   try {
+    const originalInvoice = await db.getInvoiceById(req.params.id, req.session.user.id);
+    if (!originalInvoice) {
+      return res.redirect('/dashboard');
+    }
+
     let items = [];
     try { items = JSON.parse(req.body.items); } catch (_) {}
 
-    const requestedStatus = req.body.status || 'draft';
+    // Edit-path one-tap send shortcuts (Milestone 3 — first invoice created →
+    // first invoice sent). Mirror POST /new + POST /quick create_and_* shape
+    // so a freelancer editing a still-draft invoice collapses "Save changes →
+    // land on /:id → tap send-banner button" into a single submit. Guarded on
+    // the pre-update status being 'draft' so a forged action payload against a
+    // sent/paid/overdue invoice is ignored server-side.
+    const action = typeof req.body.action === 'string' ? req.body.action : '';
+    const SEND_ACTIONS = new Set([
+      'update_and_email', 'update_and_mailto',
+      'update_and_sms', 'update_and_whatsapp'
+    ]);
+    const canSend = SEND_ACTIONS.has(action) && originalInvoice.status === 'draft';
+
+    // Send-shortcut submits pin status='draft' on the update so the atomic
+    // markInvoiceSentFromShareIntent flip below is the single source of
+    // truth for the draft→sent transition. Regular submits keep the form-
+    // supplied status field (guarded by the whitelist).
+    const requestedStatus = canSend ? 'draft' : (req.body.status || 'draft');
     if (!ALLOWED_INVOICE_STATUSES.includes(requestedStatus)) {
       req.session.flash = { type: 'error', message: 'Invalid invoice status.' };
       return res.redirect(`/invoices/${req.params.id}/edit`);
     }
 
-    await db.updateInvoice(req.params.id, req.session.user.id, {
+    const updated = await db.updateInvoice(req.params.id, req.session.user.id, {
       client_name: req.body.client_name,
       client_email: req.body.client_email || null,
       client_address: req.body.client_address || null,
@@ -2091,6 +2113,132 @@ router.post('/:id/edit', requireAuth, async (req, res) => {
       due_date: req.body.due_date || null,
       status: requestedStatus
     });
+
+    if (canSend && updated) {
+      // Ensure the share surface has a public_token — a legacy draft created
+      // before eager-mint may not yet have one attached.
+      try {
+        const token = await db.getOrCreatePublicToken(updated.id, req.session.user.id);
+        if (token) updated.public_token = token;
+      } catch (e) {
+        console.error('Edit invoice public-token mint failed:', e && e.message);
+      }
+
+      const user = await db.getUserById(req.session.user.id);
+
+      if (action === 'update_and_whatsapp') {
+        const surface = updated.public_token ? buildShareSurfaceForInvoice(updated) : null;
+        const url = surface && surface.shareIntents && surface.shareIntents.whatsapp;
+        if (url) {
+          try {
+            await db.markInvoiceSentFromShareIntent(updated.id, req.session.user.id);
+          } catch (e) {
+            console.error('Edit invoice WhatsApp share-flip failed:', e && e.message);
+          }
+          triggerFirstSentCelebration(db, req.session.user.id, updated)
+            .catch(e => console.error('First-sent celebration error:', e && e.message));
+          req.session.flash = {
+            type: 'success',
+            message: `Invoice ${updated.invoice_number} updated and marked as sent — pick a WhatsApp contact to deliver the link.`
+          };
+          return res.redirect(url);
+        }
+        req.session.flash = {
+          type: 'error',
+          message: 'Invoice updated — tap WhatsApp below to share the link.'
+        };
+        return res.redirect(`/invoices/${updated.id}`);
+      }
+
+      if (action === 'update_and_sms') {
+        const surface = updated.public_token ? buildShareSurfaceForInvoice(updated) : null;
+        const url = surface && surface.shareIntents && surface.shareIntents.sms;
+        if (url) {
+          try {
+            await db.markInvoiceSentFromShareIntent(updated.id, req.session.user.id);
+          } catch (e) {
+            console.error('Edit invoice SMS share-flip failed:', e && e.message);
+          }
+          triggerFirstSentCelebration(db, req.session.user.id, updated)
+            .catch(e => console.error('First-sent celebration error:', e && e.message));
+          req.session.flash = {
+            type: 'success',
+            message: `Invoice ${updated.invoice_number} updated and marked as sent — pick a contact in Messages to deliver the link.`
+          };
+          return res.redirect(url);
+        }
+        req.session.flash = {
+          type: 'error',
+          message: 'Invoice updated — tap SMS below to share the link.'
+        };
+        return res.redirect(`/invoices/${updated.id}`);
+      }
+
+      if (action === 'update_and_mailto') {
+        // Gate on client_email so the resulting mailto: has a recipient. An
+        // empty recipient defeats the shortcut and hides the atomic flip's
+        // intent (draft→sent with no actual delivery path). Missing email
+        // falls back to /:id so the user can add one and retry.
+        const surface = (updated.public_token && updated.client_email)
+          ? buildShareSurfaceForInvoice(updated) : null;
+        const url = surface && surface.shareIntents && surface.shareIntents.mailto;
+        if (url) {
+          try {
+            await db.markInvoiceSentFromShareIntent(updated.id, req.session.user.id);
+          } catch (e) {
+            console.error('Edit invoice mailto share-flip failed:', e && e.message);
+          }
+          triggerFirstSentCelebration(db, req.session.user.id, updated)
+            .catch(e => console.error('First-sent celebration error:', e && e.message));
+          req.session.flash = {
+            type: 'success',
+            message: `Invoice ${updated.invoice_number} updated and marked as sent — your email app has the message ready to send to ${updated.client_email}.`
+          };
+          return res.redirect(url);
+        }
+        req.session.flash = {
+          type: 'error',
+          message: 'Invoice updated — tap Email below to share the link.'
+        };
+        return res.redirect(`/invoices/${updated.id}`);
+      }
+
+      if (action === 'update_and_email') {
+        // Pro/Agency server-side send via Resend. Free-tier forgery falls
+        // through to the base redirect below — the view hides this button
+        // for the free cohort but the route hard-gates on plan for safety.
+        const canEmail = user
+          && (user.plan === 'pro' || user.plan === 'agency')
+          && !!updated.client_email;
+        if (canEmail) {
+          let sendResult = null;
+          try {
+            sendResult = await sendInvoiceEmail(updated, user);
+          } catch (e) {
+            console.error('Edit invoice email send threw:', e && e.message);
+          }
+          if (sendResult && sendResult.ok === true) {
+            try {
+              await db.markInvoiceSentFromShareIntent(updated.id, req.session.user.id);
+            } catch (e) {
+              console.error('Edit invoice status flip failed:', e && e.message);
+            }
+            triggerFirstSentCelebration(db, req.session.user.id, updated)
+              .catch(e => console.error('First-sent celebration error:', e && e.message));
+            req.session.flash = {
+              type: 'success',
+              message: `Invoice ${updated.invoice_number} updated and emailed to ${updated.client_email}.`
+            };
+          } else {
+            const reason = (sendResult && sendResult.reason) || 'send_failed';
+            const copy = reason === 'not_configured'
+              ? 'Invoice updated, but email delivery is not configured yet. Use the share buttons below to send it.'
+              : 'Invoice updated, but the email could not be sent. Use the share buttons below to send it.';
+            req.session.flash = { type: 'error', message: copy };
+          }
+        }
+      }
+    }
 
     res.redirect(`/invoices/${req.params.id}`);
   } catch (err) {

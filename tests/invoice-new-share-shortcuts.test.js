@@ -312,10 +312,12 @@ async function testViewAgencyDoesNotRenderShortcuts() {
 }
 
 async function testViewEditFlowDoesNotRenderShortcuts() {
-  // Edit-flow (invoice set) is past-activation for the freelancer AND the
-  // create_and_* semantics don't make sense on an already-existing invoice
-  // (use POST /:id/share-intent or /:id/email-client for that). The single
-  // "Save changes" button is the right affordance.
+  // Edit-flow on a non-draft invoice (sent / paid / overdue) is past-
+  // activation for the freelancer AND the create_and_* semantics don't
+  // make sense on an already-existing invoice (use POST /:id/share-intent
+  // or /:id/email-client for that). The single "Save changes" button is
+  // the right affordance. (Draft-edit has its own update_and_* shortcuts
+  // covered by tests/invoice-edit-share-shortcuts.test.js.)
   const html = await renderForm({
     invoice: {
       id: 42,
@@ -329,20 +331,22 @@ async function testViewEditFlowDoesNotRenderShortcuts() {
       items: [{ description: 'Work', quantity: 1, unit_price: 500 }],
       tax_rate: 0,
       notes: null,
-      status: 'draft'
+      status: 'sent'
     },
     user: { id: 1, plan: 'free', invoice_count: 5, name: 'Alice', email: 'a@x.com', business_name: 'Acme Studio' }
   });
   assert.ok(!html.includes('value="create_and_mailto"'),
-    'edit-flow MUST NOT render the free-tier mailto shortcut');
+    'sent-invoice edit-flow MUST NOT render the free-tier mailto shortcut');
   assert.ok(!html.includes('value="create_and_sms"'),
-    'edit-flow MUST NOT render the free-tier SMS shortcut');
+    'sent-invoice edit-flow MUST NOT render the free-tier SMS shortcut');
   assert.ok(!html.includes('value="create_and_whatsapp"'),
-    'edit-flow MUST NOT render the free-tier WhatsApp shortcut');
+    'sent-invoice edit-flow MUST NOT render the free-tier WhatsApp shortcut');
+  assert.ok(!html.includes('value="update_and_mailto"'),
+    'sent-invoice edit-flow MUST NOT render the update_and_* trio — those only apply to drafts');
   assert.ok(html.includes('Save changes'),
-    'edit-flow keeps the "Save changes" label on the single submit button');
+    'sent-invoice edit-flow keeps the "Save changes" label on the single submit button');
   assert.ok(html.includes('data-testid="invoice-new-submit"'),
-    'edit-flow uses the single primary submit button');
+    'sent-invoice edit-flow uses the single primary submit button');
 }
 
 // ============================================================================

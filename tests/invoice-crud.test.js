@@ -279,21 +279,29 @@ async function testPostEditIDOR() {
   users.set(30, { id: 30, plan: 'pro', name: 'Frank', email: 'frank@x.com' });
   const app = buildApp({ id: 30, plan: 'pro' });
 
-  await request(app, 'POST', `/invoices/${inv.id}/edit`, {
+  const res = await request(app, 'POST', `/invoices/${inv.id}/edit`, {
     client_name: 'Hijacked',
     items: JSON.stringify([]),
     subtotal: '0', tax_rate: '0', tax_amount: '0', total: '0',
     issued_date: '2026-04-23', status: 'draft'
   });
 
-  // The route always calls db.updateInvoice with the session user's id (not the invoice owner's).
-  // The DB query enforces ownership via WHERE user_id=$2 — so the update silently no-ops.
-  const call = updateInvoiceCalls.find(c => c.id === inv.id);
-  assert.ok(call, 'db.updateInvoice must be attempted');
-  assert.strictEqual(call.userId, 30,
-    'db.updateInvoice must receive the session user\'s ID, not the invoice owner\'s ID');
+  // POST /:id/edit fetches the invoice under the session user id upfront so it
+  // can detect the pre-update draft status the send-shortcut branches key
+  // on. That fetch returns null for a cross-tenant target, and the route
+  // redirects to /dashboard rather than calling updateInvoice — matching
+  // the GET /:id/edit contract. The DB-layer ownership guard on updateInvoice
+  // (WHERE user_id=$2) remains as defence-in-depth for any future refactor
+  // that reintroduces a fall-through path.
+  assert.strictEqual(res.status, 302,
+    'cross-tenant POST must redirect');
+  assert.strictEqual(res.headers.location, '/dashboard',
+    'cross-tenant POST must redirect to /dashboard (no visible signal that the invoice exists)');
+  const attemptedForVictim = updateInvoiceCalls.find(c => c.id === inv.id);
+  assert.strictEqual(attemptedForVictim, undefined,
+    'cross-tenant POST MUST NOT call db.updateInvoice — the upstream getInvoiceById guard short-circuits');
   assert.strictEqual(inv.client_name, 'Protected',
-    'invoice data must remain unchanged when the session user does not own it (DB-level IDOR protection)');
+    'invoice data must remain unchanged when the session user does not own it');
 }
 
 async function testPrintViewIDOR() {

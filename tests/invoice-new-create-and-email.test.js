@@ -331,9 +331,11 @@ async function testViewHidesDualButtonsForTrial() {
 }
 
 async function testViewSingleButtonOnEditFlow() {
-  // Edit-flow (`invoice` set) keeps the single "Save changes" button — the
-  // user is past activation by then, and the create+email semantics don't
-  // make sense for an existing invoice (use POST /:id/email-client for that).
+  // Non-draft edit-flow (sent / paid / overdue) keeps the single "Save
+  // changes" button — the create_and_email semantics don't make sense for
+  // an already-sent invoice (use POST /:id/email-client for that). Draft-
+  // edit gets its own update_and_email surface (covered by
+  // tests/invoice-edit-share-shortcuts.test.js).
   const html = await renderForm({
     invoice: {
       id: 42,
@@ -346,16 +348,18 @@ async function testViewSingleButtonOnEditFlow() {
       items: [{ description: 'Work', quantity: 1, unit_price: 500 }],
       tax_rate: 0,
       notes: null,
-      status: 'draft'
+      status: 'sent'
     },
     user: { id: 1, plan: 'pro', invoice_count: 5, name: 'Alice', email: 'a@x.com', business_name: 'Acme Studio' }
   });
   assert.ok(!html.includes('value="create_and_email"'),
     'edit-flow MUST NOT render the create+email button (even for Pro)');
+  assert.ok(!html.includes('value="update_and_email"'),
+    'sent-invoice edit-flow MUST NOT render the update_and_email button — the shortcut only fires on drafts');
   assert.ok(html.includes('Save changes'),
-    'edit-flow keeps the "Save changes" label on the single submit button');
+    'sent-invoice edit-flow keeps the "Save changes" label on the single submit button');
   assert.ok(html.includes('data-testid="invoice-new-submit"'),
-    'edit-flow uses the single primary submit button');
+    'sent-invoice edit-flow uses the single primary submit button');
 }
 
 // ---------------------------------------------------------------------------
