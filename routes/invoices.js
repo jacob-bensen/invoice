@@ -1273,6 +1273,7 @@ router.get('/quick', requireAuth, async (req, res) => {
     pendingRestored: !!pending,
     recentClients,
     recentItems,
+    servicePresets: SERVICE_PRESETS,
     currency,
     currencySymbol,
     welcome: req.query && req.query.welcome === '1',
@@ -1341,6 +1342,7 @@ router.post('/quick', requireAuth, [
         payment_instructions: req.body.payment_instructions || '',
         business_name: req.body.business_name || ''
       },
+      servicePresets: SERVICE_PRESETS,
       currency,
       currencySymbol,
       noindex: true
@@ -1633,6 +1635,7 @@ router.post('/quick', requireAuth, [
         payment_instructions: req.body.payment_instructions || '',
         business_name: req.body.business_name || ''
       },
+      servicePresets: SERVICE_PRESETS,
       currency,
       currencySymbol,
       noindex: true

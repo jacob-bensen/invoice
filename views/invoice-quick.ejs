@@ -57,6 +57,38 @@
       description: String(it.description).trim().slice(0, 80),
       amount: Number(it.amount)
     }));
+  // "Suggested services" presets on the fast-path form (Milestone 2 —
+  // first dashboard re-entry → first real invoice created). Symmetric with
+  // the advanced /invoices/new form: surfaces ONLY when the freelancer has
+  // no recent-items history (day-zero cohort — the welcome-email deep-link
+  // lands here on /invoices/quick?welcome=1 with an empty Description and
+  // Amount and no priming). Selecting a preset fills BOTH the description
+  // and the amount field so the freelancer can review + edit + submit in
+  // a single beat. Mutually exclusive with the recent-items dropdown above
+  // — repeat users already have a relevant picker. Empty / non-array
+  // servicePresets input collapses to no dropdown (defence-in-depth against
+  // a partial deploy or a future caller that forgets to thread the constant).
+  const rawServicePresetsQuick = (locals.servicePresets && Array.isArray(servicePresets))
+    ? servicePresets : [];
+  const servicePresetsListQuick = (recentItemsList.length === 0)
+    ? rawServicePresetsQuick
+        .filter(it => it
+          && typeof it.description === 'string'
+          && it.description.trim().length > 0
+          && Number.isFinite(Number(it.unit_price))
+          && Number(it.unit_price) > 0)
+        .map(it => {
+          const qtyRaw = Number(it.quantity);
+          const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
+          const unit = Number(it.unit_price);
+          const amount = qty * unit;
+          return {
+            description: String(it.description).trim().slice(0, 80),
+            amount
+          };
+        })
+        .filter(it => Number.isFinite(it.amount) && it.amount > 0)
+    : [];
   // Owner's saved default_currency symbol — drives the amount-input prefix
   // glyph and the recent-items option labels so a freelancer who set EUR/
   // GBP/JPY on /billing/settings sees a consistent symbol on the form they
@@ -127,7 +159,7 @@
       client_phone: initialClientPhone,
       description: initialDescription,
       amount: typeof initialAmount === 'number' ? String(initialAmount) : initialAmount
-    }) %>, <%= JSON.stringify(recentClientsList) %>, <%= JSON.stringify(recentItemsList) %>)"
+    }) %>, <%= JSON.stringify(recentClientsList) %>, <%= JSON.stringify(recentItemsList) %>, <%= JSON.stringify(servicePresetsListQuick) %>)"
     x-init="init()"
     @submit="onSubmit()">
     <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
@@ -225,6 +257,23 @@
           <% }) %>
         </select>
         <p class="text-xs text-gray-400 mt-1">Selecting fills the line below &mdash; you can still edit it.</p>
+      </div>
+    <% } else if (servicePresetsListQuick.length > 0) { %>
+      <div data-service-presets data-testid="invoice-quick-service-presets"
+        class="rounded-lg border border-amber-200 bg-amber-50 p-3">
+        <label class="block text-sm font-medium text-amber-900 mb-1" for="quick-service-preset-picker">
+          ✨ Suggested services <span class="text-amber-700 font-normal text-xs">(don&rsquo;t know what to charge? Start here)</span>
+        </label>
+        <select id="quick-service-preset-picker"
+          data-testid="invoice-quick-service-presets-select"
+          x-model="pickedPreset" @change="fillFromServicePreset()"
+          class="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400">
+          <option value="">Pick a common service to pre-fill&hellip;</option>
+          <% servicePresetsListQuick.forEach(function(it, idx) { %>
+            <option value="<%= idx %>"><%= it.description %> · <%= currencySymbolQuick %><%= it.amount.toFixed(2) %></option>
+          <% }) %>
+        </select>
+        <p class="text-xs text-amber-800 mt-1">Picks fill the description and amount below &mdash; edit either before sending.</p>
       </div>
     <% } %>
 
@@ -350,7 +399,7 @@
   // (form pre-fill on next /invoices/quick GET + dashboard banner).
   // submitted=false on successful create — the server-side clear is the
   // single source of truth; the client only writes, never reads.
-  function quickInvoiceAutosave(initial, initialRecentClients, initialRecentItems) {
+  function quickInvoiceAutosave(initial, initialRecentClients, initialRecentItems, initialServicePresets) {
     return {
       fields: {
         client_name: (initial && typeof initial.client_name === 'string') ? initial.client_name : '',
@@ -361,8 +410,10 @@
       },
       recentClients: Array.isArray(initialRecentClients) ? initialRecentClients : [],
       recentItems: Array.isArray(initialRecentItems) ? initialRecentItems : [],
+      servicePresets: Array.isArray(initialServicePresets) ? initialServicePresets : [],
       picked: '',
       pickedItem: '',
+      pickedPreset: '',
       submitted: false,
       init() {},
       onSubmit() { this.submitted = true; },
@@ -400,6 +451,30 @@
         if (Number.isFinite(amt) && amt > 0) {
           this.fields.amount = amt.toFixed(2);
         }
+        this.autosave();
+      },
+      // Fill description + amount from a "Suggested services" preset. Same
+      // shape contract as fillFromRecentItem() so a preset pick and a
+      // recent-item pick are indistinguishable downstream. Autosaves the
+      // populated values so a bounce-then-return user sees the pre-fill
+      // restored. Resets pickedPreset so the next selection is clean.
+      // Bad picks (out-of-range / NaN / null preset row) no-op silently.
+      fillFromServicePreset() {
+        const idx = parseInt(this.pickedPreset, 10);
+        if (Number.isNaN(idx) || idx < 0 || idx >= this.servicePresets.length) {
+          this.pickedPreset = '';
+          return;
+        }
+        const it = this.servicePresets[idx];
+        if (!it) { this.pickedPreset = ''; return; }
+        if (typeof it.description === 'string' && it.description.trim().length > 0) {
+          this.fields.description = it.description;
+        }
+        const amt = Number(it.amount);
+        if (Number.isFinite(amt) && amt > 0) {
+          this.fields.amount = amt.toFixed(2);
+        }
+        this.pickedPreset = '';
         this.autosave();
       },
       autosave() {

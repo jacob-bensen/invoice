@@ -1644,8 +1644,10 @@ async function testGetQuickRendersRecentItemsDropdown() {
     'second recent item description must appear as an option');
   assert.ok(res.body.includes('$1200.00'),
     'second recent item amount renders with two-decimal formatting');
-  // Recent items must be serialised into the Alpine factory args (third arg).
-  assert.ok(/quickInvoiceAutosave\([^)]+,[^)]+,\s*\[[^\]]*Logo design[^\]]*\]\)/.test(res.body),
+  // Recent items must be serialised into the Alpine factory args (third arg —
+  // the factory takes (fields, clients, items, presets) so we accept a
+  // trailing 4th arg for presets without pinning its shape here).
+  assert.ok(/quickInvoiceAutosave\([^)]+,[^)]+,\s*\[[^\]]*Logo design[^\]]*\]/.test(res.body),
     'recentItems list must be serialised as third arg to the Alpine factory');
 }
 
