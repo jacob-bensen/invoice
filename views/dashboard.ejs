@@ -1973,6 +1973,61 @@
     </div>
   </div>
 
+  <!--
+    Chrome / Edge / Android install prompt tile (Milestone 1 — signup → first
+    dashboard re-entry). Sister surface to the iOS Safari "Add to Home Screen"
+    tile above: iOS Safari hides the install path in the Share sheet; Chrome /
+    Edge / Android hide it in the URL bar or the ⋮ menu. Chromium browsers
+    fire `beforeinstallprompt` when installability criteria are met — we
+    capture the deferred event and expose a one-tap "Install app" button. On
+    Android Chrome / Samsung Internet, the fallback is instructional copy
+    naming the Add-to-Home-screen menu entry, so the tile still lands the
+    freelancer at a working install path even when the browser refuses to
+    fire the native prompt. Mutually exclusive with the iOS tile via the
+    isIOS() gate. Self-contained Alpine factory — no server state, no DB hit,
+    no PII, no service-worker dependency.
+  -->
+  <div
+    x-data="installPromptTileNonIOS()"
+    x-init="evaluate()"
+    x-show="visible"
+    x-cloak
+    data-testid="install-prompt-nonios-tile"
+    class="mt-4 rounded-2xl border border-brand-200 bg-brand-50 px-5 py-4 flex items-start gap-3 print:hidden"
+    role="region"
+    aria-label="Install DecentInvoice as an app"
+  >
+    <div class="text-brand-600 text-xl leading-none mt-0.5" aria-hidden="true">📲</div>
+    <div class="flex-1 text-sm">
+      <p class="font-semibold text-brand-800">Install DecentInvoice as an app</p>
+      <p x-show="mode === 'native'" class="text-brand-700 mt-0.5">
+        One-tap launcher on your home screen — send invoices and chase payment without hunting for the URL.
+      </p>
+      <p x-show="mode === 'instructional'" class="text-brand-700 mt-0.5">
+        Open the <strong>⋮</strong> menu, then choose <strong>Add to Home screen</strong> to install DecentInvoice.
+      </p>
+      <div class="mt-2 flex items-center gap-3 flex-wrap">
+        <button
+          x-show="mode === 'native'"
+          type="button"
+          data-testid="install-prompt-nonios-install"
+          :disabled="installing"
+          @click="install()"
+          class="inline-flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition disabled:opacity-60"
+        >
+          <span x-show="!installing">Install app</span>
+          <span x-show="installing">Installing…</span>
+        </button>
+        <button
+          type="button"
+          data-testid="install-prompt-nonios-dismiss"
+          @click="dismiss()"
+          class="text-brand-700 text-xs font-medium underline hover:text-brand-900"
+        >Not now</button>
+      </div>
+    </div>
+  </div>
+
   <script data-testid="bulk-draft-selector-script">
     // Alpine factory for the invoices-table bulk-select bar (draft-backlog
     // bulk send). Only rows the server flagged bulk-eligible (drafts with a
@@ -2123,6 +2178,115 @@
             self.busy = false;
             self.errorMessage = 'Something went wrong — please try again.';
           }
+        }
+      };
+    }
+  </script>
+
+  <script data-testid="install-prompt-nonios-script">
+    // Alpine factory for the Chrome / Edge / Android install prompt tile.
+    // Captures the browser's deferred `beforeinstallprompt` event (when the
+    // browser deems the site installable) and exposes it as an "Install app"
+    // button; falls back to an instructional tile on Android Chrome / Samsung
+    // Internet UAs so the freelancer still lands at a working install path
+    // when the browser refuses to fire the native prompt. Mutually exclusive
+    // with the iOS Safari tile (which owns the iPhone/iPad cohort).
+    function installPromptTileNonIOS() {
+      return {
+        visible: false,
+        mode: 'none',
+        deferredPrompt: null,
+        installing: false,
+        STORAGE_KEY: 'qi.installPromptNonIosDismissed',
+        isIOS() {
+          try {
+            var ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+            return /iPhone|iPad|iPod/i.test(ua);
+          } catch (e) { return false; }
+        },
+        isAndroidLikelyInstallable() {
+          try {
+            var ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+            if (!/Android/i.test(ua)) return false;
+            // In-app webviews cannot install PWAs — never nag their users.
+            if (/FBAN|FBAV|Instagram|Line|MicroMessenger|TikTok/i.test(ua)) return false;
+            // Chrome, Samsung Internet, Edge Android all surface Add to Home Screen in the ⋮ menu.
+            if (/SamsungBrowser\//.test(ua)) return true;
+            if (/EdgA\//.test(ua)) return true;
+            if (/Chrome\//.test(ua) && !/OPR\//.test(ua)) return true;
+            return false;
+          } catch (e) { return false; }
+        },
+        isStandalone() {
+          try {
+            if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
+            if (typeof navigator !== 'undefined' && navigator.standalone === true) return true;
+          } catch (e) {}
+          return false;
+        },
+        readDismissed() {
+          try { return typeof localStorage !== 'undefined' && localStorage.getItem(this.STORAGE_KEY) === '1'; }
+          catch (e) { return false; }
+        },
+        writeDismissed() {
+          try { if (typeof localStorage !== 'undefined') localStorage.setItem(this.STORAGE_KEY, '1'); }
+          catch (e) {}
+        },
+        evaluate() {
+          if (this.isIOS()) return;
+          if (this.isStandalone()) return;
+          if (this.readDismissed()) return;
+          var self = this;
+          try {
+            if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+              window.addEventListener('beforeinstallprompt', function (event) {
+                try { event.preventDefault(); } catch (e) {}
+                self.deferredPrompt = event;
+                self.mode = 'native';
+                self.visible = true;
+              });
+              window.addEventListener('appinstalled', function () {
+                self.deferredPrompt = null;
+                self.visible = false;
+                // Installed — never nag again on this device.
+                self.writeDismissed();
+              });
+            }
+          } catch (e) {}
+          if (this.isAndroidLikelyInstallable()) {
+            this.mode = 'instructional';
+            this.visible = true;
+          }
+        },
+        install() {
+          if (!this.deferredPrompt) return;
+          var self = this;
+          self.installing = true;
+          try {
+            var maybePromise = null;
+            try { self.deferredPrompt.prompt(); } catch (e) {}
+            try { maybePromise = self.deferredPrompt.userChoice; } catch (e) {}
+            var finish = function () {
+              self.deferredPrompt = null;
+              self.installing = false;
+              // The appinstalled listener above will hide the tile on accept;
+              // on dismiss we keep the tile visible with the instructional
+              // fallback in case the user changes their mind.
+              if (self.mode === 'native') self.mode = self.isAndroidLikelyInstallable() ? 'instructional' : 'none';
+              if (self.mode === 'none') self.visible = false;
+            };
+            if (maybePromise && typeof maybePromise.then === 'function') {
+              maybePromise.then(finish, finish);
+            } else {
+              finish();
+            }
+          } catch (e) {
+            self.installing = false;
+          }
+        },
+        dismiss() {
+          this.visible = false;
+          this.writeDismissed();
         }
       };
     }
