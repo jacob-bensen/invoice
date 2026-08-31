@@ -208,6 +208,7 @@
         Client name <span class="text-red-400">*</span>
       </label>
       <input id="quick-client-name" type="text" name="client_name" required
+        data-testid="invoice-quick-client-name"
         placeholder="Acme Corp"
         value="<%= initialClientName %>"
         x-model="fields.client_name"
@@ -220,6 +221,7 @@
         Client email <span class="text-gray-400 font-normal text-xs">(<% if (canEmailFromForm) { %>needed to email the invoice in one tap<% } else { %>optional<% } %>)</span>
       </label>
       <input id="quick-client-email" type="email" name="client_email"
+        data-testid="invoice-quick-client-email"
         placeholder="billing@acme.com"
         value="<%= initialClientEmail %>"
         x-model="fields.client_email"

@@ -1356,6 +1356,48 @@
       </div>
     </div>
 
+    <%
+      // "Invoice a recent client" quick-picker card (Milestone 2 → Milestone
+      // 3 activation compounder). Route helper omits it for day-zero users,
+      // seed-only accounts, and free-at-cap; when present it renders up to
+      // 3 recent clients as one-tap chips into /invoices/quick with the
+      // client_name / client_email / client_phone pre-filled off the URL.
+      const recentClientsQuickPicker = locals.recentClientsQuickPicker || null;
+      function buildRecentClientPrefillHref(c) {
+        const parts = [];
+        if (c.name) parts.push('client_name=' + encodeURIComponent(c.name));
+        if (c.email) parts.push('client_email=' + encodeURIComponent(c.email));
+        if (c.phone) parts.push('client_phone=' + encodeURIComponent(c.phone));
+        return '/invoices/quick' + (parts.length ? ('?' + parts.join('&')) : '');
+      }
+    %>
+    <% if (recentClientsQuickPicker) { %>
+      <div
+        data-testid="recent-clients-quick-picker"
+        class="mb-4 rounded-2xl border border-brand-200 bg-brand-50 px-5 py-4 print:hidden"
+        role="region"
+        aria-label="Invoice a recent client"
+      >
+        <p class="text-sm font-semibold text-brand-900 flex items-center gap-2 mb-2">
+          <span aria-hidden="true">&#128231;</span>
+          Invoice a recent client
+        </p>
+        <p class="text-xs text-brand-800 mb-3">One tap to start a new invoice with their details pre-filled.</p>
+        <div class="flex flex-wrap gap-2">
+          <% recentClientsQuickPicker.clients.forEach(function(c) { %>
+            <a
+              href="<%= buildRecentClientPrefillHref(c) %>"
+              data-testid="recent-clients-quick-picker-chip"
+              class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-white border border-brand-300 text-sm font-medium text-brand-800 hover:bg-brand-100 transition"
+            >
+              <span aria-hidden="true">+</span>
+              <span><%= c.name %></span>
+            </a>
+          <% }) %>
+        </div>
+      </div>
+    <% } %>
+
     <!-- Invoice table -->
     <% const isProUser = user && (user.plan === 'pro' || user.plan === 'agency'); %>
     <% const onlySeedInvoices = invoices.length > 0 && invoices.every((i) => i.is_seed); %>

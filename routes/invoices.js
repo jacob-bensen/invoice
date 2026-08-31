@@ -38,7 +38,7 @@ const RECENT_REVENUE_WINDOWS = [7, 30, 90];
 
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const [invoices, user, recentRevenue, oldestStaleDraft, oldestClientViewedUnpaid, oldestSentNotViewed, oldestOverdue, oldestPendingPaymentClaim, mostRecentlyViewed] = await Promise.all([
+    const [invoices, user, recentRevenue, oldestStaleDraft, oldestClientViewedUnpaid, oldestSentNotViewed, oldestOverdue, oldestPendingPaymentClaim, mostRecentlyViewed, recentClients] = await Promise.all([
       db.getInvoicesByUser(req.session.user.id),
       db.getUserById(req.session.user.id),
       loadRecentRevenueStats(req.session.user.id),
@@ -47,7 +47,8 @@ router.get('/', requireAuth, async (req, res) => {
       loadOldestSentNotViewed(req.session.user.id),
       loadOldestOverdueInvoice(req.session.user.id),
       loadOldestPendingPaymentClaim(req.session.user.id),
-      loadMostRecentlyViewedUnpaid(req.session.user.id)
+      loadMostRecentlyViewedUnpaid(req.session.user.id),
+      loadRecentClients(req.session.user.id)
     ]);
     const flash = req.session.flash;
     delete req.session.flash;
@@ -93,6 +94,7 @@ router.get('/', requireAuth, async (req, res) => {
     const freshDraftPrompt = buildFreshDraftPrompt(user, invoices, { staleDraftPrompt });
     const repeatClientPrompt = buildRepeatClientPrompt(invoices);
     const paymentInstructionsPrompt = buildPaymentInstructionsPrompt(user, invoices);
+    const recentClientsQuickPicker = buildRecentClientsQuickPicker(user, invoices, recentClients);
     const tableFollowUpIntents = buildTableFollowUpIntents(invoices);
     const tableSendIntents = buildTableSendIntents(invoices, user);
     // Resolve the owner's default currency symbol so every money cell on the
@@ -104,7 +106,7 @@ router.get('/', requireAuth, async (req, res) => {
     // hero still renders correctly).
     const currency = (user && user.default_currency) ? user.default_currency : 'USD';
     const currencySymbol = getCurrencySymbol(currency);
-    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, paymentClaimPrompt, recentViewPrompt, clientViewedFollowupPrompt, sentNotViewedPrompt, overduePrompt, firstRealInvoicePrompt, freshDraftPrompt, repeatClientPrompt, paymentInstructionsPrompt, pendingQuickInvoice, tableFollowUpIntents, tableSendIntents, currency, currencySymbol, noindex: true });
+    res.render('dashboard', { title: 'My Invoices', invoices, user, flash, days_left_in_trial, onboarding, invoiceLimitProgress, recentRevenue: recentRevenueCard, annualUpgradePrompt, socialProof, celebration, staleDraftPrompt, paymentClaimPrompt, recentViewPrompt, clientViewedFollowupPrompt, sentNotViewedPrompt, overduePrompt, firstRealInvoicePrompt, freshDraftPrompt, repeatClientPrompt, paymentInstructionsPrompt, recentClientsQuickPicker, pendingQuickInvoice, tableFollowUpIntents, tableSendIntents, currency, currencySymbol, noindex: true });
   } catch (err) {
     console.error(err);
     res.render('dashboard', {
@@ -121,6 +123,7 @@ router.get('/', requireAuth, async (req, res) => {
       freshDraftPrompt: null,
       repeatClientPrompt: null,
       paymentInstructionsPrompt: null,
+      recentClientsQuickPicker: null,
       pendingQuickInvoice: null, tableFollowUpIntents: {}, tableSendIntents: {}, noindex: true
     });
   }
@@ -447,6 +450,87 @@ function buildPendingQuickInvoiceBanner(user) {
     description: fields.description.trim(),
     amount: fields.amount.trim()
   };
+}
+
+/*
+ * URL-prefill for GET /invoices/quick from ?client_name=&client_email=&
+ * client_phone= query params. Returns null when nothing usable is present.
+ * Same clamp shape as `normalizePendingQuickInvoiceInput` for consistency
+ * with the autosave contract: string-only, per-field 500-char cap. The
+ * dashboard's recent-client quick-picker builds one-tap URLs off this
+ * surface so a freelancer can restart the "invoice a repeat client" loop
+ * without retyping name / email / phone. Description + amount are NOT
+ * accepted from the query on purpose — the freelancer still writes those
+ * fresh for each new job. Trimmed values with zero content in every field
+ * collapse to null so a bare `/invoices/quick?client_name=%20` render
+ * behaves identically to `/invoices/quick`.
+ */
+function readClientPrefillFromQuery(query) {
+  if (!query || typeof query !== 'object') return null;
+  const pickStr = (v) => {
+    if (typeof v !== 'string') return '';
+    return v.slice(0, PENDING_QUICK_MAX_LEN);
+  };
+  const fields = {
+    client_name: pickStr(query.client_name),
+    client_email: pickStr(query.client_email),
+    client_phone: pickStr(query.client_phone),
+    description: '',
+    amount: ''
+  };
+  if (!fields.client_name.trim()
+    && !fields.client_email.trim()
+    && !fields.client_phone.trim()) {
+    return null;
+  }
+  return fields;
+}
+
+/*
+ * "Invoice a recent client" quick-picker card for the dashboard (Milestone
+ * 2 → Milestone 3 activation compounder). Surfaces the freelancer's top
+ * recent clients as one-tap chips that jump straight into /invoices/quick
+ * with the client_name / client_email / client_phone pre-filled off the
+ * URL — no scrolling to the Recent-clients dropdown on the form, no
+ * retyping.
+ *
+ * Cohort gating — the card is only useful for freelancers who ALREADY
+ * have real (non-seed) invoices and therefore have identified clients to
+ * re-invoice. Day-zero users get the firstRealInvoicePrompt empty-state
+ * instead; the seed-only cohort keeps the seed-invoice hint. Free-tier
+ * users at the 3-invoice cap are excluded — the invoice-limit banner
+ * owns their next-action surface, and every prefilled chip would just
+ * bounce to /invoices?limit_hit=1.
+ *
+ * Caps: top 3 clients from the already-loaded recentClients array
+ * (sourced from `db.getRecentClientsForUser` which dedupes on
+ * LOWER(COALESCE(email, name))). Empty / non-string names are filtered.
+ * Each entry projects the minimum fields the prefill URL carries.
+ */
+const RECENT_CLIENTS_PICKER_MAX = 3;
+
+function buildRecentClientsQuickPicker(user, invoices, recentClients) {
+  if (!user) return null;
+  if (user.plan === 'free') {
+    const count = parseInt(user.invoice_count, 10);
+    if (Number.isFinite(count) && count >= FREE_LIMIT) return null;
+  }
+  if (!Array.isArray(invoices)) return null;
+  const hasRealInvoice = invoices.some((i) => i && !i.is_seed);
+  if (!hasRealInvoice) return null;
+  if (!Array.isArray(recentClients)) return null;
+  const clients = [];
+  for (const raw of recentClients) {
+    if (!raw || typeof raw !== 'object') continue;
+    const name = typeof raw.client_name === 'string' ? raw.client_name.trim() : '';
+    if (!name) continue;
+    const email = typeof raw.client_email === 'string' ? raw.client_email.trim() : '';
+    const phone = typeof raw.client_phone === 'string' ? raw.client_phone.trim() : '';
+    clients.push({ name, email, phone });
+    if (clients.length >= RECENT_CLIENTS_PICKER_MAX) break;
+  }
+  if (clients.length === 0) return null;
+  return { clients };
 }
 
 // Direct-email-send eligibility for a draft. Pro/Agency users with a
@@ -1244,6 +1328,13 @@ router.get('/quick', requireAuth, async (req, res) => {
     return res.redirect('/invoices?limit_hit=1');
   }
   const pending = readPendingQuickInvoice(user);
+  // ?client_name=&client_email=&client_phone= URL prefill (dashboard's
+  // recent-client quick-picker links here). Autosaved pending draft always
+  // wins — the freelancer's saved in-progress work is never stomped by a
+  // fresh dashboard-chip navigation. Prefill only appears when there is no
+  // pending draft.
+  const urlPrefill = pending ? null : readClientPrefillFromQuery(req.query);
+  const initialSubmitted = pending || urlPrefill || null;
   // Recent-clients quick-pick: a returning user making their second / Nth
   // invoice against a client they've billed before should one-tap-fill the
   // name + email instead of retyping. The /invoices/new form has had this
@@ -1271,7 +1362,7 @@ router.get('/quick', requireAuth, async (req, res) => {
     title: 'Quick invoice',
     user,
     flash: null,
-    submitted: pending || null,
+    submitted: initialSubmitted,
     pendingRestored: !!pending,
     recentClients,
     recentItems,
@@ -3096,6 +3187,9 @@ module.exports.buildFreshDraftPrompt = buildFreshDraftPrompt;
 module.exports.FRESH_DRAFT_MAX_AGE_HOURS = FRESH_DRAFT_MAX_AGE_HOURS;
 module.exports.buildRepeatClientPrompt = buildRepeatClientPrompt;
 module.exports.buildPaymentInstructionsPrompt = buildPaymentInstructionsPrompt;
+module.exports.buildRecentClientsQuickPicker = buildRecentClientsQuickPicker;
+module.exports.readClientPrefillFromQuery = readClientPrefillFromQuery;
+module.exports.RECENT_CLIENTS_PICKER_MAX = RECENT_CLIENTS_PICKER_MAX;
 module.exports.buildTableFollowUpIntents = buildTableFollowUpIntents;
 module.exports.buildTableSendIntents = buildTableSendIntents;
 module.exports.buildPendingQuickInvoiceBanner = buildPendingQuickInvoiceBanner;
