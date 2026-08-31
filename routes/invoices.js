@@ -382,6 +382,101 @@ function buildFirstRealInvoicePrompt(user, invoices) {
 }
 
 /*
+ * "Has your client opened this?" status card for /invoices/:id
+ * (Milestones 3 → 4). Sits at the top of the invoice-view page for
+ * sent / overdue invoices and answers the freelancer's single most
+ * common on-page question: did the client actually see this yet, and
+ * is it time to nudge them?
+ *
+ * Cohort gates:
+ *   - null for draft (draft-send-banner already owns that state)
+ *   - null for paid (payment received — celebration path owns it)
+ *   - null for the seed sample (never really sent to a client)
+ *   - null for any status outside sent / overdue (belt + braces)
+ *
+ * Two rendered shapes:
+ *   1. `viewed: false` — status is sent/overdue but view_count is 0.
+ *      The freelancer's next action is "re-share on another channel"
+ *      because their first channel didn't land in front of the client.
+ *      We surface sentDaysAgo derived from the best-available server
+ *      timestamp (sent_via_share_view_at > sent_via_share_intent_at >
+ *      updated_at) so an unopened invoice sitting for days looks
+ *      obviously stale.
+ *   2. `viewed: true` — view_count >= 1. We surface viewCount +
+ *      first_viewed_at + last_viewed_at so the freelancer sees BOTH
+ *      "did they open it" and "did they come back for a second look".
+ *      Copy pivots when the client viewed multiple times — a repeat
+ *      visitor is a "circling" signal, and the follow-up cluster
+ *      still surfaces to convert the interest into a paid invoice.
+ *
+ * followUpIntents (whatsapp / sms / mailto / url) is passed through
+ * from the caller when the invoice is unpaid so a one-tap channel
+ * shortcut renders inline. When the intents shape is missing (mint
+ * hiccup, invalid token) the card still renders with just the
+ * telemetry copy — the freelancer can still click the invoice-level
+ * public-share section further down the page.
+ *
+ * Pure — no DB, no clock read (accepts `now` for test determinism).
+ */
+function buildClientViewStatusCard(invoice, opts) {
+  if (!invoice || typeof invoice !== 'object') return null;
+  if (invoice.is_seed) return null;
+  const status = typeof invoice.status === 'string' ? invoice.status : '';
+  if (status !== 'sent' && status !== 'overdue') return null;
+  const now = (opts && opts.now instanceof Date) ? opts.now : new Date();
+  const followUpIntents = (opts && opts.followUpIntents && typeof opts.followUpIntents === 'object')
+    ? opts.followUpIntents
+    : null;
+  const viewCountRaw = Number(invoice.view_count);
+  const viewCount = Number.isFinite(viewCountRaw) && viewCountRaw > 0
+    ? Math.floor(viewCountRaw)
+    : 0;
+  const parseTs = (v) => {
+    if (!v) return null;
+    const d = v instanceof Date ? v : new Date(v);
+    return (d instanceof Date && Number.isFinite(d.getTime())) ? d : null;
+  };
+  // Best-available "we consider this invoice sent at" timestamp. The
+  // atomic share-view / share-intent flips stamp these columns; a
+  // manual Mark-as-Sent (or a legacy row) falls back to updated_at.
+  const sentAt = parseTs(invoice.sent_via_share_view_at)
+    || parseTs(invoice.sent_via_share_intent_at)
+    || parseTs(invoice.updated_at);
+  const sentDaysAgo = sentAt
+    ? Math.max(0, Math.floor((now.getTime() - sentAt.getTime()) / 86400000))
+    : null;
+  if (viewCount === 0) {
+    return {
+      viewed: false,
+      viewCount: 0,
+      isOverdue: status === 'overdue',
+      sentAtIso: sentAt ? sentAt.toISOString() : null,
+      sentDaysAgo,
+      firstViewedAtIso: null,
+      lastViewedAtIso: null,
+      hoursSinceLastView: null,
+      followUpIntents
+    };
+  }
+  const firstViewedAt = parseTs(invoice.first_viewed_at);
+  const lastViewedAt = parseTs(invoice.last_viewed_at) || firstViewedAt;
+  const hoursSinceLastView = lastViewedAt
+    ? Math.max(0, Math.floor((now.getTime() - lastViewedAt.getTime()) / 3600000))
+    : null;
+  return {
+    viewed: true,
+    viewCount,
+    isOverdue: status === 'overdue',
+    sentAtIso: sentAt ? sentAt.toISOString() : null,
+    sentDaysAgo,
+    firstViewedAtIso: firstViewedAt ? firstViewedAt.toISOString() : null,
+    lastViewedAtIso: lastViewedAt ? lastViewedAt.toISOString() : null,
+    hoursSinceLastView,
+    followUpIntents
+  };
+}
+
+/*
  * "Continue your draft invoice" banner (Milestone 2 — first dashboard
  * re-entry → first real invoice created). Surfaces on the dashboard when
  * the user has an autosaved /invoices/quick draft. The payload is the raw
@@ -2062,6 +2157,11 @@ router.get('/:id', requireAuth, async (req, res) => {
 
     const currency = resolveInvoiceCurrency(invoice, user);
     const currencySymbol = getCurrencySymbol(currency);
+    const clientViewStatus = buildClientViewStatusCard(invoice, {
+      followUpIntents: prefetchedShare && prefetchedShare.followUpIntents
+        ? prefetchedShare.followUpIntents
+        : null
+    });
     res.render('invoice-view', {
       title: `Invoice ${invoice.invoice_number}`,
       invoice,
@@ -2069,6 +2169,7 @@ router.get('/:id', requireAuth, async (req, res) => {
       flash,
       paymentMethods,
       prefetchedShare,
+      clientViewStatus,
       currency,
       currencySymbol,
       formatMoney,
@@ -3183,6 +3284,7 @@ module.exports.buildSentNotViewedPrompt = buildSentNotViewedPrompt;
 module.exports.buildOverduePrompt = buildOverduePrompt;
 module.exports.buildPaymentClaimPrompt = buildPaymentClaimPrompt;
 module.exports.buildFirstRealInvoicePrompt = buildFirstRealInvoicePrompt;
+module.exports.buildClientViewStatusCard = buildClientViewStatusCard;
 module.exports.buildFreshDraftPrompt = buildFreshDraftPrompt;
 module.exports.FRESH_DRAFT_MAX_AGE_HOURS = FRESH_DRAFT_MAX_AGE_HOURS;
 module.exports.buildRepeatClientPrompt = buildRepeatClientPrompt;

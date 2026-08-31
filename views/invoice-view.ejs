@@ -308,6 +308,178 @@
     </form>
   <% } %>
 
+  <!--
+       Client-view status card (Milestones 3 → 4). For sent / overdue invoices,
+       tells the freelancer at a glance whether their client has actually
+       opened the share link — the single most common on-page question after
+       the invoice has left their outbox. Two shapes:
+
+         - viewed:false → amber "Hasn't been opened yet" state, with a
+           follow-up channel row so the freelancer can re-share on a
+           different channel (their first channel didn't land).
+         - viewed:true → emerald "Opened by your client" state, with view
+           count + last-viewed relative time. When still unpaid, a
+           follow-up "Send reminder" cluster surfaces so the interested-but-
+           not-paid moment converts. Paid invoices short-circuit the card
+           entirely upstream — the celebration path owns that state.
+
+       Positioned above the invoice preview card so the status wins the
+       visual hierarchy the moment the page loads. print:hidden so the
+       card never leaks into a downloaded PDF or a printed artifact.
+  -->
+  <% if (locals.clientViewStatus && clientViewStatus) { %>
+    <%
+      const _cvs = clientViewStatus;
+      const _cvsIntents = _cvs.followUpIntents && typeof _cvs.followUpIntents === 'object'
+        ? _cvs.followUpIntents : null;
+      const _cvsHasIntents = !!(_cvsIntents && _cvsIntents.url);
+    %>
+    <% if (!_cvs.viewed) { %>
+      <div
+        data-testid="client-view-status-card"
+        data-view-state="not-viewed"
+        data-view-count="0"
+        data-sent-days-ago="<%= _cvs.sentDaysAgo == null ? '' : _cvs.sentDaysAgo %>"
+        class="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 print:hidden"
+        role="region"
+        aria-label="Client has not opened this invoice yet"
+      >
+        <p class="text-base font-semibold text-amber-900">
+          ❔ Your client hasn&rsquo;t opened this invoice yet.
+        </p>
+        <p class="text-sm text-amber-800 mt-1">
+          <% if (_cvs.sentDaysAgo != null && _cvs.sentDaysAgo === 0) { %>
+            Sent earlier today &mdash; give it a beat, or try another channel below.
+          <% } else if (_cvs.sentDaysAgo === 1) { %>
+            Sent <span data-testid="client-view-status-sent-days-ago">1</span> day ago.
+            Emails routinely land in Spam &mdash; try a different channel to catch their eye.
+          <% } else if (_cvs.sentDaysAgo != null && _cvs.sentDaysAgo > 1) { %>
+            Sent <span data-testid="client-view-status-sent-days-ago"><%= _cvs.sentDaysAgo %></span> days ago.
+            Emails routinely land in Spam &mdash; try a different channel to catch their eye.
+          <% } else { %>
+            Try another channel &mdash; emails routinely land in Spam.
+          <% } %>
+        </p>
+        <% if (_cvsHasIntents) { %>
+          <div
+            class="mt-3 flex flex-wrap gap-2"
+            data-testid="client-view-status-followup-intents"
+          >
+            <a href="<%= _cvsIntents.whatsapp %>"
+              target="_blank" rel="noopener"
+              data-share="whatsapp"
+              data-testid="client-view-status-followup-whatsapp"
+              onclick="try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'whatsapp' }) }).catch(function(){}); } catch (e) {}"
+              class="inline-flex items-center gap-2 bg-white border border-amber-200 text-amber-900 font-semibold px-4 py-2 rounded-lg hover:bg-green-50 hover:border-green-300 transition text-sm">
+              <span aria-hidden="true">💬</span><span>WhatsApp</span>
+            </a>
+            <a href="<%= _cvsIntents.sms %>"
+              data-share="sms"
+              data-testid="client-view-status-followup-sms"
+              onclick="try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'sms' }) }).catch(function(){}); } catch (e) {}"
+              class="inline-flex items-center gap-2 bg-white border border-amber-200 text-amber-900 font-semibold px-4 py-2 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition text-sm">
+              <span aria-hidden="true">📱</span><span>SMS</span>
+            </a>
+            <% if (_cvsIntents.mailto) { %>
+              <a href="<%= _cvsIntents.mailto %>"
+                data-share="email"
+                data-testid="client-view-status-followup-email"
+                onclick="try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'email' }) }).catch(function(){}); } catch (e) {}"
+                class="inline-flex items-center gap-2 bg-white border border-amber-200 text-amber-900 font-semibold px-4 py-2 rounded-lg hover:bg-indigo-50 hover:border-indigo-300 transition text-sm">
+                <span aria-hidden="true">✉️</span><span>Email again</span>
+              </a>
+            <% } %>
+            <button type="button"
+              data-share="copy"
+              data-testid="client-view-status-followup-copy"
+              data-share-url="<%= _cvsIntents.url %>"
+              onclick="(function(btn){ try { var u = btn.getAttribute('data-share-url') || ''; fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'copy' }) }).catch(function(){}); if (u && typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') { navigator.clipboard.writeText(u).then(function(){ var prev = btn.innerHTML; btn.innerHTML = '<span>Copied!</span>'; setTimeout(function(){ btn.innerHTML = prev; }, 2000); }).catch(function(){}); } } catch (e) {} })(this)"
+              class="inline-flex items-center gap-2 bg-white border border-amber-200 text-amber-900 font-semibold px-4 py-2 rounded-lg hover:bg-gray-100 transition text-sm">
+              <span aria-hidden="true">🔗</span><span>Copy link</span>
+            </button>
+          </div>
+        <% } %>
+      </div>
+    <% } else { %>
+      <div
+        data-testid="client-view-status-card"
+        data-view-state="viewed"
+        data-view-count="<%= _cvs.viewCount %>"
+        data-hours-since-last-view="<%= _cvs.hoursSinceLastView == null ? '' : _cvs.hoursSinceLastView %>"
+        class="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 print:hidden"
+        role="status"
+        aria-label="Client has opened this invoice"
+      >
+        <p class="text-base font-semibold text-emerald-900">
+          👀 Your client opened this invoice
+          <% if (_cvs.viewCount > 1) { %>
+            &middot;
+            <span data-testid="client-view-status-view-count"><%= _cvs.viewCount %></span> times
+          <% } %>
+        </p>
+        <p class="text-sm text-emerald-800 mt-1">
+          <% if (_cvs.hoursSinceLastView != null && _cvs.hoursSinceLastView < 1) { %>
+            Last opened <span data-testid="client-view-status-last-view-relative">just now</span>.
+          <% } else if (_cvs.hoursSinceLastView === 1) { %>
+            Last opened <span data-testid="client-view-status-last-view-relative">1 hour ago</span>.
+          <% } else if (_cvs.hoursSinceLastView != null && _cvs.hoursSinceLastView < 48) { %>
+            Last opened <span data-testid="client-view-status-last-view-relative"><%= _cvs.hoursSinceLastView %> hours ago</span>.
+          <% } else if (_cvs.hoursSinceLastView != null) { %>
+            <% const _daysAgo = Math.floor(_cvs.hoursSinceLastView / 24); %>
+            Last opened
+            <span data-testid="client-view-status-last-view-relative">
+              <%= _daysAgo %> day<% if (_daysAgo !== 1) { %>s<% } %> ago
+            </span>.
+          <% } %>
+          <% if (_cvs.viewCount > 1) { %>
+            They&rsquo;re circling &mdash; a friendly nudge often closes it.
+          <% } else { %>
+            They&rsquo;ve seen it &mdash; a friendly nudge often closes it.
+          <% } %>
+        </p>
+        <% if (_cvsHasIntents) { %>
+          <div
+            class="mt-3 flex flex-wrap gap-2"
+            data-testid="client-view-status-followup-intents"
+          >
+            <a href="<%= _cvsIntents.whatsapp %>"
+              target="_blank" rel="noopener"
+              data-share="whatsapp"
+              data-testid="client-view-status-followup-whatsapp"
+              onclick="try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'whatsapp' }) }).catch(function(){}); } catch (e) {}"
+              class="inline-flex items-center gap-2 bg-white border border-emerald-200 text-emerald-900 font-semibold px-4 py-2 rounded-lg hover:bg-green-50 hover:border-green-300 transition text-sm">
+              <span aria-hidden="true">💬</span><span>WhatsApp nudge</span>
+            </a>
+            <a href="<%= _cvsIntents.sms %>"
+              data-share="sms"
+              data-testid="client-view-status-followup-sms"
+              onclick="try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'sms' }) }).catch(function(){}); } catch (e) {}"
+              class="inline-flex items-center gap-2 bg-white border border-emerald-200 text-emerald-900 font-semibold px-4 py-2 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition text-sm">
+              <span aria-hidden="true">📱</span><span>SMS nudge</span>
+            </a>
+            <% if (_cvsIntents.mailto) { %>
+              <a href="<%= _cvsIntents.mailto %>"
+                data-share="email"
+                data-testid="client-view-status-followup-email"
+                onclick="try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'email' }) }).catch(function(){}); } catch (e) {}"
+                class="inline-flex items-center gap-2 bg-white border border-emerald-200 text-emerald-900 font-semibold px-4 py-2 rounded-lg hover:bg-indigo-50 hover:border-indigo-300 transition text-sm">
+                <span aria-hidden="true">✉️</span><span>Email nudge</span>
+              </a>
+            <% } %>
+            <button type="button"
+              data-share="copy"
+              data-testid="client-view-status-followup-copy"
+              data-share-url="<%= _cvsIntents.url %>"
+              onclick="(function(btn){ try { var u = btn.getAttribute('data-share-url') || ''; fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'copy' }) }).catch(function(){}); if (u && typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') { navigator.clipboard.writeText(u).then(function(){ var prev = btn.innerHTML; btn.innerHTML = '<span>Copied!</span>'; setTimeout(function(){ btn.innerHTML = prev; }, 2000); }).catch(function(){}); } } catch (e) {} })(this)"
+              class="inline-flex items-center gap-2 bg-white border border-emerald-200 text-emerald-900 font-semibold px-4 py-2 rounded-lg hover:bg-gray-100 transition text-sm">
+              <span aria-hidden="true">🔗</span><span>Copy link</span>
+            </button>
+          </div>
+        <% } %>
+      </div>
+    <% } %>
+  <% } %>
+
   <!-- Invoice preview card -->
   <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 md:p-12">
     <!-- Header -->
