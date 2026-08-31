@@ -1425,17 +1425,42 @@
         return count > 1 ? `Viewed ${count}× (last ${ago})` : `Viewed ${ago}`;
       }
     %>
-    <% if (onlySeedInvoices) { %>
+    <% if (onlySeedInvoices) {
+         // Pick the first seed row (there is only ever one seed per user; the
+         // .every() gate above guarantees invoices.length >= 1 in this branch,
+         // so seedForCta is never null when we render).
+         const seedForCta = invoices.find((i) => i && i.is_seed) || null;
+    %>
       <div
         data-testid="seed-invoice-hint"
-        class="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-5 py-3 flex items-start gap-3 print:hidden"
+        class="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3 print:hidden"
         role="region"
         aria-label="Sample invoice ready to edit"
       >
-        <div class="text-amber-500 text-lg leading-none mt-0.5" aria-hidden="true">&#9999;</div>
-        <p class="text-sm text-amber-900 flex-1">
-          <strong>This is a sample invoice.</strong> Open it, replace the client and line items, and you'll have your first real invoice ready to send &mdash; it doesn't count against your free limit.
-        </p>
+        <div class="flex items-start gap-3 flex-1">
+          <div class="text-amber-500 text-lg leading-none mt-0.5" aria-hidden="true">&#9999;</div>
+          <p class="text-sm text-amber-900">
+            <strong>This is a sample invoice.</strong> One tap clones its items into a fresh draft with the client fields blank &mdash; ready for you to fill in and send. It doesn't count against your free limit.
+          </p>
+        </div>
+        <% if (seedForCta) { %>
+          <form
+            action="/invoices/<%= seedForCta.id %>/duplicate"
+            method="POST"
+            class="shrink-0"
+            data-testid="seed-invoice-hint-duplicate-form"
+          >
+            <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+            <input type="hidden" name="client_scope" value="new_client">
+            <button
+              type="submit"
+              data-testid="seed-invoice-hint-duplicate-cta"
+              class="w-full sm:w-auto whitespace-nowrap bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition"
+            >
+              Turn this into a real invoice &rarr;
+            </button>
+          </form>
+        <% } %>
       </div>
     <% } %>
     <div
