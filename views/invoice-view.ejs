@@ -309,6 +309,111 @@
   <% } %>
 
   <!--
+       "🔴 N days past due" urgency card (Milestone 4 — first invoice sent →
+       first payment received). Renders above the client-view status card
+       whenever this specific invoice is overdue: status in sent/overdue,
+       non-seed, due_date set and already passed. The dashboard's overdue
+       prompt only surfaces ONE overdue invoice at a time (oldest by due
+       date), so a freelancer landing on /invoices/:id for a newer overdue
+       gets no urgency signal there. This card carries two firm actions:
+         1. A "Mark as Paid" form — very common path since a lot of
+            out-of-band payments (bank transfer, Zelle, cheque) need
+            reconciliation.
+         2. A firm-tone follow-up channel cluster whose message body reads
+            "just checking in… (now overdue)" via buildFollowUpShareIntents.
+       Positioned above every other card so urgency wins the visual
+       hierarchy the moment the page loads. print:hidden so it never leaks
+       into a downloaded PDF.
+  -->
+  <% if (locals.overdueInvoiceCard && overdueInvoiceCard) { %>
+    <%
+      const _oic = overdueInvoiceCard;
+      const _oicIntents = _oic.followUpIntents && typeof _oic.followUpIntents === 'object'
+        ? _oic.followUpIntents : null;
+      const _oicHasIntents = !!(_oicIntents && _oicIntents.url);
+      const _oicClient = _oic.clientName ? _oic.clientName : '';
+    %>
+    <div
+      data-testid="overdue-invoice-card"
+      data-days-past-due="<%= _oic.daysPastDue %>"
+      data-urgency-tier="<%= _oic.urgencyTier %>"
+      class="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 print:hidden"
+      role="region"
+      aria-label="This invoice is past due"
+    >
+      <p class="text-base font-semibold text-red-900">
+        🔴
+        <% if (_oic.daysPastDue === 1) { %>
+          <span data-testid="overdue-invoice-card-days">1</span> day past due
+        <% } else { %>
+          <span data-testid="overdue-invoice-card-days"><%= _oic.daysPastDue %></span> days past due
+        <% } %>
+        <% if (_oicClient) { %>
+          &middot; <span data-testid="overdue-invoice-card-client-name"><%= _oicClient %></span>
+        <% } %>
+      </p>
+      <p class="text-sm text-red-800 mt-1">
+        <% if (_oic.urgencyTier === 'mild') { %>
+          Just past the due date &mdash; a quick nudge now often lands before it drifts further.
+        <% } else if (_oic.urgencyTier === 'moderate') { %>
+          Chasing this now is the difference between "paid this week" and "paid this month" &mdash; a firm one-line ping usually does it.
+        <% } else if (_oic.urgencyTier === 'serious') { %>
+          Two weeks past due &mdash; time for a direct, calm ask on a second channel so it doesn&rsquo;t slip further.
+        <% } else { %>
+          A month past due &mdash; escalate the tone, pick the channel they&rsquo;re most likely to read, and follow up until you get an answer.
+        <% } %>
+      </p>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <form action="/invoices/<%= invoice.id %>/status" method="POST" class="inline"
+          data-testid="overdue-invoice-card-mark-paid-form">
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          <input type="hidden" name="status" value="paid">
+          <button type="submit"
+            data-testid="overdue-invoice-card-mark-paid-button"
+            class="inline-flex items-center gap-2 bg-emerald-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-emerald-700 transition text-sm">
+            <span aria-hidden="true">✅</span>
+            <span>Mark as Paid</span>
+          </button>
+        </form>
+        <% if (_oicHasIntents) { %>
+          <a href="<%= _oicIntents.whatsapp %>"
+            target="_blank" rel="noopener"
+            data-share="whatsapp"
+            data-testid="overdue-invoice-card-followup-whatsapp"
+            onclick="try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'whatsapp' }) }).catch(function(){}); } catch (e) {}"
+            class="inline-flex items-center gap-2 bg-white border border-red-200 text-red-900 font-semibold px-4 py-2 rounded-lg hover:bg-green-50 hover:border-green-300 transition text-sm">
+            <span aria-hidden="true">💬</span><span>WhatsApp chase</span>
+          </a>
+          <a href="<%= _oicIntents.sms %>"
+            data-share="sms"
+            data-testid="overdue-invoice-card-followup-sms"
+            onclick="try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'sms' }) }).catch(function(){}); } catch (e) {}"
+            class="inline-flex items-center gap-2 bg-white border border-red-200 text-red-900 font-semibold px-4 py-2 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition text-sm">
+            <span aria-hidden="true">📱</span><span>SMS chase</span>
+          </a>
+          <% if (_oicIntents.mailto) { %>
+            <a href="<%= _oicIntents.mailto %>"
+              data-share="email"
+              data-testid="overdue-invoice-card-followup-email"
+              onclick="try { fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'email' }) }).catch(function(){}); } catch (e) {}"
+              class="inline-flex items-center gap-2 bg-white border border-red-200 text-red-900 font-semibold px-4 py-2 rounded-lg hover:bg-indigo-50 hover:border-indigo-300 transition text-sm">
+              <span aria-hidden="true">✉️</span><span>Email chase</span>
+            </a>
+          <% } %>
+          <button type="button"
+            data-share="copy"
+            data-testid="overdue-invoice-card-followup-copy"
+            data-share-url="<%= _oicIntents.url %>"
+            onclick="(function(btn){ try { var u = btn.getAttribute('data-share-url') || ''; fetch('/invoices/<%= invoice.id %>/share-intent', { method: 'POST', keepalive: true, headers: { 'X-CSRF-Token': '<%= locals.csrfToken || '' %>', 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ intent: 'copy' }) }).catch(function(){}); if (u && typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') { navigator.clipboard.writeText(u).then(function(){ var prev = btn.innerHTML; btn.innerHTML = '<span>Copied!</span>'; setTimeout(function(){ btn.innerHTML = prev; }, 2000); }).catch(function(){}); } } catch (e) {} })(this)"
+            class="inline-flex items-center gap-2 bg-white border border-red-200 text-red-900 font-semibold px-4 py-2 rounded-lg hover:bg-gray-100 transition text-sm">
+            <span aria-hidden="true">🔗</span><span>Copy link</span>
+          </button>
+        <% } %>
+      </div>
+    </div>
+  <% } %>
+
+  <!--
        Client-view status card (Milestones 3 → 4). For sent / overdue invoices,
        tells the freelancer at a glance whether their client has actually
        opened the share link — the single most common on-page question after

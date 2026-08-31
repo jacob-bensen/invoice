@@ -477,6 +477,84 @@ function buildClientViewStatusCard(invoice, opts) {
 }
 
 /*
+ * "🔴 N days past due" urgency card at the top of /invoices/:id (Milestone
+ * 4 — first invoice sent → first payment received). Sits above the client-
+ * view-status card whenever the invoice the freelancer is looking at is
+ * actually overdue: status in ('sent','overdue'), non-seed, due_date set
+ * and already passed. Answers the freelancer's first on-page question the
+ * moment the page loads ("how late is this?") and collapses the chase loop
+ * to one tap.
+ *
+ * The dashboard's `overduePrompt` (buildOverduePrompt) covers ONE overdue
+ * invoice at a time on the dashboard surface, chosen by ORDER BY due_date
+ * ASC. A freelancer with 3 overdue invoices only sees the oldest there —
+ * navigating directly to a NEWER overdue invoice from an email deep-link,
+ * a bookmark, or the invoice-table row-click gets no urgency signal at all.
+ * The neutral amber "hasn't been opened" client-view-status-card that
+ * already renders on sent/overdue invoices communicates open-rate telemetry
+ * but not the days-late count, so the freelancer's most action-relevant
+ * datapoint stays invisible above the fold.
+ *
+ * The card carries two firm-action rows:
+ *   1. A prominent "✅ Mark as Paid" form — very common path, since a lot
+ *      of overdue-flip payments arrive out-of-band (bank transfer, Zelle,
+ *      Venmo, cheque) and the freelancer needs to reconcile with one tap.
+ *   2. A firm-tone follow-up channel cluster (WhatsApp / SMS / Email /
+ *      Copy) that reuses buildFollowUpShareIntents whose body copy already
+ *      appends "(now overdue)" via daysOverdue in buildShareSurfaceForInvoice.
+ *
+ * Cohort gates (all null):
+ *   - null / non-object invoice
+ *   - is_seed (the sample was never really sent)
+ *   - status NOT in ('sent','overdue') (draft, paid, or any other value)
+ *   - missing / unparseable due_date
+ *   - due_date >= now (not yet overdue by contractual signal)
+ *
+ * urgencyTier is bucketed off daysPastDue so the view can pivot copy tone
+ * without recomputing thresholds: 'mild' 1-3, 'moderate' 4-13,
+ * 'serious' 14-29, 'severe' 30+.
+ *
+ * Pure — no DB, no clock read (accepts `now` for test determinism).
+ */
+function buildOverdueInvoiceCard(invoice, opts) {
+  if (!invoice || typeof invoice !== 'object') return null;
+  if (invoice.is_seed) return null;
+  const status = typeof invoice.status === 'string' ? invoice.status : '';
+  if (status !== 'sent' && status !== 'overdue') return null;
+  if (!invoice.due_date) return null;
+  const dueDate = invoice.due_date instanceof Date
+    ? invoice.due_date
+    : new Date(invoice.due_date);
+  if (!(dueDate instanceof Date) || !Number.isFinite(dueDate.getTime())) return null;
+  const now = (opts && opts.now instanceof Date) ? opts.now : new Date();
+  const elapsedMs = now.getTime() - dueDate.getTime();
+  if (elapsedMs <= 0) return null;
+  const daysPastDue = Math.max(1, Math.floor(elapsedMs / 86400000));
+  let urgencyTier = 'mild';
+  if (daysPastDue >= 30) urgencyTier = 'severe';
+  else if (daysPastDue >= 14) urgencyTier = 'serious';
+  else if (daysPastDue >= 4) urgencyTier = 'moderate';
+  const followUpIntents = (opts && opts.followUpIntents && typeof opts.followUpIntents === 'object')
+    ? opts.followUpIntents
+    : null;
+  const clientName = typeof invoice.client_name === 'string'
+    ? invoice.client_name.trim()
+    : '';
+  const totalNum = Number(invoice.total);
+  const total = Number.isFinite(totalNum) ? totalNum : 0;
+  return {
+    daysPastDue,
+    urgencyTier,
+    dueDateIso: dueDate.toISOString(),
+    clientName,
+    invoiceNumber: typeof invoice.invoice_number === 'string' ? invoice.invoice_number : '',
+    total,
+    hasClientEmail: typeof invoice.client_email === 'string' && invoice.client_email.trim().length > 0,
+    followUpIntents
+  };
+}
+
+/*
  * "Paid — invoice them again" next-move card at the top of /invoices/:id
  * (Milestone 2 lever, harvested at the M4 completion moment). Sits above
  * the invoice preview card only on paid, non-seed invoices belonging to a
@@ -2232,6 +2310,11 @@ router.get('/:id', requireAuth, async (req, res) => {
         ? prefetchedShare.followUpIntents
         : null
     });
+    const overdueInvoiceCard = buildOverdueInvoiceCard(invoice, {
+      followUpIntents: prefetchedShare && prefetchedShare.followUpIntents
+        ? prefetchedShare.followUpIntents
+        : null
+    });
     const paidNextInvoiceCard = buildPaidNextInvoiceCard(invoice, user);
     res.render('invoice-view', {
       title: `Invoice ${invoice.invoice_number}`,
@@ -2241,6 +2324,7 @@ router.get('/:id', requireAuth, async (req, res) => {
       paymentMethods,
       prefetchedShare,
       clientViewStatus,
+      overdueInvoiceCard,
       paidNextInvoiceCard,
       currency,
       currencySymbol,
@@ -3358,6 +3442,7 @@ module.exports.buildPaymentClaimPrompt = buildPaymentClaimPrompt;
 module.exports.buildFirstRealInvoicePrompt = buildFirstRealInvoicePrompt;
 module.exports.buildClientViewStatusCard = buildClientViewStatusCard;
 module.exports.buildPaidNextInvoiceCard = buildPaidNextInvoiceCard;
+module.exports.buildOverdueInvoiceCard = buildOverdueInvoiceCard;
 module.exports.buildFreshDraftPrompt = buildFreshDraftPrompt;
 module.exports.FRESH_DRAFT_MAX_AGE_HOURS = FRESH_DRAFT_MAX_AGE_HOURS;
 module.exports.buildRepeatClientPrompt = buildRepeatClientPrompt;
