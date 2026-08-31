@@ -477,6 +477,76 @@ function buildClientViewStatusCard(invoice, opts) {
 }
 
 /*
+ * "Paid — invoice them again" next-move card at the top of /invoices/:id
+ * (Milestone 2 lever, harvested at the M4 completion moment). Sits above
+ * the invoice preview card only on paid, non-seed invoices belonging to a
+ * client with a real name. The dashboard's `repeatClientPrompt` already
+ * covers this cohort on the dashboard surface with a narrower 7-day + no-
+ * open-work filter; the invoice-view page carried nothing but the header-
+ * row Duplicate buttons, which the freelancer has to hunt for above the
+ * fold. This card promotes the primary next-action ("send this same
+ * client their next invoice") to the top of the page at the exact moment
+ * the freelancer's engagement peaks — they just got paid.
+ *
+ * Cohort gates (all null):
+ *   - draft / sent / overdue (celebration + share flows own those)
+ *   - is_seed (the sample was never really paid by anyone)
+ *   - status !== 'paid' fallthrough (belt + braces on future schema drift)
+ *   - missing / empty client_name (the CTA reads "invoice {Name} for the
+ *     next job" — a blank name would render "invoice  for the next job")
+ *   - free-tier user at the FREE_LIMIT cap (the underlying duplicate
+ *     route would 302 → /invoices?limit_hit=1, so a button that is
+ *     guaranteed to bounce is worse than no button at all — the free-cap
+ *     upsell has its own surfaces)
+ *
+ * Pure — no DB, no clock read (accepts `now` for test determinism).
+ */
+function buildPaidNextInvoiceCard(invoice, user, opts) {
+  if (!invoice || typeof invoice !== 'object') return null;
+  if (!user || typeof user !== 'object') return null;
+  if (invoice.is_seed) return null;
+  const status = typeof invoice.status === 'string' ? invoice.status : '';
+  if (status !== 'paid') return null;
+  const clientName = typeof invoice.client_name === 'string'
+    ? invoice.client_name.trim()
+    : '';
+  if (!clientName) return null;
+  if (user.plan === 'free') {
+    const count = parseInt(user.invoice_count, 10);
+    if (Number.isFinite(count) && count >= FREE_LIMIT) return null;
+  }
+  const now = (opts && opts.now instanceof Date) ? opts.now : new Date();
+  const parseTs = (v) => {
+    if (!v) return null;
+    const d = v instanceof Date ? v : new Date(v);
+    return (d instanceof Date && Number.isFinite(d.getTime())) ? d : null;
+  };
+  // No dedicated paid_at column on invoices — updated_at is the closest
+  // proxy for "when did this flip to paid" since the manual mark-paid
+  // form and the Stripe webhook both bump updated_at on the flip.
+  const paidAt = parseTs(invoice.updated_at);
+  const paidDaysAgo = paidAt
+    ? Math.max(0, Math.floor((now.getTime() - paidAt.getTime()) / 86400000))
+    : null;
+  const clientEmail = typeof invoice.client_email === 'string'
+    ? invoice.client_email.trim()
+    : '';
+  const clientPhone = typeof invoice.client_phone === 'string'
+    ? invoice.client_phone.trim()
+    : '';
+  const totalRaw = Number(invoice.total);
+  return {
+    clientName,
+    invoiceNumber: typeof invoice.invoice_number === 'string' ? invoice.invoice_number : '',
+    total: Number.isFinite(totalRaw) ? totalRaw : 0,
+    paidAtIso: paidAt ? paidAt.toISOString() : null,
+    paidDaysAgo,
+    hasClientEmail: clientEmail.length > 0,
+    hasClientPhone: clientPhone.length > 0
+  };
+}
+
+/*
  * "Continue your draft invoice" banner (Milestone 2 — first dashboard
  * re-entry → first real invoice created). Surfaces on the dashboard when
  * the user has an autosaved /invoices/quick draft. The payload is the raw
@@ -2162,6 +2232,7 @@ router.get('/:id', requireAuth, async (req, res) => {
         ? prefetchedShare.followUpIntents
         : null
     });
+    const paidNextInvoiceCard = buildPaidNextInvoiceCard(invoice, user);
     res.render('invoice-view', {
       title: `Invoice ${invoice.invoice_number}`,
       invoice,
@@ -2170,6 +2241,7 @@ router.get('/:id', requireAuth, async (req, res) => {
       paymentMethods,
       prefetchedShare,
       clientViewStatus,
+      paidNextInvoiceCard,
       currency,
       currencySymbol,
       formatMoney,
@@ -3285,6 +3357,7 @@ module.exports.buildOverduePrompt = buildOverduePrompt;
 module.exports.buildPaymentClaimPrompt = buildPaymentClaimPrompt;
 module.exports.buildFirstRealInvoicePrompt = buildFirstRealInvoicePrompt;
 module.exports.buildClientViewStatusCard = buildClientViewStatusCard;
+module.exports.buildPaidNextInvoiceCard = buildPaidNextInvoiceCard;
 module.exports.buildFreshDraftPrompt = buildFreshDraftPrompt;
 module.exports.FRESH_DRAFT_MAX_AGE_HOURS = FRESH_DRAFT_MAX_AGE_HOURS;
 module.exports.buildRepeatClientPrompt = buildRepeatClientPrompt;

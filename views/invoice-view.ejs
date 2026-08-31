@@ -480,6 +480,70 @@
     <% } %>
   <% } %>
 
+  <!-- "Paid — invoice them again" next-move card (Milestone 2 lever, harvested
+       at the M4 completion moment). Renders only for paid, non-seed invoices
+       whose client has a real name AND whose owner is not at the free-tier
+       cap (all gated in buildPaidNextInvoiceCard). Two forms:
+         1. Primary — POST /invoices/:id/duplicate (same client) → the
+            freelancer lands on /edit for a fresh draft with the same
+            client/items already populated, ready to customise for the
+            next job.
+         2. Secondary — POST /invoices/:id/duplicate with
+            client_scope=new_client → clone the items/notes for a totally
+            different client, with the client fields blanked.
+       print:hidden so it never leaks into a downloaded PDF.
+  -->
+  <% if (locals.paidNextInvoiceCard && paidNextInvoiceCard) { %>
+    <% const _pnc = paidNextInvoiceCard; %>
+    <div
+      data-testid="paid-next-invoice-card"
+      data-paid-days-ago="<%= _pnc.paidDaysAgo == null ? '' : _pnc.paidDaysAgo %>"
+      class="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 print:hidden"
+      role="region"
+      aria-label="Paid — invoice this client again"
+    >
+      <p class="text-base font-semibold text-emerald-900">
+        🎉 Paid! Ready to invoice
+        <span data-testid="paid-next-invoice-card-client-name"><%= _pnc.clientName %></span>
+        for the next job?
+      </p>
+      <p class="text-sm text-emerald-800 mt-1">
+        <% if (_pnc.paidDaysAgo != null && _pnc.paidDaysAgo === 0) { %>
+          Marked paid earlier today &mdash; strike while you&rsquo;re top of mind.
+        <% } else if (_pnc.paidDaysAgo === 1) { %>
+          Marked paid <span data-testid="paid-next-invoice-card-days-ago">1</span> day ago &mdash; the fastest repeat sale is the one you send while the last invoice is still fresh in their inbox.
+        <% } else if (_pnc.paidDaysAgo != null && _pnc.paidDaysAgo > 1) { %>
+          Marked paid <span data-testid="paid-next-invoice-card-days-ago"><%= _pnc.paidDaysAgo %></span> days ago &mdash; the fastest repeat sale is the one you send while the last invoice is still fresh in their inbox.
+        <% } else { %>
+          The fastest repeat sale is the one you send while the last invoice is still fresh in their inbox.
+        <% } %>
+      </p>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <form action="/invoices/<%= invoice.id %>/duplicate" method="POST" class="inline"
+          data-testid="paid-next-invoice-card-same-client-form">
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          <button type="submit"
+            data-testid="paid-next-invoice-card-same-client-button"
+            class="inline-flex items-center gap-2 bg-emerald-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-emerald-700 transition text-sm">
+            <span aria-hidden="true">📄</span>
+            <span>Send <%= _pnc.clientName %> their next invoice &rarr;</span>
+          </button>
+        </form>
+        <form action="/invoices/<%= invoice.id %>/duplicate" method="POST" class="inline"
+          data-testid="paid-next-invoice-card-new-client-form">
+          <input type="hidden" name="_csrf" value="<%= locals.csrfToken || '' %>">
+          <input type="hidden" name="client_scope" value="new_client">
+          <button type="submit"
+            data-testid="paid-next-invoice-card-new-client-button"
+            class="inline-flex items-center gap-2 bg-white border border-emerald-200 text-emerald-900 font-semibold px-4 py-2 rounded-lg hover:bg-emerald-100 transition text-sm">
+            <span aria-hidden="true">👤</span>
+            <span>Or use these items for a new client &rarr;</span>
+          </button>
+        </form>
+      </div>
+    </div>
+  <% } %>
+
   <!-- Invoice preview card -->
   <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 md:p-12">
     <!-- Header -->
